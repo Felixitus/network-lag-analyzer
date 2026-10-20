@@ -56,8 +56,8 @@ def test_devices_and_rename(client):
     devs = client.get("/api/devices").json()["devices"]
     assert any(d["name"] == "iPhone (Demo)" for d in devs)
     mac = next(d["mac"] for d in devs if d["name"] == "iPhone (Demo)")
-    r = client.patch(f"/api/devices/{mac}", json={"custom_name": "iPhone Felix"}, headers=csrf(client))
-    assert r.status_code == 200 and r.json()["name"] == "iPhone Felix"
+    r = client.patch(f"/api/devices/{mac}", json={"custom_name": "Mein iPhone"}, headers=csrf(client))
+    assert r.status_code == 200 and r.json()["name"] == "Mein iPhone"
     bad = client.patch(f"/api/devices/{mac}", json={"custom_name": "<script>"}, headers=csrf(client))
     assert bad.status_code == 422
 

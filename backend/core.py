@@ -24,7 +24,7 @@ from .collectors.dns import DnsProber
 from .collectors.fritzbox import FritzClient, FritzError
 from .collectors.pihole import PiholeReader
 from .collectors.ping import IcmpProber, ProbeScheduler, ProbeTarget
-from .config import Config, build_config, load_yaml
+from .config import Config, build_config, fritz_target, load_yaml
 from .database import repository as repo
 from .database.repository import Database
 from .util import netinfo
@@ -1089,11 +1089,22 @@ class Core:
         bad = set(patch) - EDITABLE_SECTIONS
         if bad:
             raise ValueError(f"Nicht änderbar: {', '.join(sorted(bad))}")
-        if "fritzbox" in patch and patch["fritzbox"].get("password") in ("********", None):
-            patch["fritzbox"].pop("password", None)
+        new_password = False
+        if "fritzbox" in patch:
+            if patch["fritzbox"].get("password") in ("********", None):
+                patch["fritzbox"].pop("password", None)
+            else:
+                new_password = True
         overrides = await self.db.read(lambda c: repo.get_setting(c, "config_overrides", {}))
         merged = deep_merge(overrides, patch)
         new_cfg = build_config(self.yaml_data, merged)   # validiert (wirft bei Fehlern)
+        # Das gespeicherte Passwort geht nur an die Adresse, für die es eingegeben wurde.
+        # Sonst könnte jedes Gerät im LAN die Adresse auf einen eigenen Server umbiegen
+        # und bekäme die Login-Antwort der FRITZ!Box zum Offline-Raten.
+        if (self.cfg.fritzbox.password and not new_password
+                and fritz_target(new_cfg) != fritz_target(self.cfg)):
+            raise ValueError("Die FRITZ!Box-Adresse ändert sich – bitte das FRITZ!Box-Passwort "
+                             "dabei neu eingeben.")
         await self.db.write(lambda c: repo.set_setting(c, "config_overrides", merged))
         old = self.cfg
         self.cfg = new_cfg

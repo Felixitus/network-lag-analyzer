@@ -233,6 +233,12 @@ class Config(BaseModel):
         return d
 
 
+def fritz_target(cfg: Config) -> tuple[str, str | None]:
+    """Wohin das FRITZ!Box-Passwort geschickt wird. Bei "auto" entscheidet das Gateway."""
+    host = cfg.fritzbox.host.strip().lower()
+    return host, (cfg.gateway if host == "auto" else None)
+
+
 # Felder, die über die Weboberfläche geändert werden dürfen (Top-Level-Schlüssel).
 EDITABLE_SECTIONS = {
     "gateway", "targets", "probe", "dns_probe", "gaming_pc", "gaming", "thresholds",

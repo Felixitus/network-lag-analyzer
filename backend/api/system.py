@@ -66,7 +66,12 @@ class FritzTest(BaseModel):
 @router.post("/setup/fritzbox-test")
 async def fritz_test(request: Request, body: FritzTest):
     core = core_of(request)
-    pw = body.password if body.password and body.password != "********" else core.cfg.fritzbox.password
+    pw = body.password
+    if not pw or pw == "********":
+        # Gespeichertes Passwort nur an die gespeicherte Adresse – siehe Core.update_settings.
+        if core.cfg.fritzbox.password and body.host.strip().lower() != core.cfg.fritzbox.host.strip().lower():
+            raise HTTPException(400, "Für eine andere Adresse bitte das FRITZ!Box-Passwort eingeben")
+        pw = core.cfg.fritzbox.password
     return await setup_wizard.test_fritz(core, body.host, body.username, pw, body.capture_interface, body.snaplen)
 
 
@@ -205,14 +210,36 @@ async def auth_state(request: Request):
             "logged_in": signer.valid(request.cookies.get(SESSION_COOKIE))}
 
 
+LOGIN_MAX_FAILS = 5
+LOGIN_WINDOW = 15 * 60
+_login_fails: dict[str, list[float]] = {}
+
+
+def _recent_fails(ip: str, now: float) -> list[float]:
+    fails = [t for t in _login_fails.get(ip, []) if now - t < LOGIN_WINDOW]
+    if fails:
+        _login_fails[ip] = fails
+    else:
+        _login_fails.pop(ip, None)                     # sonst wächst das dict mit jeder IP
+    return fails
+
+
 @router.post("/auth/login")
 async def login(request: Request, body: LoginBody, response: Response):
     core = core_of(request)
     sec = core.cfg.security
     if not (sec.login_enabled and sec.password_hash):
         return {"ok": True}
+    # Bremse gegen Durchprobieren aus dem LAN: nach 5 Fehlversuchen je Adresse
+    # 15 Minuten Pause. Im Speicher genügt – ein Neustart dauert länger als ein Versuch.
+    ip = request.client.host if request.client else "?"
+    now = time.time()
+    if len(_recent_fails(ip, now)) >= LOGIN_MAX_FAILS:
+        raise HTTPException(429, "Zu viele Fehlversuche – bitte später erneut versuchen")
     if not verify_password(body.password, sec.password_hash):
+        _login_fails.setdefault(ip, []).append(now)
         raise HTTPException(401, "Falsches Passwort")
+    _login_fails.pop(ip, None)
     token = request.app.state.signer.sign(sec.session_hours)
     response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict", max_age=sec.session_hours * 3600)
     return {"ok": True}

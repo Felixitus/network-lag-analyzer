@@ -50,8 +50,10 @@ class SessionSigner:
         else:
             p.parent.mkdir(parents=True, exist_ok=True)
             self.key = secrets.token_bytes(32)
-            p.write_bytes(self.key)
-            os.chmod(p, 0o600)
+            # Gleich mit 0600 anlegen – write + chmod ließe die Datei kurz für alle lesbar.
+            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(self.key)
 
     def sign(self, hours: int) -> str:
         exp = str(int(time.time() + hours * 3600))
