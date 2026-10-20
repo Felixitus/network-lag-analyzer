@@ -1,0 +1,47 @@
+[Unit]
+Description=Network Lag Analyzer (Lag-/Packet-Loss-Diagnose)
+Documentation=file:///opt/network-lag-analyzer/README.md
+After=network-online.target pihole-FTL.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nla
+Group=nla
+WorkingDirectory=/opt/network-lag-analyzer
+Environment=NLA_CONFIG=/etc/network-lag-analyzer/config.yaml
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/network-lag-analyzer/venv/bin/python -m backend.main
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+# Nur ICMP-Messung und optional AF_PACKET brauchen Rechte – kein root
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=true
+UMask=0027
+
+# Pi-hole hat Vorrang
+Nice=10
+CPUWeight=50
+IOWeight=50
+MemoryMax=350M
+
+# Härtung
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/network-lag-analyzer
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_PACKET AF_NETLINK
+RestrictNamespaces=true
+LockPersonality=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=network-lag-analyzer
+
+[Install]
+WantedBy=multi-user.target

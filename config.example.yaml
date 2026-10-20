@@ -1,0 +1,104 @@
+# Network Lag Analyzer – Konfiguration
+# Datei: /etc/network-lag-analyzer/config.yaml
+# Fast alle Werte lassen sich auch in der Weboberfläche (Setup) ändern; diese
+# Änderungen werden in der Datenbank gespeichert und haben Vorrang vor dieser Datei.
+
+server:
+  host: 0.0.0.0        # nur im LAN erreichbar machen (Router gibt Port nicht frei)
+  port: 8088           # Pi-hole belegt 80/443
+
+gateway: auto          # oder z. B. 192.168.178.1
+
+targets:
+  - address: 1.1.1.1
+    name: Cloudflare
+  - address: 8.8.8.8
+    name: Google
+  - address: 9.9.9.9
+    name: Quad9
+
+probe:
+  interval: 1.0          # Sekunden zwischen Pings je Ziel
+  gaming_interval: 0.25  # im Gaming Mode
+  timeout: 1.5           # später = verloren
+
+gaming_pc:
+  ip: null               # z. B. 192.168.178.20 (oder in der Geräteliste markieren)
+
+gaming:
+  auto_detect: true
+
+thresholds:
+  ping_warning: 50
+  ping_critical: 100
+  jitter_warning: 20
+  packet_loss_warning: 1
+  gateway_warning: 20
+  high_upload_pct: 70
+  high_download_pct: 80
+
+capacity:              # gebuchte Leitung in Mbit/s; "auto" = Linkrate der FRITZ!Box
+  down_mbit: auto
+  up_mbit: auto
+
+fritzbox:
+  enabled: false       # auf true setzen und Zugangsdaten eintragen
+  host: auto
+  username: ""         # eigener Benutzer mit Recht "FRITZ!Box Einstellungen"
+  password: ""
+  capture_enabled: true
+  capture_interface: 1-lan
+  snaplen: 128
+
+capture:
+  source: auto         # auto | fritzbox | local | none
+  local_interface: eth0
+
+pihole:
+  enabled: true
+  ftl_db: /etc/pihole/pihole-FTL.db
+
+# Namensauflösung: zwei Proben mit unterschiedlicher Aussage.
+dns_probe:
+  enabled: true
+  interval: 5.0
+  # Gecacht – misst nur, ob der eigene Resolver (Pi-hole) noch reagiert.
+  query_name: example.com
+  # Ungecacht – zufälliger Name unter dieser Endung, erzwingt den vollen Weg zum
+  # Upstream. ".invalid" ist dafür reserviert (RFC 2606); die Antwort NXDOMAIN
+  # zählt als Erfolg. Leer lassen schaltet die zweite Probe ab.
+  uncached_suffix: nla-probe.invalid
+  servers: [local, 1.1.1.1]
+
+retention:
+  raw_days: 1          # 1-s-Werte
+  detailed_days: 7     # 10-s-Aggregate
+  aggregate_days: 30   # 1-min-Aggregate
+  flow_days: 7
+  event_days: 90
+  # Einzelne Pings: rund 14 MB je Tag, die keine Auswertung liest.
+  # Nur für die Fehlersuche einschalten.
+  ping_samples: false
+  # Notbremse gegen eine volle Speicherkarte. Wird die Grenze überschritten,
+  # werden zuerst Rohdaten, dann 1-s-Werte, dann 10-s-Werte gelöscht. 0 = keine Grenze.
+  max_db_mb: 1024
+# Die Tages-Zusammenfassung (daily_stats) ist von der Aufbewahrung ausgenommen:
+# rund 200 Byte je Tag, dafür bleibt der Langzeitvergleich über Jahre möglich.
+
+deep_capture:
+  enabled: false       # PCAP-Ringpuffer (nur Header), standardmäßig aus
+  max_files: 5         # laufende Dateien im Ring
+  file_size_mb: 50     # Größe je Datei
+  # WICHTIG: max_files × file_size_mb begrenzt nur den laufenden Ring. Dateien, die
+  # zu einem Incident gehören, werden aus dem Ring genommen, damit sie nicht
+  # überschrieben werden – ohne die folgenden Grenzen wächst das Verzeichnis mit der
+  # Zahl der Incidents weiter. max_total_mb ist die Obergrenze für ALLES zusammen.
+  max_total_mb: 1024   # harte Grenze für das gesamte pcap-Verzeichnis
+  protected_days: 7    # so lange werden Incident-Mitschnitte höchstens aufgehoben
+  # Wofür überhaupt ein Mitschnitt festgehalten wird:
+  #   none     nur bei gemeldetem Lag ("ICH HATTE GERADE LAG")
+  #   critical zusätzlich bei kritischen Incidents   (Standard)
+  #   all      bei jedem Incident – kann je nach Häufigkeit sehr viel Platz kosten
+  protect_auto: critical
+
+dev_mode: false        # true = simulierte Demo-Daten (niemals produktiv)
