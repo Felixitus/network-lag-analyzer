@@ -215,7 +215,7 @@ ROUND_COLS = frozenset({"down_bps", "up_bps"})          # whole bit/s
 
 
 def enc(value: float | None, col: str) -> int | None:
-    """Messwert → gespeicherte Ganzzahl."""
+    """Measured value → stored integer."""
     if value is None:
         return None
     if col in CENTI_COLS:
@@ -226,7 +226,7 @@ def enc(value: float | None, col: str) -> int | None:
 
 
 def dec(value, col: str):
-    """Gespeicherte Ganzzahl → Messwert."""
+    """Stored integer → measured value."""
     if value is None:
         return None
     return value / CENTI if col in CENTI_COLS else value
@@ -259,7 +259,7 @@ _BLOAT_MS = ("idle_ms", "up_ms", "up_worst_ms", "down_ms", "down_worst_ms")
 
 
 def bufferbloat_params(ts: int, m: dict) -> tuple | None:
-    """Ergebnis von bufferbloat.measure() → Zeile (Zeiten in 1/100 ms)."""
+    """Result of bufferbloat.measure() → row (times in 1/100 ms)."""
     if m["idle_ms"] is None or (m["up"] is None and m["down"] is None):
         return None
     up, down = m["up"], m["down"]
@@ -447,7 +447,7 @@ def count_range(conn: sqlite3.Connection, start: float | None, end: float,
     out: dict[str, int] = {}
     for table in (tables or TIME_TABLES):
         if table not in TIME_TABLES:
-            raise ValueError(f"Unbekannte Tabelle: {table}")
+            raise ValueError(f"Unknown table: {table}")
         col = TIME_TABLES[table][0]
         if start is None:
             q, p = f"SELECT COUNT(*) FROM {table} WHERE {col} < ?", (end,)
@@ -471,7 +471,7 @@ def delete_range(conn: sqlite3.Connection, start: float | None, end: float,
     out: dict[str, int] = {}
     for table in names:
         if table not in TIME_TABLES:
-            raise ValueError(f"Unbekannte Tabelle: {table}")
+            raise ValueError(f"Unknown table: {table}")
         col = TIME_TABLES[table][0]
         if start is None:
             cur = conn.execute(f"DELETE FROM {table} WHERE {col} < ?", (end,))

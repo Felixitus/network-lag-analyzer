@@ -1,9 +1,9 @@
-// Gemeinsame Zeitachse: Netzwerkwerte und Traffic jedes Geräts übereinander,
-// ein Cursor für alles, eine Ableseleiste für alle Werte gleichzeitig.
+// Shared time axis: network values and the traffic of every device stacked on top of each other,
+// one cursor for everything, one readout bar for all values at once.
 //
-// Aufbau bewusst als EIN Block gestapelter Panels statt sechs Einzelkarten:
-// Nur das unterste Panel trägt die Zeitachse, alles andere liegt exakt darüber.
-// Das spart Höhe und macht "was war zur selben Zeit los?" ablesbar statt schätzbar.
+// Deliberately built as ONE block of stacked panels instead of six separate cards:
+// only the bottom panel carries the time axis, everything else lines up exactly above it.
+// That saves height and makes "what was going on at the same time?" readable instead of guessable.
 import { api, clear, cssVar, deviceColor, fmtBytes, fmtDateTime, fmtTime, h, SERIES } from '../lib.js';
 import { fmt, legend, timeChart } from '../charts.js';
 import { buildMarkers, RANGES, segmented } from './common.js';
@@ -11,14 +11,14 @@ import { buildMarkers, RANGES, segmented } from './common.js';
 let timer = null;
 export function unmount() { clearInterval(timer); }
 
-// Panels der oberen Gruppe. `compact` = Standardhöhe; per Klick aufklappbar.
+// Panels of the upper group. `compact` = default height; expandable by click.
 const PANELS = [
   { key: 'ping', title: 'Ping', unit: 'ms', height: 150, expand: 240,
     specs: () => [
-      { label: 'Internet (Median)', color: SERIES(1), fmt: fmt.ms },
-      { label: 'Internet (Max)', color: SERIES(1), dash: [4, 4], width: 1, fmt: fmt.ms },
+      { label: 'Internet (median)', color: SERIES(1), fmt: fmt.ms },
+      { label: 'Internet (max)', color: SERIES(1), dash: [4, 4], width: 1, fmt: fmt.ms },
       { label: 'Router', color: SERIES(3), fmt: fmt.ms },
-      { label: 'Game-Server', color: SERIES(2), fmt: fmt.ms }],
+      { label: 'Game server', color: SERIES(2), fmt: fmt.ms }],
     cols: s => [s.rtt_avg, s.rtt_max, s.gw_rtt, s.game_rtt],
     opts: { yFmt: fmt.msAxis, yMinMax: 30 } },
   { key: 'loss', title: 'Packet Loss', unit: '%', height: 78, expand: 150,
@@ -27,19 +27,19 @@ const PANELS = [
   { key: 'jitter', title: 'Jitter', unit: 'ms', height: 78, expand: 150,
     specs: () => [{ label: 'Jitter', color: SERIES(7), fmt: fmt.ms }],
     cols: s => [s.jitter], opts: { yFmt: fmt.msAxis, yMinMax: 5 } },
-  { key: 'down', title: 'Download gesamt', unit: 'Mbit/s', height: 88, expand: 170,
+  { key: 'down', title: 'Download total', unit: 'Mbit/s', height: 88, expand: 170,
     specs: () => [{ label: 'Download', color: SERIES(1), fmt: fmt.mbit, fill: 0.12 }],
     cols: s => [s.down_bps], opts: { yFmt: fmt.mbitAxis, yMinMax: 1e6, naText: 'Not available' } },
-  { key: 'up', title: 'Upload gesamt', unit: 'Mbit/s', height: 88, expand: 170,
+  { key: 'up', title: 'Upload total', unit: 'Mbit/s', height: 88, expand: 170,
     specs: () => [{ label: 'Upload', color: SERIES(2), fmt: fmt.mbit, fill: 0.12 }],
     cols: s => [s.up_bps], opts: { yFmt: fmt.mbitAxis, yMinMax: 1e6, naText: 'Not available' } },
-  { key: 'retrans', title: 'TCP-Retransmissions', unit: '%', height: 78, expand: 150,
+  { key: 'retrans', title: 'TCP retransmissions', unit: '%', height: 78, expand: 150,
     specs: () => [{ label: 'Retransmissions', color: SERIES(5), fmt: fmt.pct }],
     cols: s => [s.retrans_pct],
-    opts: { yFmt: v => `${v}`, yMinMax: 2, naText: 'Not available – benötigt Traffic-Mitschnitt' } },
+    opts: { yFmt: v => `${v}`, yMinMax: 2, naText: 'Not available - needs a traffic capture' } },
 ];
 
-/** Aus dem `covered`-Feld zusammenhängende Lücken bauen (für die Schraffur). */
+/** Build contiguous gaps from the `covered` field (for the hatching). */
 function gapsFrom(ts, covered, res) {
   if (!covered) return [];
   const out = [];
@@ -57,11 +57,11 @@ function gapsFrom(ts, covered, res) {
 
 export async function mount(main, { args }) {
   let range = args[0] && RANGES.some(r => r[0] === args[0]) ? args[0] : '15m';
-  let zoom = null;          // {start, end} bei Zoom per Ziehen
+  let zoom = null;          // {start, end} when zoomed by dragging
   let res = 1;
 
   const zoomInfo = h('span', { class: 'sub' });
-  const zoomOut = h('button', { class: 'btn small', type: 'button', style: { display: 'none' } }, '← Zoom aufheben');
+  const zoomOut = h('button', { class: 'btn small', type: 'button', style: { display: 'none' } }, '← Reset zoom');
   zoomOut.addEventListener('click', () => { zoom = null; zoomOut.style.display = 'none'; load(true); });
   const rangePicker = segmented(RANGES, range, v => {
     range = v; zoom = null; zoomOut.style.display = 'none';
@@ -71,15 +71,15 @@ export async function mount(main, { args }) {
 
   main.append(h('div', { class: 'page-head' },
     h('div', null, h('h1', null, 'Timeline'),
-      h('p', null, 'Alle Messwerte auf einer Zeitachse. Rote Bänder = Incidents, orange = gemeldeter Lag, '
-        + 'Striche oben = Events. Klick auf ein Band öffnet den Incident, Ziehen zoomt in den Zeitraum.')),
+      h('p', null, 'All measurements on one time axis. Red bands = incidents, orange = reported lag, '
+        + 'ticks at the top = events. Clicking a band opens the incident, dragging zooms into the time span.')),
     h('div', { class: 'row' }, zoomOut, rangePicker)));
 
-  // ---------------------------------------------------------------- Ableseleiste
+  // ---------------------------------------------------------------- readout bar
   const readTime = h('span', { class: 'read-time' }, '–');
   const readCells = new Map();
   const readout = h('div', { class: 'readout' },
-    h('span', { class: 'read-label' }, 'Werte am Cursor'), readTime);
+    h('span', { class: 'read-label' }, 'Values at cursor'), readTime);
   for (const p of PANELS) {
     const v = h('b', null, '–');
     readCells.set(p.key, v);
@@ -90,12 +90,12 @@ export async function mount(main, { args }) {
   const lanesCard = h('div', { class: 'card chart-card' });
   const heatCard = h('div', { class: 'card' });
   const netCard = h('div', { class: 'card chart-card' },
-    h('div', { class: 'card-head' }, h('h2', null, 'Netzwerk'),
+    h('div', { class: 'card-head' }, h('h2', null, 'Network'),
       h('span', { class: 'sub' }, zoomInfo)), readout, stack);
   main.append(netCard, h('div', { style: { height: '16px' } }), lanesCard,
     h('div', { style: { height: '16px' } }), heatCard);
 
-  // ---------------------------------------------------------------- Charts
+  // ---------------------------------------------------------------- charts
   const sync = 'timeline';
   let markers = { bands: [], ticks: [], gaps: [] };
   const mk = () => markers;
@@ -117,7 +117,7 @@ export async function mount(main, { args }) {
     const specs = p.specs();
     const value = h('span', { class: 'p-val' });
     const head = h('div', { class: 'panel-head' },
-      h('button', { class: 'p-toggle', type: 'button', title: 'Panel vergrößern' }, '▸'),
+      h('button', { class: 'p-toggle', type: 'button', title: 'Enlarge panel' }, '▸'),
       h('span', { class: 'p-title' }, p.title),
       h('span', { class: 'p-unit' }, p.unit),
       specs.length > 1 ? legend(specs) : null,
@@ -139,8 +139,8 @@ export async function mount(main, { args }) {
     return { def: p, chart, specs, value };
   });
 
-  // Der Tooltip ist abgeschaltet: Sechs Tooltips gleichzeitig wären Rauschen.
-  // Stattdessen schreibt jedes Panel seinen Wert in die gemeinsame Leiste.
+  // The tooltip is switched off: six tooltips at once would be noise.
+  // Instead, every panel writes its value into the shared bar.
   function updateReadout(key, specs, info) {
     const cell = readCells.get(key);
     if (!info) { readTime.textContent = '–'; readCells.forEach(c => { c.textContent = '–'; }); return; }
@@ -165,8 +165,8 @@ export async function mount(main, { args }) {
     incidents = hist.incidents;
     const s = hist.series;
     markers = { ...buildMarkers(hist.events, hist.incidents), gaps: gapsFrom(s.ts, s.covered, hist.res) };
-    zoomInfo.textContent = `${fmtTime(hist.start)} – ${fmtTime(hist.end)} · Auflösung ${hist.res} s`
-      + (markers.gaps.length ? ` · ${markers.gaps.length} Lücke(n) ohne Messdaten` : '');
+    zoomInfo.textContent = `${fmtTime(hist.start)} – ${fmtTime(hist.end)} · resolution ${hist.res} s`
+      + (markers.gaps.length ? ` · ${markers.gaps.length} gap(s) without measurements` : '');
     panels.forEach(p => {
       p.chart.setData([s.ts, ...p.def.cols(s)]);
       p.chart.setMarkers(mk);
@@ -176,7 +176,7 @@ export async function mount(main, { args }) {
     if (heat) renderHeat(heat);
   }
 
-  /** Spitzenwert im sichtbaren Zeitraum – damit ein flaches Panel trotzdem etwas sagt. */
+  /** Peak value in the visible time span - so that a flat panel still says something. */
   function peakLabel(def, s) {
     const cols = def.cols(s);
     const vals = cols.flat().filter(v => v !== null && v !== undefined);
@@ -190,29 +190,29 @@ export async function mount(main, { args }) {
       laneCharts.forEach(c => c.destroy()); laneCharts = [];
       clear(lanesCard);
       const scaleBtn = h('button', { class: 'btn small', type: 'button' },
-        laneShared ? 'Eigene Skala je Gerät' : 'Gleiche Skala für alle');
+        laneShared ? 'Separate scale per device' : 'Same scale for all');
       scaleBtn.addEventListener('click', () => {
         laneShared = !laneShared;
         renderLanes.key = null;
         renderLanes(dev, true);
         laneCharts.forEach((c, i) => { c.setData([dev.ts, dev.devices[i].up, dev.devices[i].down]); c.setMarkers(mk); });
       });
-      lanesCard.append(h('div', { class: 'card-head' }, h('h2', null, 'Traffic pro Gerät'),
+      lanesCard.append(h('div', { class: 'card-head' }, h('h2', null, 'Traffic per device'),
         h('div', { class: 'row' }, h('span', { class: 'sub' },
-          `Top ${dev.devices.length} nach Datenmenge · Auflösung ${dev.res} s`), scaleBtn)));
+          `Top ${dev.devices.length} by data volume · resolution ${dev.res} s`), scaleBtn)));
       if (!dev.devices.length) {
-        lanesCard.append(h('div', { class: 'empty' }, dev.available ? 'Kein Traffic im Zeitraum.'
-          : `Not available – ${dev.reason || 'keine Traffic-Quelle'}. Der Pi sieht fremden Traffic nur über den `
-            + 'FRITZ!Box-Mitschnitt, Port-Mirroring oder als Gateway.'));
+        lanesCard.append(h('div', { class: 'empty' }, dev.available ? 'No traffic in this time span.'
+          : `Not available - ${dev.reason || 'no traffic source'}. The Pi only sees foreign traffic via the `
+            + 'FRITZ!Box capture, port mirroring or as the gateway.'));
         renderLanes.key = key;
         return;
       }
       lanesCard.append(h('div', { class: 'legend', style: { marginBottom: '6px' } },
-        h('span', null, h('span', { class: 'swatch', style: { background: cssVar('--text-secondary') } }), 'Upload (durchgezogen)'),
-        h('span', null, h('span', { class: 'swatch dash', style: { borderColor: cssVar('--text-secondary') } }), 'Download (gestrichelt)'),
-        laneShared ? h('span', { class: 'muted' }, 'gleiche Skala – Lanes sind direkt vergleichbar')
-          : h('span', { class: 'muted' }, 'eigene Skala je Gerät – Höhen NICHT vergleichbar')));
-      // Bei gemeinsamer Skala ist die Obergrenze der größte Wert aller Geräte.
+        h('span', null, h('span', { class: 'swatch', style: { background: cssVar('--text-secondary') } }), 'Upload (solid)'),
+        h('span', null, h('span', { class: 'swatch dash', style: { borderColor: cssVar('--text-secondary') } }), 'Download (dashed)'),
+        laneShared ? h('span', { class: 'muted' }, 'same scale - lanes are directly comparable')
+          : h('span', { class: 'muted' }, 'separate scale per device - heights are NOT comparable')));
+      // With a shared scale the upper limit is the largest value of all devices.
       const allMax = Math.max(1e6, ...dev.devices.flatMap(d => [...d.up, ...d.down])
         .filter(v => v !== null && v !== undefined));
       const lanes = h('div', { class: 'lanes' });
@@ -227,7 +227,7 @@ export async function mount(main, { args }) {
             h('span', { class: 'muted mono' }, d.ip && d.ip !== d.name ? d.ip : (d.ip ? '' : d.mac)),
             h('span', { class: 'muted' }, fmtBytes(d.total_bytes)),
             h('span', { class: 'spacer' }),
-            h('span', { class: 'muted num' }, peak > 0 ? `Spitze ${fmt.mbit(peak)}` : '')),
+            h('span', { class: 'muted num' }, peak > 0 ? `peak ${fmt.mbit(peak)}` : '')),
           body));
         laneCharts.push(timeChart(body, [
           { label: `${d.name} ↑`, color: c, fmt: fmt.mbit, fill: 0.14 },
@@ -244,11 +244,11 @@ export async function mount(main, { args }) {
 
   function renderHeat(hm) {
     clear(heatCard);
-    heatCard.append(h('div', { class: 'card-head' }, h('h2', null, 'Heatmap: Aktivität je Gerät'),
-      h('span', { class: 'sub' }, `Zeit → horizontal · Intensität = Datenmenge (${Math.round(hm.bucket_seconds)} s je Zelle)`)));
-    if (!hm.rows.length) { heatCard.append(h('div', { class: 'empty' }, 'Not available – keine Traffic-Daten im Zeitraum.')); return; }
+    heatCard.append(h('div', { class: 'card-head' }, h('h2', null, 'Heatmap: activity per device'),
+      h('span', { class: 'sub' }, `time → horizontal · intensity = data volume (${Math.round(hm.bucket_seconds)} s per cell)`)));
+    if (!hm.rows.length) { heatCard.append(h('div', { class: 'empty' }, 'Not available - no traffic data in this time span.')); return; }
     const max = Math.max(...hm.rows.flatMap(r => r.values), 1);
-    // Sequenzielle Skala (ein Farbton, hell → dunkel), logarithmisch, damit kleine Aktivität sichtbar bleibt
+    // Sequential scale (one hue, light → dark), logarithmic so that small activity stays visible
     const ramp = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'];
     const colorFor = v => v <= 0 ? 'var(--surface-2)' : ramp[Math.min(ramp.length - 1, Math.floor(Math.log1p(v) / Math.log1p(max) * ramp.length))];
     const wrap = h('div', { class: 'heatmap' });
@@ -256,12 +256,12 @@ export async function mount(main, { args }) {
       const cells = h('div', { class: 'hm-cells', style: { gridTemplateColumns: `repeat(${hm.cols}, 1fr)` } });
       r.values.forEach((v, i) => {
         const t0 = new Date((hm.start + i * hm.bucket_seconds) * 1000);
-        cells.append(h('i', { style: { background: colorFor(v) }, title: `${r.name} · ${t0.toLocaleTimeString()} · ${fmtBytes(v)}` }));
+        cells.append(h('i', { style: { background: colorFor(v) }, title: `${r.name} · ${t0.toLocaleTimeString('en-GB')} · ${fmtBytes(v)}` }));
       });
       wrap.append(h('div', { class: 'hm-row' }, h('span', { class: 'n' }, r.name), cells));
     }
-    const scale = h('div', { class: 'row small muted', style: { marginTop: '8px' } }, 'wenig',
-      ...ramp.map(c => h('i', { style: { display: 'inline-block', width: '18px', height: '10px', background: c, borderRadius: '2px' } })), 'viel');
+    const scale = h('div', { class: 'row small muted', style: { marginTop: '8px' } }, 'little',
+      ...ramp.map(c => h('i', { style: { display: 'inline-block', width: '18px', height: '10px', background: c, borderRadius: '2px' } })), 'a lot');
     heatCard.append(wrap, scale);
   }
 

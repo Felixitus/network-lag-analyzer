@@ -158,8 +158,8 @@ class LiveSimulator:
         core = self.core
         core.link_capacity = (CAP_DOWN, CAP_UP)
         core.capture_status = {"state": "running", "source": "simulated", "pps": 0, "lag_s": 0, "level": 0}
-        core.fritz_status = {"enabled": False, "note": "Dev-Modus"}
-        core.pihole_status = {"enabled": False, "note": "Dev-Modus"}
+        core.fritz_status = {"enabled": False, "note": "dev mode"}
+        core.pihole_status = {"enabled": False, "note": "dev mode"}
         core.hub.dns_primary = "127.0.0.1"
         gw = [tid for tid, t in core.targets.items() if t["kind"] == "gateway"]
         inet = [tid for tid, t in core.targets.items() if t["kind"] == "internet"]

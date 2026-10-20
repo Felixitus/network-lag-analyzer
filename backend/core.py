@@ -164,7 +164,7 @@ class Core:
         now = time.time()
         if self.gaming:
             await self.stop_gaming()
-        self._drain_analysis(now + 3600)          # Warteschlange leeren
+        self._drain_analysis(now + 3600)          # drain the queue
         self.events.close_all(self.hub.last_finalized or now)
         self.correlator.flush(now)
         for t in self.tasks:
@@ -663,7 +663,7 @@ class Core:
                 inc.confidence, json.dumps(inc.analysis, default=str), inc.session_id, int(protected))
 
     def _incident_opened(self, inc: Incident) -> None:
-        inc.title = "Laufender Incident"
+        inc.title = "Ongoing incident"
         self.db.enqueue(self.INCIDENT_SQL, self._incident_params(inc))
         self._remember_incident(inc)
         self.broadcaster.publish("incident", inc.to_dict() | {"state": "open"})
@@ -763,7 +763,7 @@ class Core:
                        ts_end=end, reported_at=reported, cause=result["cause"], category=result["category"],
                        confidence=result["confidence"], analysis=result,
                        session_id=self.gaming.id if self.gaming else None)
-        inc.title = "Lag gemeldet"
+        inc.title = "Lag reported"
         protected = False
         if self.cfg.deep_capture.enabled and self.capture_proc is not None:
             self.capture_command("protect", reported - 300, reported, inc.id)

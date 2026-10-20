@@ -8,7 +8,7 @@ CAP_DOWN, CAP_UP = 100e6, 20e6
 
 
 def rows(specs):
-    """specs: [(anzahl, rtt, down_bps, up_bps)] → Sekundenzeilen."""
+    """specs: [(count, rtt, down_bps, up_bps)] → per-second rows."""
     out, ts = [], 1_700_000_000
     for n, rtt, down, up in specs:
         for _ in range(n):
@@ -93,7 +93,7 @@ def test_bucket_row_is_skipped_without_load():
     assert bb.aggregate([])["up"] is None
 
 
-# ------------------------------------------------------------------ Empfehlungen
+# ------------------------------------------------------------------ recommendations
 def _window(**kw):
     kw.setdefault("rows", [])
     kw.setdefault("t0", 0)

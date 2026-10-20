@@ -1,4 +1,4 @@
-"""FRITZ!Box-Login, Datenbank-Aggregation/Retention, Konfiguration, Sicherheit, Lag-Report."""
+"""FRITZ!Box login, database aggregation/retention, configuration, security, lag report."""
 import time
 
 import pytest
@@ -135,7 +135,7 @@ def test_daily_stats_summarize_a_day():
     assert 15.0 <= r["rtt_p50"] <= 55.0 and r["rtt_p95"] >= r["rtt_p50"]
     assert r["rtt_max"] == 60.0
     assert round(r["loss_pct"], 2) == round(100 * 20 / 960, 2)
-    assert r["outage_secs"] == 5                       # Sekunden, in denen alles verloren ging
+    assert r["outage_secs"] == 5                       # seconds in which everything was lost
     assert r["down_peak"] == 5e6
     # A second run writes nothing twice
     assert db.write_sync(lambda c: daily.write_missing(c, time.time())) == []
@@ -237,7 +237,7 @@ def test_config_alias_does_not_overwrite_new_key():
     assert data["retention"]["raw_days"] == 5
 
 
-# ------------------------------------------------------- DNS-Proben
+# ------------------------------------------------------- DNS probes
 def test_dns_prober_alternates_cached_and_uncached():
     from backend.collectors.dns import DnsProber
     p = DnsProber(["1.1.1.1"], "example.com", 5.0, 2.0, lambda *a: None, pihole_present=False,

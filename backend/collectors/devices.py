@@ -57,7 +57,7 @@ class Device:
     def to_dict(self) -> dict:
         return {
             "mac": self.mac, "ip": self.ip, "hostname": self.hostname, "custom_name": self.custom_name,
-            "name": self.display_name, "vendor": self.vendor or ("Private MAC (randomisiert)" if is_randomized_mac(self.mac) else None),
+            "name": self.display_name, "vendor": self.vendor or ("Private MAC (randomized)" if is_randomized_mac(self.mac) else None),
             "interface": self.interface, "sources": sorted(self.sources), "first_seen": self.first_seen,
             "last_seen": self.last_seen, "active": self.active,
         }

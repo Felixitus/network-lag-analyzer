@@ -150,7 +150,7 @@ class PcapRing:
         """Enforce both limits. The file currently being written always stays."""
         while len(self.files) > self.max_files:
             old = self.files.popleft()
-            if old is self.cur:                               # pragma: no cover - Ring zu klein
+            if old is self.cur:                               # pragma: no cover - ring too small
                 self.files.appendleft(old)
                 break
             self._delete(old)

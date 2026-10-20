@@ -1,4 +1,4 @@
-/* Network Lag Analyzer – Farben nach Rollen (Referenzpalette, hell + dunkel validiert) */
+/* Network Lag Analyzer - colors by role (reference palette, validated for light + dark) */
 :root {
   color-scheme: light;
   --page: #f4f4f1;
@@ -146,7 +146,7 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.danger { color: var(--critical-ink); border-color: var(--critical-wash); }
 .btn.danger:hover:not([disabled]) { background: var(--critical-wash); }
-/* Datenbank-Bereich in den Einstellungen */
+/* Database section in the settings */
 .meter { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .meter-fill { height: 100%; background: var(--good); border-radius: 999px; transition: width .3s; }
 .meter-fill.warning { background: var(--warning); }
@@ -185,8 +185,8 @@ input:focus, select:focus, button:focus-visible, a:focus-visible { outline: 2px 
 .tt .t { color: var(--text-secondary); margin-bottom: 3px; font-weight: 600; }
 .tt .r { display: flex; align-items: center; gap: 7px; }
 .tt .r b { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
-/* Lanes: Label über dem Chart, damit alle Plots dieselbe Breite haben wie die Charts darüber */
-/* Gestapelte Panels der Timeline: eine Zeitachse ganz unten, alles darüber bündig */
+/* Lanes: label above the chart so that all plots have the same width as the charts above */
+/* Stacked timeline panels: one time axis at the very bottom, everything above flush */
 .panel-stack { display: flex; flex-direction: column; }
 .panel + .panel { border-top: 1px solid var(--border); }
 .panel-head { display: flex; align-items: baseline; gap: 10px; padding: 7px 0 2px; font-size: 12px; }
@@ -196,7 +196,7 @@ input:focus, select:focus, button:focus-visible, a:focus-visible { outline: 2px 
 .p-toggle { border: 0; background: none; color: var(--text-muted); cursor: pointer; font-size: 11px;
   padding: 0 2px; line-height: 1; }
 .p-toggle:hover { color: var(--text-primary); }
-/* Ableseleiste: alle Werte am Cursor auf einen Blick, statt sechs Tooltips */
+/* Readout bar: all values at the cursor at a glance, instead of six tooltips */
 .readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; padding: 8px 10px;
   background: var(--surface-2); border-radius: 8px; font-size: 12px; margin-bottom: 4px; }
 .readout .read-label { font-weight: 650; }
@@ -257,7 +257,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cause .c { font-size: 20px; font-weight: 650; margin: 4px 0 8px; }
 .evidence { margin: 0; padding-left: 20px; }
 .evidence li { margin: 4px 0; }
-/* Handlungsempfehlung */
+/* Recommendation */
 .reco { border-radius: 10px; background: var(--surface-2); padding: 12px 14px; }
 .reco h3 { margin: 0; }
 .reco .reco-head { font-weight: 650; margin: 6px 0 8px; }

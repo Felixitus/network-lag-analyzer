@@ -1,13 +1,13 @@
-# Network Lag Analyzer – Konfiguration
-# Datei: /etc/network-lag-analyzer/config.yaml
-# Fast alle Werte lassen sich auch in der Weboberfläche (Setup) ändern; diese
-# Änderungen werden in der Datenbank gespeichert und haben Vorrang vor dieser Datei.
+# Network Lag Analyzer - configuration
+# File: /etc/network-lag-analyzer/config.yaml
+# Almost every value can also be changed in the web UI (Setup); those changes
+# are stored in the database and take precedence over this file.
 
 server:
-  host: 0.0.0.0        # nur im LAN erreichbar machen (Router gibt Port nicht frei)
-  port: 8088           # Pi-hole belegt 80/443
+  host: 0.0.0.0        # reachable on the LAN only (do not forward the port in the router)
+  port: 8088           # Pi-hole uses 80/443
 
-gateway: auto          # oder z. B. 192.168.178.1
+gateway: auto          # or e.g. 192.168.178.1
 
 targets:
   - address: 1.1.1.1
@@ -18,12 +18,12 @@ targets:
     name: Quad9
 
 probe:
-  interval: 1.0          # Sekunden zwischen Pings je Ziel
-  gaming_interval: 0.25  # im Gaming Mode
-  timeout: 1.5           # später = verloren
+  interval: 1.0          # seconds between pings per target
+  gaming_interval: 0.25  # in Gaming Mode
+  timeout: 1.5           # later = lost
 
 gaming_pc:
-  ip: null               # z. B. 192.168.178.20 (oder in der Geräteliste markieren)
+  ip: null               # e.g. 192.168.178.20 (or mark it in the device list)
 
 gaming:
   auto_detect: true
@@ -37,14 +37,14 @@ thresholds:
   high_upload_pct: 70
   high_download_pct: 80
 
-capacity:              # gebuchte Leitung in Mbit/s; "auto" = Linkrate der FRITZ!Box
+capacity:              # booked line in Mbit/s; "auto" = link rate of the FRITZ!Box
   down_mbit: auto
   up_mbit: auto
 
 fritzbox:
-  enabled: false       # auf true setzen und Zugangsdaten eintragen
+  enabled: false       # set to true and enter the credentials
   host: auto
-  username: ""         # eigener Benutzer mit Recht "FRITZ!Box Einstellungen"
+  username: ""         # a dedicated user with the "FRITZ!Box Settings" permission
   password: ""
   capture_enabled: true
   capture_interface: 1-lan
@@ -58,47 +58,47 @@ pihole:
   enabled: true
   ftl_db: /etc/pihole/pihole-FTL.db
 
-# Namensauflösung: zwei Proben mit unterschiedlicher Aussage.
+# Name resolution: two probes that tell different things.
 dns_probe:
   enabled: true
   interval: 5.0
-  # Gecacht – misst nur, ob der eigene Resolver (Pi-hole) noch reagiert.
+  # Cached - only measures whether your own resolver (Pi-hole) still responds.
   query_name: example.com
-  # Ungecacht – zufälliger Name unter dieser Endung, erzwingt den vollen Weg zum
-  # Upstream. ".invalid" ist dafür reserviert (RFC 2606); die Antwort NXDOMAIN
-  # zählt als Erfolg. Leer lassen schaltet die zweite Probe ab.
+  # Uncached - a random name under this suffix forces the full path to the
+  # upstream. ".invalid" is reserved for this (RFC 2606); the NXDOMAIN answer
+  # counts as success. Leaving it empty disables the second probe.
   uncached_suffix: nla-probe.invalid
   servers: [local, 1.1.1.1]
 
 retention:
-  raw_days: 1          # 1-s-Werte
-  detailed_days: 7     # 10-s-Aggregate
-  aggregate_days: 30   # 1-min-Aggregate
+  raw_days: 1          # 1 s values
+  detailed_days: 7     # 10 s aggregates
+  aggregate_days: 30   # 1 min aggregates
   flow_days: 7
   event_days: 90
-  # Einzelne Pings: rund 14 MB je Tag, die keine Auswertung liest.
-  # Nur für die Fehlersuche einschalten.
+  # Individual pings: about 14 MB per day that no evaluation reads.
+  # Only enable for troubleshooting.
   ping_samples: false
-  # Notbremse gegen eine volle Speicherkarte. Wird die Grenze überschritten,
-  # werden zuerst Rohdaten, dann 1-s-Werte, dann 10-s-Werte gelöscht. 0 = keine Grenze.
+  # Emergency brake against a full memory card. If the limit is exceeded, raw
+  # data is deleted first, then 1 s values, then 10 s values. 0 = no limit.
   max_db_mb: 1024
-# Die Tages-Zusammenfassung (daily_stats) ist von der Aufbewahrung ausgenommen:
-# rund 200 Byte je Tag, dafür bleibt der Langzeitvergleich über Jahre möglich.
+# The daily summary (daily_stats) is exempt from retention:
+# about 200 bytes per day, and in return the long-term comparison stays possible for years.
 
 deep_capture:
-  enabled: false       # PCAP-Ringpuffer (nur Header), standardmäßig aus
-  max_files: 5         # laufende Dateien im Ring
-  file_size_mb: 50     # Größe je Datei
-  # WICHTIG: max_files × file_size_mb begrenzt nur den laufenden Ring. Dateien, die
-  # zu einem Incident gehören, werden aus dem Ring genommen, damit sie nicht
-  # überschrieben werden – ohne die folgenden Grenzen wächst das Verzeichnis mit der
-  # Zahl der Incidents weiter. max_total_mb ist die Obergrenze für ALLES zusammen.
-  max_total_mb: 1024   # harte Grenze für das gesamte pcap-Verzeichnis
-  protected_days: 7    # so lange werden Incident-Mitschnitte höchstens aufgehoben
-  # Wofür überhaupt ein Mitschnitt festgehalten wird:
-  #   none     nur bei gemeldetem Lag ("ICH HATTE GERADE LAG")
-  #   critical zusätzlich bei kritischen Incidents   (Standard)
-  #   all      bei jedem Incident – kann je nach Häufigkeit sehr viel Platz kosten
+  enabled: false       # PCAP ring buffer (headers only), off by default
+  max_files: 5         # running files in the ring
+  file_size_mb: 50     # size per file
+  # IMPORTANT: max_files × file_size_mb only limits the running ring. Files that
+  # belong to an incident are taken out of the ring so that they are not
+  # overwritten - without the following limits the directory keeps growing with
+  # the number of incidents. max_total_mb is the upper limit for EVERYTHING together.
+  max_total_mb: 1024   # hard limit for the whole pcap directory
+  protected_days: 7    # incident captures are kept at most this long
+  # For what a capture is kept at all:
+  #   none     only for reported lag ("I JUST HAD LAG")
+  #   critical additionally for critical incidents   (default)
+  #   all      for every incident - can cost a lot of space depending on frequency
   protect_auto: critical
 
-dev_mode: false        # true = simulierte Demo-Daten (niemals produktiv)
+dev_mode: false        # true = simulated demo data (never in production)

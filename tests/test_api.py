@@ -40,7 +40,7 @@ def test_security_headers_and_csrf(client):
     assert r.headers["x-frame-options"] == "DENY"
     assert "default-src 'self'" in r.headers["content-security-policy"]
     assert client.post("/api/gaming/start", json={}).status_code == 403
-    assert client.post("/api/gaming/start", json={}, headers={"X-CSRF-Token": "falsch"}).status_code == 403
+    assert client.post("/api/gaming/start", json={}, headers={"X-CSRF-Token": "wrong"}).status_code == 403
 
 
 def test_lag_report_creates_incident(client):
@@ -109,7 +109,7 @@ def test_bufferbloat_window_is_persisted_and_shows_up_in_the_long_range(client):
     ts = (int(time.time()) - bb.BUCKET) // bb.BUCKET * bb.BUCKET
     cd, cu, _ = core.capacity_info()
     core.hub.ring.clear()
-    for i in range(30):                                  # ruhig
+    for i in range(30):                                  # quiet
         core.hub.ring.append({"ts": ts + i, "rtt_avg": 20.0, "down_bps": 1e6, "up_bps": 0.1e6})
     for i in range(30, 60):                              # download maxed out
         core.hub.ring.append({"ts": ts + i, "rtt_avg": 150.0, "down_bps": cd * 0.95, "up_bps": 0.2e6})

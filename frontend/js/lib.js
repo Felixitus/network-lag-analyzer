@@ -1,6 +1,6 @@
-// Hilfsfunktionen: DOM (XSS-sicher), Formatierung, API, Farben.
+// Helpers: DOM (XSS-safe), formatting, API, colors.
 
-/** Element erzeugen. Kinder: Strings werden IMMER als Text eingefügt (Hostnamen sind nicht vertrauenswürdig). */
+/** Create an element. Children: strings are ALWAYS inserted as text (host names are not trustworthy). */
 export function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
   if (attrs) {
@@ -26,7 +26,7 @@ function append(el, children) {
 }
 export function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
 
-// ------------------------------------------------------------------ Formatierung
+// ------------------------------------------------------------------ formatting
 export const NA = 'Not available';
 export function fmtMs(v, d = 0) { return v === null || v === undefined ? null : (v >= 100 ? v.toFixed(0) : v.toFixed(d || (v < 10 ? 1 : 0))); }
 export function fmtMbit(bps) {
@@ -51,7 +51,7 @@ export function fmtTime(ts, sec = true) {
 export function fmtDate(ts) {
   if (!ts) return '–';
   const d = new Date(ts * 1000);
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 export function fmtDateTime(ts) { return `${fmtDate(ts)} ${fmtTime(ts)}`; }
 export function fmtDuration(s) {
@@ -62,9 +62,9 @@ export function fmtDuration(s) {
 }
 export function ago(ts) {
   const s = Date.now() / 1000 - ts;
-  if (s < 60) return 'gerade eben';
-  if (s < 3600) return `vor ${Math.round(s / 60)} min`;
-  if (s < 86400) return `vor ${Math.round(s / 3600)} h`;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   return fmtDateTime(ts);
 }
 
@@ -94,11 +94,11 @@ export function toast(msg, ms = 3000) {
   clearTimeout(toast._t); toast._t = setTimeout(() => { t.style.display = 'none'; }, ms);
 }
 
-// ------------------------------------------------------------------ Farben
+// ------------------------------------------------------------------ colors
 export function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 export const SERIES = n => cssVar(`--series-${n}`);
 
-/** Farbe folgt dem Gerät (nicht dem Rang): stabile Slot-Zuordnung pro MAC, im Browser gemerkt. */
+/** Color follows the device (not the rank): stable slot assignment per MAC, remembered in the browser. */
 const SLOT_KEY = 'nla-device-slots';
 let slots = {};
 try { slots = JSON.parse(localStorage.getItem(SLOT_KEY) || '{}'); } catch { slots = {}; }
@@ -108,7 +108,7 @@ export function deviceSlot(mac) {
     let s = 1; while (used.has(s) && s < 8) s++;
     if (used.has(s)) s = (Object.keys(slots).length % 8) + 1;
     slots[mac] = s;
-    try { localStorage.setItem(SLOT_KEY, JSON.stringify(slots)); } catch { /* privat */ }
+    try { localStorage.setItem(SLOT_KEY, JSON.stringify(slots)); } catch { /* private mode */ }
   }
   return slots[mac];
 }
@@ -122,11 +122,11 @@ export function levelFor(value, warn, crit) {
 }
 
 export const EVENT_LABEL = {
-  PING_SPIKE: 'Ping-Spike', PACKET_LOSS: 'Packet Loss', HIGH_JITTER: 'Hoher Jitter', HIGH_UPLOAD: 'Hoher Upload',
-  HIGH_DOWNLOAD: 'Hoher Download', TCP_RETRANSMISSION_SPIKE: 'TCP-Retransmissions', CONNECTION_DROP: 'Verbindungsabbruch',
-  DNS_FAILURE: 'DNS-Ausfall', GATEWAY_LATENCY: 'Router-Latenz', INTERNET_LATENCY: 'Internet-Latenz', GAME_FLOW_GAP: 'Game-Paketlücke',
+  PING_SPIKE: 'Ping spike', PACKET_LOSS: 'Packet loss', HIGH_JITTER: 'High jitter', HIGH_UPLOAD: 'High upload',
+  HIGH_DOWNLOAD: 'High download', TCP_RETRANSMISSION_SPIKE: 'TCP retransmissions', CONNECTION_DROP: 'Connection drop',
+  DNS_FAILURE: 'DNS failure', GATEWAY_LATENCY: 'Router latency', INTERNET_LATENCY: 'Internet latency', GAME_FLOW_GAP: 'Game packet gap',
 };
-export const CONF_LABEL = { high: 'wahrscheinlicher Verursacher', medium: 'möglicher Verursacher', low: 'zeitlich korreliert' };
+export const CONF_LABEL = { high: 'likely cause', medium: 'possible cause', low: 'temporally correlated' };
 export const CONF_SHORT = { high: 'High', medium: 'Medium', low: 'Low' };
 
 export function confBadge(conf) {
@@ -135,6 +135,6 @@ export function confBadge(conf) {
 }
 export function statusIcon(ok) {
   return ok === true ? h('span', { class: 'ic ok', 'aria-label': 'ok' }, '✓')
-    : ok === false ? h('span', { class: 'ic bad', 'aria-label': 'nicht verfügbar' }, '✗')
-      : h('span', { class: 'ic unk', 'aria-label': 'unbekannt' }, '?');
+    : ok === false ? h('span', { class: 'ic bad', 'aria-label': 'not available' }, '✗')
+      : h('span', { class: 'ic unk', 'aria-label': 'unknown' }, '?');
 }

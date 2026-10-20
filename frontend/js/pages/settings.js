@@ -1,4 +1,4 @@
-// Setup-Wizard und Einstellungen.
+// Setup wizard and settings.
 import { api, clear, fmtBytes, fmtDateTime, h, statusIcon, toast } from '../lib.js';
 import { segmented } from './common.js';
 
@@ -9,7 +9,7 @@ function setPath(obj, path, v) {
   o[ks[ks.length - 1]] = v;
 }
 
-/** Formular aus Felddefinitionen; liefert {el, patch()} */
+/** Form from field definitions; returns {el, patch()} */
 function form(cfg, fields) {
   const inputs = [];
   const grid = h('div', { class: 'form-grid' });
@@ -51,23 +51,23 @@ function form(cfg, fields) {
 }
 
 function section(title, sub, fieldsForm, extra) {
-  const save = h('button', { class: 'btn primary', type: 'button' }, 'Speichern');
+  const save = h('button', { class: 'btn primary', type: 'button' }, 'Save');
   save.addEventListener('click', async () => {
     save.disabled = true;
     try {
       const r = await api('api/settings', { method: 'PUT', body: fieldsForm.patch() });
-      toast(r.restarted ? 'Gespeichert – Datenquellen neu gestartet' : 'Gespeichert');
-    } catch (e) { toast(`Fehler: ${e.message}`, 6000); }
+      toast(r.restarted ? 'Saved - data sources restarted' : 'Saved');
+    } catch (e) { toast(`Error: ${e.message}`, 6000); }
     save.disabled = false;
   });
   return h('div', { class: 'card stack' }, h('div', null, h('h3', null, title), sub ? h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, sub) : null),
     fieldsForm.el, h('div', { class: 'row' }, save, extra || null));
 }
 
-// ---------------------------------------------------------------- Datenbank
-// Kleine Tabellen, die man selten löschen will, sind vorab abgewählt: Events,
-// Incidents und die Bufferbloat-Fenster kosten fast keinen Platz, sind aber das
-// Gedächtnis der Software.
+// ---------------------------------------------------------------- database
+// Small tables that you rarely want to delete are unchecked by default: events,
+// incidents and the bufferbloat windows cost almost no space, but they are the
+// software's memory.
 const SMALL_TABLES = new Set(['events', 'incidents', 'bufferbloat', 'gaming_sessions']);
 const DAY = 86400;
 
@@ -79,10 +79,10 @@ function dayStart(iso) { return new Date(`${iso}T00:00:00`).getTime() / 1000; }
 
 function databaseCard() {
   const card = h('div', { class: 'card stack' });
-  const body = h('div', null, h('div', { class: 'skeleton' }, 'Lese Größe der Datenbank …'));
-  card.append(h('div', null, h('h3', null, 'Datenbank'),
+  const body = h('div', null, h('div', { class: 'skeleton' }, 'Reading database size …'));
+  card.append(h('div', null, h('h3', null, 'Database'),
     h('p', { class: 'small muted', style: { margin: '4px 0 0' } },
-      'Platzverbrauch und gezieltes Löschen nach Datum – falls die Speicherkarte eng wird.')), body);
+      'Space usage and targeted deletion by date - in case the memory card gets tight.')), body);
   load();
 
   async function load() {
@@ -92,58 +92,58 @@ function databaseCard() {
     body.append(sizeRow(d), pcapRow(d), tableList(d), deleteForm(d), maintenanceRow(d));
   }
 
-  // PCAP-Dateien liegen neben der Datenbank und waren bisher nirgends sichtbar –
-  // genau deshalb konnten sie unbemerkt auf zweistellige Gigabyte wachsen.
+  // PCAP files live next to the database and used to be visible nowhere -
+  // that is exactly why they could grow to tens of gigabytes unnoticed.
   function pcapRow(d) {
     const p = d.pcap || {};
     const limit = p.limit_bytes || 0;
     const pct = limit ? Math.min(100, Math.round(p.bytes / limit * 100)) : 0;
-    const clean = h('button', { class: 'btn small', type: 'button' }, 'Jetzt aufräumen');
+    const clean = h('button', { class: 'btn small', type: 'button' }, 'Clean up now');
     clean.addEventListener('click', async () => {
-      clean.disabled = true; const t = clean.textContent; clean.textContent = 'Räumt auf …';
+      clean.disabled = true; const t = clean.textContent; clean.textContent = 'Cleaning up …';
       try {
         const r = await api('api/database/pcap-cleanup', { method: 'POST' });
-        toast(r.freed_bytes > 0 ? `${fmtBytes(r.freed_bytes)} freigegeben` : 'Nichts aufzuräumen', 5000);
+        toast(r.freed_bytes > 0 ? `${fmtBytes(r.freed_bytes)} freed` : 'Nothing to clean up', 5000);
         load();
       } catch (e) { toast(e.message, 6000); }
       clean.textContent = t; clean.disabled = false;
     });
     return h('div', { class: 'stack', style: { marginTop: '16px' } },
-      h('div', { class: 'row' }, h('h4', { style: { margin: 0 } }, 'Deep Capture (PCAP-Dateien)'),
-        h('span', { class: `badge ${p.enabled ? 'warning' : ''}` }, p.enabled ? 'aktiv' : 'aus'),
+      h('div', { class: 'row' }, h('h4', { style: { margin: 0 } }, 'Deep Capture (PCAP files)'),
+        h('span', { class: `badge ${p.enabled ? 'warning' : ''}` }, p.enabled ? 'active' : 'off'),
         h('span', { class: 'spacer' }), clean),
       h('div', { class: 'row small' },
         h('b', null, fmtBytes(p.bytes || 0)),
-        h('span', { class: 'muted' }, `in ${p.files || 0} Datei(en) · Grenze ${fmtBytes(limit)}`)),
+        h('span', { class: 'muted' }, `in ${p.files || 0} file(s) · limit ${fmtBytes(limit)}`)),
       limit ? h('div', { class: 'meter' }, h('div', {
         class: `meter-fill ${pct >= 90 ? 'critical' : pct >= 70 ? 'warning' : ''}`,
         style: { width: `${pct}%` },
       })) : null,
       h('div', { class: 'small muted' },
-        'Die Mitschnitte zählen NICHT zur Datenbankgröße oben. Incident-Mitschnitte werden '
-        + `${d.deep_capture ? d.deep_capture.protected_days : 7} Tage aufgehoben; `
-        + 'darüber hinaus gilt die Gesamtgrenze, die älteste Mitschnitte verdrängt.'));
+        'The captures do NOT count towards the database size above. Incident captures are kept for '
+        + `${d.deep_capture ? d.deep_capture.protected_days : 7} days; `
+        + 'beyond that the total limit applies, which pushes out the oldest captures.'));
   }
 
   function sizeRow(d) {
     const pct = d.limit_mb ? Math.min(100, Math.round(d.size.used / (d.limit_mb * 1e6) * 100)) : null;
     return h('div', { class: 'stack', style: { marginTop: '12px' } },
       h('div', { class: 'facts' },
-        fact('Datei', fmtBytes(d.size.file)),
-        fact('Belegt', fmtBytes(d.size.used)),
-        fact('Frei in der Datei', fmtBytes(d.size.free)),
-        fact('Frei auf dem Datenträger', d.free_disk == null ? 'Not available' : fmtBytes(d.free_disk)),
-        fact('Ältester Datenpunkt', d.oldest ? fmtDateTime(d.oldest) : 'Not available')),
-      pct == null ? h('div', { class: 'small muted' }, 'Keine Größengrenze gesetzt.')
+        fact('File', fmtBytes(d.size.file)),
+        fact('Used', fmtBytes(d.size.used)),
+        fact('Free in the file', fmtBytes(d.size.free)),
+        fact('Free on disk', d.free_disk == null ? 'Not available' : fmtBytes(d.free_disk)),
+        fact('Oldest data point', d.oldest ? fmtDateTime(d.oldest) : 'Not available')),
+      pct == null ? h('div', { class: 'small muted' }, 'No size limit set.')
         : h('div', null,
           h('div', { class: 'meter' }, h('div', {
             class: `meter-fill ${pct >= 90 ? 'critical' : pct >= 70 ? 'warning' : ''}`,
             style: { width: `${pct}%` },
           })),
-          h('div', { class: 'small muted' }, `${pct} % der Grenze von ${d.limit_mb} MB`)),
+          h('div', { class: 'small muted' }, `${pct} % of the ${d.limit_mb} MB limit`)),
       d.guard && d.guard.acted
-        ? h('div', { class: 'banner warn' }, h('b', null, 'Automatisch aufgeräumt'),
-          h('span', null, `Die Grenze war überschritten; gelöscht wurden ${
+        ? h('div', { class: 'banner warn' }, h('b', null, 'Cleaned up automatically'),
+          h('span', null, `The limit was exceeded; deleted: ${
             Object.entries(d.guard.deleted).map(([k, v]) => `${k}: ${v}`).join(', ')}.`))
         : null);
   }
@@ -155,17 +155,17 @@ function databaseCard() {
   function tableList(d) {
     const rows = d.tables.map(t => h('tr', null,
       h('td', null, h('div', null, t.label), h('div', { class: 'small mono muted' }, t.table)),
-      h('td', { class: 'num' }, t.rows.toLocaleString('de-DE')),
+      h('td', { class: 'num' }, t.rows.toLocaleString('en-GB')),
       h('td', { class: 'num' }, t.bytes == null ? '–' : fmtBytes(t.bytes))));
     return h('details', { style: { marginTop: '12px' } },
-      h('summary', { style: { cursor: 'pointer', fontWeight: 600 } }, 'Platz je Tabelle'),
+      h('summary', { style: { cursor: 'pointer', fontWeight: 600 } }, 'Space per table'),
       h('div', { class: 'table-wrap' }, h('table', { class: 'tbl small' },
-        h('thead', null, h('tr', null, h('th', null, 'Tabelle'), h('th', { class: 'num' }, 'Zeilen'),
-          h('th', { class: 'num' }, 'Platz'))),
+        h('thead', null, h('tr', null, h('th', null, 'Table'), h('th', { class: 'num' }, 'Rows'),
+          h('th', { class: 'num' }, 'Space'))),
         h('tbody', null, ...rows))),
       h('div', { class: 'small muted', style: { marginTop: '6px' } },
-        `Nie gelöscht werden: ${d.protected.join(', ')} – darin stehen Gerätenamen, Ziele, `
-        + 'Einstellungen und die Tages-Zusammenfassung.'));
+        `Never deleted: ${d.protected.join(', ')} - they hold device names, targets, `
+        + 'settings and the daily summary.'));
   }
 
   function deleteForm(d) {
@@ -175,29 +175,29 @@ function databaseCard() {
     const before = h('input', { type: 'date', value: isoDay(Date.now() / 1000 - 30 * DAY), min: oldest, max: today });
     const from = h('input', { type: 'date', value: oldest, min: oldest, max: today });
     const to = h('input', { type: 'date', value: today, min: oldest, max: today });
-    // Das Datumsfeld zeigt je nach Browser-Sprache ein anderes Format. Die Zeile
-    // darunter sagt deshalb im Klartext, welcher Zeitpunkt gemeint ist.
+    // The date field shows a different format depending on the browser language. The line
+    // below therefore says in plain words which point in time is meant.
     const resolved = h('div', { class: 'small muted' });
     const updateResolved = () => {
       const b = bounds();
       resolved.textContent = mode === 'before'
-        ? `Gelöscht wird alles vor ${fmtDateTime(b.end)}.`
-        : (b.start >= b.end ? 'Das Startdatum muss vor dem Enddatum liegen.'
-          : `Gelöscht wird von ${fmtDateTime(b.start)} bis ${fmtDateTime(b.end)}.`);
+        ? `Everything before ${fmtDateTime(b.end)} will be deleted.`
+        : (b.start >= b.end ? 'The start date must be before the end date.'
+          : `Data from ${fmtDateTime(b.start)} to ${fmtDateTime(b.end)} will be deleted.`);
     };
-    const beforeBox = h('div', { class: 'row' }, h('label', null, 'Alles vor dem'), before);
+    const beforeBox = h('div', { class: 'row' }, h('label', null, 'Everything before'), before);
     const rangeBox = h('div', { class: 'row', style: { display: 'none' } },
-      h('label', null, 'Von'), from, h('label', null, 'bis (ausschließlich)'), to);
-    // Nach Namen sortiert, damit die Kästchen nach jedem Neuladen an derselben
-    // Stelle stehen – die Tabellenliste oben ist dagegen nach Größe sortiert.
-    const boxes = [...d.tables].sort((a, b) => a.label.localeCompare(b.label, 'de')).map(t => {
+      h('label', null, 'From'), from, h('label', null, 'to (exclusive)'), to);
+    // Sorted by name so that the checkboxes stay in the same place after every
+    // reload - the table list above, in contrast, is sorted by size.
+    const boxes = [...d.tables].sort((a, b) => a.label.localeCompare(b.label, 'en')).map(t => {
       const cb = h('input', { type: 'checkbox', checked: !SMALL_TABLES.has(t.table) });
       return { table: t.table, cb, el: h('label', { class: 'check' }, cb, t.label) };
     });
 
     const out = h('div', { class: 'small' });
-    const preview = h('button', { class: 'btn', type: 'button' }, 'Vorschau');
-    const del = h('button', { class: 'btn danger', type: 'button', disabled: true }, 'Löschen');
+    const preview = h('button', { class: 'btn', type: 'button' }, 'Preview');
+    const del = h('button', { class: 'btn danger', type: 'button', disabled: true }, 'Delete');
     let pending = null;
 
     function bounds() {
@@ -208,18 +208,18 @@ function databaseCard() {
 
     preview.addEventListener('click', async () => {
       const tables = selected();
-      if (!tables.length) { out.textContent = 'Keine Tabelle ausgewählt.'; return; }
+      if (!tables.length) { out.textContent = 'No table selected.'; return; }
       const b = bounds();
-      if (b.start != null && b.start >= b.end) { out.textContent = 'Das Startdatum liegt nicht vor dem Enddatum.'; return; }
+      if (b.start != null && b.start >= b.end) { out.textContent = 'The start date is not before the end date.'; return; }
       preview.disabled = true;
       try {
-        const r = await api('api/database/preview', { method: 'POST', body: { ...b, tables, confirm: 'VORSCHAU' } });
+        const r = await api('api/database/preview', { method: 'POST', body: { ...b, tables, confirm: 'PREVIEW' } });
         const lines = Object.entries(r.counts).filter(([, n]) => n > 0)
-          .map(([t, n]) => `${t}: ${n.toLocaleString('de-DE')}`);
+          .map(([t, n]) => `${t}: ${n.toLocaleString('en-GB')}`);
         clear(out).append(
-          h('div', null, h('b', null, `${r.total.toLocaleString('de-DE')} Zeilen`),
-            ' würden gelöscht', lines.length ? ` (${lines.join(', ')})` : ''),
-          r.total ? h('div', { class: 'muted' }, 'Das lässt sich nicht rückgängig machen.') : null);
+          h('div', null, h('b', null, `${r.total.toLocaleString('en-GB')} rows`),
+            ' would be deleted', lines.length ? ` (${lines.join(', ')})` : ''),
+          r.total ? h('div', { class: 'muted' }, 'This cannot be undone.') : null);
         pending = r.total ? { ...b, tables } : null;
         del.disabled = !pending;
       } catch (e) { out.textContent = e.message; }
@@ -228,27 +228,27 @@ function databaseCard() {
 
     del.addEventListener('click', async () => {
       if (!pending) return;
-      if (del.textContent !== 'Wirklich löschen?') { del.textContent = 'Wirklich löschen?'; return; }
-      del.disabled = true; del.textContent = 'Löscht …';
+      if (del.textContent !== 'Really delete?') { del.textContent = 'Really delete?'; return; }
+      del.disabled = true; del.textContent = 'Deleting …';
       try {
         const r = await api('api/database/delete', { method: 'POST', body: { ...pending, confirm: 'DELETE' } });
-        toast(`${r.total.toLocaleString('de-DE')} Zeilen gelöscht, ${fmtBytes(r.freed_bytes)} freigegeben`, 6000);
+        toast(`${r.total.toLocaleString('en-GB')} rows deleted, ${fmtBytes(r.freed_bytes)} freed`, 6000);
         pending = null;
         load();
       } catch (e) { toast(e.message, 6000); del.disabled = false; }
-      del.textContent = 'Löschen';
+      del.textContent = 'Delete';
     });
 
     const invalidate = () => {
-      pending = null; del.disabled = true; del.textContent = 'Löschen'; clear(out); updateResolved();
+      pending = null; del.disabled = true; del.textContent = 'Delete'; clear(out); updateResolved();
     };
     [before, from, to].forEach(i => i.addEventListener('change', invalidate));
     boxes.forEach(b => b.cb.addEventListener('change', invalidate));
 
     updateResolved();
     return h('div', { class: 'stack', style: { marginTop: '16px' } },
-      h('h4', { style: { margin: 0 } }, 'Daten nach Datum löschen'),
-      segmented([['before', 'Alles vor einem Datum'], ['range', 'Zeitraum']], 'before', v => {
+      h('h4', { style: { margin: 0 } }, 'Delete data by date'),
+      segmented([['before', 'Everything before a date'], ['range', 'Time span']], 'before', v => {
         mode = v;
         beforeBox.style.display = v === 'before' ? '' : 'none';
         rangeBox.style.display = v === 'range' ? '' : 'none';
@@ -260,14 +260,14 @@ function databaseCard() {
   }
 
   function maintenanceRow(d) {
-    const vac = h('button', { class: 'btn', type: 'button' }, 'Datei verkleinern (VACUUM)');
+    const vac = h('button', { class: 'btn', type: 'button' }, 'Shrink file (VACUUM)');
     vac.addEventListener('click', async () => {
       vac.disabled = true;
       const txt = vac.textContent;
-      vac.textContent = 'Läuft … (kann dauern)';
+      vac.textContent = 'Running … (may take a while)';
       try {
         const r = await api('api/database/vacuum', { method: 'POST' });
-        toast(r.freed > 0 ? `${fmtBytes(r.freed)} freigegeben` : 'Nichts zu verkleinern');
+        toast(r.freed > 0 ? `${fmtBytes(r.freed)} freed` : 'Nothing to shrink');
         load();
       } catch (e) { toast(e.message, 6000); }
       vac.textContent = txt; vac.disabled = false;
@@ -275,9 +275,9 @@ function databaseCard() {
     return h('div', { class: 'stack', style: { marginTop: '16px' } },
       h('div', { class: 'row' }, vac),
       h('div', { class: 'small muted' },
-        'Gelöschte Seiten bleiben zunächst in der Datei liegen und werden wiederverwendet. '
-        + 'Erst VACUUM gibt den Platz an das Dateisystem zurück – dafür wird kurzzeitig noch '
-        + 'einmal so viel Platz gebraucht, wie die Datenbank belegt.'));
+        'Deleted pages initially stay in the file and are reused. '
+        + 'Only VACUUM returns the space to the file system - for that it briefly needs '
+        + 'as much extra space as the database occupies.'));
   }
 
   return card;
@@ -287,25 +287,25 @@ function databaseCard() {
 export async function mount(main, { refreshStatus }) {
   const s = await api('api/settings');
   const cfg = s.config;
-  main.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Setup & Einstellungen'),
-    h('p', null, `Werte aus ${s.yaml_path || 'Standardwerten'}; Änderungen hier werden in der Datenbank gespeichert und überschreiben die Datei.`))));
+  main.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Setup & Settings'),
+    h('p', null, `Values from ${s.yaml_path || 'defaults'}; changes made here are stored in the database and override the file.`))));
 
-  // ---------------------------------------------------------------- Wizard
+  // ---------------------------------------------------------------- wizard
   const wiz = h('div', { class: 'card stack' });
   main.append(wiz);
   async function runWizard() {
-    clear(wiz).append(h('h3', null, 'Diagnose der Netzwerkarchitektur'), h('div', { class: 'skeleton' }, 'Prüfe Interfaces, Router, Pi-hole und Sichtbarkeit von Client-Traffic … (ca. 5 s)'));
+    clear(wiz).append(h('h3', null, 'Network architecture diagnosis'), h('div', { class: 'skeleton' }, 'Checking interfaces, router, Pi-hole and visibility of client traffic … (about 5 s)'));
     let r;
     try { r = await api('api/setup/check'); } catch (e) { clear(wiz).append(h('div', { class: 'empty' }, e.message)); return; }
     clear(wiz);
-    wiz.append(h('div', { class: 'row' }, h('h3', null, 'Diagnose der Netzwerkarchitektur'), h('span', { class: 'spacer' }),
-      h('button', { class: 'btn', onclick: runWizard }, 'Erneut prüfen'),
-      h('button', { class: 'btn primary', onclick: async () => { await api('api/setup/complete', { method: 'POST' }); toast('Setup abgeschlossen'); refreshStatus(); } }, 'Setup abschließen')));
+    wiz.append(h('div', { class: 'row' }, h('h3', null, 'Network architecture diagnosis'), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', onclick: runWizard }, 'Check again'),
+      h('button', { class: 'btn primary', onclick: async () => { await api('api/setup/complete', { method: 'POST' }); toast('Setup completed'); refreshStatus(); } }, 'Complete setup')));
     const caps = h('div', { class: 'cap-grid' }, r.capabilities.map(c => h('div', null, statusIcon(c.ok), h('span', null, c.name),
       c.detail ? h('span', { class: 'small muted' }, `(${c.detail})`) : null)));
-    wiz.append(h('div', null, h('h2', { style: { marginBottom: '8px' } }, 'Monitoring Capability'), caps));
-    if (r.hint) wiz.append(h('div', { class: 'banner warn', style: { marginTop: 0 } }, h('b', null, 'Hinweis'), h('span', null, r.hint)));
-    wiz.append(h('details', null, h('summary', { style: { cursor: 'pointer', fontWeight: 600 } }, 'Einzelprüfungen anzeigen'),
+    wiz.append(h('div', null, h('h2', { style: { marginBottom: '8px' } }, 'Monitoring capability'), caps));
+    if (r.hint) wiz.append(h('div', { class: 'banner warn', style: { marginTop: 0 } }, h('b', null, 'Note'), h('span', null, r.hint)));
+    wiz.append(h('details', null, h('summary', { style: { cursor: 'pointer', fontWeight: 600 } }, 'Show individual checks'),
       h('ul', { class: 'checks' }, r.checks.map(c => h('li', null, statusIcon(c.ok),
         h('div', null, h('b', null, c.name), h('div', { class: 'small secondary' }, c.detail), c.hint ? h('div', { class: 'small', style: { color: 'var(--warning-ink)' } }, c.hint) : null))))));
   }
@@ -313,109 +313,109 @@ export async function mount(main, { refreshStatus }) {
 
   // ---------------------------------------------------------------- FRITZ!Box
   const fb = form(cfg, [
-    { path: 'fritzbox.enabled', label: 'FRITZ!Box-Integration aktiv', type: 'bool' },
-    { path: 'fritzbox.host', label: 'Adresse', help: '"auto" = Default-Gateway' },
-    { path: 'fritzbox.username', label: 'Benutzername', help: 'Eigener Benutzer empfohlen, Recht „FRITZ!Box Einstellungen"' },
-    { path: 'fritzbox.password', label: 'Passwort', type: 'password' },
-    { path: 'fritzbox.capture_enabled', label: 'Paketmitschnitt für Traffic pro Gerät nutzen', type: 'bool', help: 'Nur Header (snaplen), keine Inhalte' },
-    { path: 'fritzbox.capture_interface', label: 'Mitschnitt-Interface', help: 'Standard „1-lan" (LAN-Bridge)' },
-    { path: 'fritzbox.snaplen', label: 'Snaplen (Bytes je Paket)', type: 'number' },
-    { path: 'capture.source', label: 'Traffic-Quelle', type: 'select', options: [['auto', 'Automatisch'], ['fritzbox', 'FRITZ!Box-Mitschnitt'], ['local', 'Lokales Interface (Mirror/Gateway)'], ['none', 'Keine']] },
-    { path: 'capture.local_interface', label: 'Lokales Interface', help: 'Nur für Port-Mirroring oder Pi als Gateway' },
+    { path: 'fritzbox.enabled', label: 'FRITZ!Box integration active', type: 'bool' },
+    { path: 'fritzbox.host', label: 'Address', help: '"auto" = default gateway' },
+    { path: 'fritzbox.username', label: 'Username', help: 'A dedicated user is recommended, with the "FRITZ!Box Settings" permission' },
+    { path: 'fritzbox.password', label: 'Password', type: 'password' },
+    { path: 'fritzbox.capture_enabled', label: 'Use packet capture for traffic per device', type: 'bool', help: 'Headers only (snaplen), no content' },
+    { path: 'fritzbox.capture_interface', label: 'Capture interface', help: 'Default "1-lan" (LAN bridge)' },
+    { path: 'fritzbox.snaplen', label: 'Snaplen (bytes per packet)', type: 'number' },
+    { path: 'capture.source', label: 'Traffic source', type: 'select', options: [['auto', 'Automatic'], ['fritzbox', 'FRITZ!Box capture'], ['local', 'Local interface (mirror/gateway)'], ['none', 'None']] },
+    { path: 'capture.local_interface', label: 'Local interface', help: 'Only for port mirroring or Pi as gateway' },
   ]);
   const testOut = h('div', { class: 'small' });
-  const testBtn = h('button', { class: 'btn', type: 'button' }, 'Verbindung & Mitschnitt testen');
+  const testBtn = h('button', { class: 'btn', type: 'button' }, 'Test connection & capture');
   testBtn.addEventListener('click', async () => {
     const p = fb.patch().fritzbox;
-    testBtn.disabled = true; testOut.textContent = 'Teste Login, TR-064 und 3 s Mitschnitt …';
+    testBtn.disabled = true; testOut.textContent = 'Testing login, TR-064 and a 3 s capture …';
     try {
       const r = await api('api/setup/fritzbox-test', { method: 'POST', body: { host: p.host, username: p.username, password: p.password || '', capture_interface: p.capture_interface, snaplen: p.snaplen } });
       clear(testOut).append(h('div', null, statusIcon(r.login.ok), ' Login: ', r.login.detail),
         r.login.hint ? h('div', { style: { color: 'var(--warning-ink)' } }, r.login.hint) : null,
-        r.capture ? h('div', null, statusIcon(r.capture.ok), ` Mitschnitt: ${r.capture.ok
-          ? `${r.capture.packets} Pakete, ${r.capture.macs} MAC-Adressen, Format ${r.capture.format}, ${r.capture.linktype_name}`
-          : (r.capture.error || 'fehlgeschlagen')}`) : null,
-        r.interfaces && r.interfaces.length ? h('div', { class: 'muted' }, `Gefundene Interfaces: ${r.interfaces.join(', ')}`) : null);
+        r.capture ? h('div', null, statusIcon(r.capture.ok), ` Capture: ${r.capture.ok
+          ? `${r.capture.packets} packets, ${r.capture.macs} MAC addresses, format ${r.capture.format}, ${r.capture.linktype_name}`
+          : (r.capture.error || 'failed')}`) : null,
+        r.interfaces && r.interfaces.length ? h('div', { class: 'muted' }, `Interfaces found: ${r.interfaces.join(', ')}`) : null);
     } catch (e) { testOut.textContent = e.message; }
     testBtn.disabled = false;
   });
-  main.append(h('div', { style: { height: '16px' } }), section('FRITZ!Box & Traffic-Quelle',
-    'Voraussetzung: Heimnetz → Netzwerk → Netzwerkeinstellungen → „Zugriff für Anwendungen zulassen". Der Pi sieht fremden Traffic nur über diesen Weg (oder Port-Mirroring).',
+  main.append(h('div', { style: { height: '16px' } }), section('FRITZ!Box & traffic source',
+    'Prerequisite: Home Network → Network → Network Settings → "Allow access for applications". The Pi only sees foreign traffic this way (or via port mirroring).',
     fb, h('div', { class: 'row' }, testBtn)), testOut);
 
-  // ---------------------------------------------------------------- Messung
+  // ---------------------------------------------------------------- measurement
   const meas = form(cfg, [
-    { path: 'targets', label: 'Internet-Ziele', type: 'list', help: 'IPs oder Hostnamen, kommagetrennt' },
-    { path: 'gateway', label: 'Gateway', help: '"auto" oder IPv4' },
-    { path: 'probe.interval', label: 'Ping-Intervall (s)', type: 'number' },
-    { path: 'probe.gaming_interval', label: 'Intervall im Gaming Mode (s)', type: 'number' },
-    { path: 'probe.timeout', label: 'Timeout (s)', type: 'number', help: 'Antwort später = verloren' },
-    { path: 'capacity.down_mbit', label: 'Download-Kapazität (Mbit/s)', type: 'numauto', help: '"auto" = FRITZ!Box-Linkrate. Gebuchte Rate eintragen ist genauer.' },
-    { path: 'capacity.up_mbit', label: 'Upload-Kapazität (Mbit/s)', type: 'numauto' },
-    { path: 'dns_probe.enabled', label: 'DNS-Überwachung', type: 'bool' },
+    { path: 'targets', label: 'Internet targets', type: 'list', help: 'IPs or host names, comma-separated' },
+    { path: 'gateway', label: 'Gateway', help: '"auto" or IPv4' },
+    { path: 'probe.interval', label: 'Ping interval (s)', type: 'number' },
+    { path: 'probe.gaming_interval', label: 'Interval in Gaming Mode (s)', type: 'number' },
+    { path: 'probe.timeout', label: 'Timeout (s)', type: 'number', help: 'A later reply = lost' },
+    { path: 'capacity.down_mbit', label: 'Download capacity (Mbit/s)', type: 'numauto', help: '"auto" = FRITZ!Box link rate. Entering the booked rate is more accurate.' },
+    { path: 'capacity.up_mbit', label: 'Upload capacity (Mbit/s)', type: 'numauto' },
+    { path: 'dns_probe.enabled', label: 'DNS monitoring', type: 'bool' },
   ]);
-  main.append(h('div', { style: { height: '16px' } }), section('Messung', null, meas));
+  main.append(h('div', { style: { height: '16px' } }), section('Measurement', null, meas));
 
   const thr = form(cfg, [
-    { path: 'thresholds.ping_warning', label: 'Ping Warnung (ms)', type: 'number' },
-    { path: 'thresholds.ping_critical', label: 'Ping kritisch (ms)', type: 'number' },
-    { path: 'thresholds.spike_min_delta', label: 'Spike: min. über Baseline (ms)', type: 'number' },
-    { path: 'thresholds.jitter_warning', label: 'Jitter Warnung (ms)', type: 'number' },
-    { path: 'thresholds.packet_loss_warning', label: 'Packet Loss Warnung (% / 10 s)', type: 'number' },
-    { path: 'thresholds.gateway_warning', label: 'Router Warnung (ms)', type: 'number' },
-    { path: 'thresholds.high_upload_pct', label: 'Hoher Upload (% Kapazität)', type: 'number' },
-    { path: 'thresholds.high_download_pct', label: 'Hoher Download (% Kapazität)', type: 'number' },
-    { path: 'thresholds.retrans_warning_pct', label: 'Retransmissions Warnung (%)', type: 'number' },
-    { path: 'thresholds.game_gap_ms', label: 'Game-Paketlücke (ms)', type: 'number' },
+    { path: 'thresholds.ping_warning', label: 'Ping warning (ms)', type: 'number' },
+    { path: 'thresholds.ping_critical', label: 'Ping critical (ms)', type: 'number' },
+    { path: 'thresholds.spike_min_delta', label: 'Spike: min. above baseline (ms)', type: 'number' },
+    { path: 'thresholds.jitter_warning', label: 'Jitter warning (ms)', type: 'number' },
+    { path: 'thresholds.packet_loss_warning', label: 'Packet loss warning (% / 10 s)', type: 'number' },
+    { path: 'thresholds.gateway_warning', label: 'Router warning (ms)', type: 'number' },
+    { path: 'thresholds.high_upload_pct', label: 'High upload (% of capacity)', type: 'number' },
+    { path: 'thresholds.high_download_pct', label: 'High download (% of capacity)', type: 'number' },
+    { path: 'thresholds.retrans_warning_pct', label: 'Retransmissions warning (%)', type: 'number' },
+    { path: 'thresholds.game_gap_ms', label: 'Game packet gap (ms)', type: 'number' },
   ]);
-  main.append(h('div', { style: { height: '16px' } }), section('Schwellwerte', 'Wirken sofort, ohne Neustart.', thr));
+  main.append(h('div', { style: { height: '16px' } }), section('Thresholds', 'Take effect immediately, without a restart.', thr));
 
   const gm = form(cfg, [
-    { path: 'gaming_pc.ip', label: 'IP des Gaming-PCs', type: 'nullable', placeholder: '192.168.178.20' },
-    { path: 'gaming.auto_detect', label: 'Sessions automatisch erkennen', type: 'bool' },
-    { path: 'gaming.min_pps', label: 'Min. UDP-Pakete/s je Richtung', type: 'number' },
-    { path: 'gaming.stop_after_idle', label: 'Auto-Stopp nach Inaktivität (s)', type: 'number' },
+    { path: 'gaming_pc.ip', label: 'IP of the gaming PC', type: 'nullable', placeholder: '192.168.178.20' },
+    { path: 'gaming.auto_detect', label: 'Detect sessions automatically', type: 'bool' },
+    { path: 'gaming.min_pps', label: 'Min. UDP packets/s per direction', type: 'number' },
+    { path: 'gaming.stop_after_idle', label: 'Auto stop after inactivity (s)', type: 'number' },
   ]);
   main.append(h('div', { style: { height: '16px' } }), section('Gaming Mode', null, gm));
 
   const ret = form(cfg, [
-    { path: 'retention.raw_days', label: '1-s-Werte (Tage)', type: 'number' },
-    { path: 'retention.detailed_days', label: '10-s-Aggregate (Tage)', type: 'number' },
-    { path: 'retention.aggregate_days', label: '1-min-Aggregate (Tage)', type: 'number' },
-    { path: 'retention.flow_days', label: 'Flows (Tage)', type: 'number' },
-    { path: 'retention.event_days', label: 'Events & Incidents (Tage)', type: 'number' },
-    { path: 'retention.max_db_mb', label: 'Größengrenze der Datenbank (MB)', type: 'number',
-      help: 'Notbremse: Wird sie überschritten, werden zuerst Rohdaten und 1-s-Werte gelöscht. 0 = keine Grenze.' },
-    { path: 'retention.ping_samples', label: 'Einzelne Pings speichern', type: 'bool',
-      help: 'Rund 14 MB je Tag, die keine Auswertung liest. Nur für die Fehlersuche einschalten.' },
-    { path: 'deep_capture.enabled', label: 'Deep Capture (PCAP-Ringpuffer)', type: 'bool', help: 'Nur Header; bei Incidents geschützt' },
-    { path: 'deep_capture.max_files', label: 'PCAP-Dateien im Ring', type: 'number' },
-    { path: 'deep_capture.file_size_mb', label: 'Größe je Datei (MB)', type: 'number' },
-    { path: 'deep_capture.max_total_mb', label: 'PCAP gesamt höchstens (MB)', type: 'number',
-      help: 'Harte Grenze für ALLE Mitschnitte zusammen, auch die zu Incidents gehörenden. Die einzige Zahl, die wirklich begrenzt.' },
-    { path: 'deep_capture.protected_days', label: 'Incident-Mitschnitte aufheben (Tage)', type: 'number' },
-    { path: 'deep_capture.protect_auto', label: 'Mitschnitt festhalten bei', type: 'select',
-      options: [['critical', 'kritischen Incidents'], ['all', 'allen Incidents'], ['none', 'nur gemeldetem Lag']],
-      help: 'Gemeldete Lags werden immer festgehalten. „Alle" kann je nach Incident-Häufigkeit viel Platz kosten.' },
+    { path: 'retention.raw_days', label: '1 s values (days)', type: 'number' },
+    { path: 'retention.detailed_days', label: '10 s aggregates (days)', type: 'number' },
+    { path: 'retention.aggregate_days', label: '1 min aggregates (days)', type: 'number' },
+    { path: 'retention.flow_days', label: 'Flows (days)', type: 'number' },
+    { path: 'retention.event_days', label: 'Events & incidents (days)', type: 'number' },
+    { path: 'retention.max_db_mb', label: 'Database size limit (MB)', type: 'number',
+      help: 'Emergency brake: if exceeded, raw data and 1 s values are deleted first. 0 = no limit.' },
+    { path: 'retention.ping_samples', label: 'Store individual pings', type: 'bool',
+      help: 'About 14 MB per day that no evaluation reads. Only enable for troubleshooting.' },
+    { path: 'deep_capture.enabled', label: 'Deep Capture (PCAP ring buffer)', type: 'bool', help: 'Headers only; protected on incidents' },
+    { path: 'deep_capture.max_files', label: 'PCAP files in the ring', type: 'number' },
+    { path: 'deep_capture.file_size_mb', label: 'Size per file (MB)', type: 'number' },
+    { path: 'deep_capture.max_total_mb', label: 'PCAP total at most (MB)', type: 'number',
+      help: 'Hard limit for ALL captures together, including those belonging to incidents. The only number that really limits.' },
+    { path: 'deep_capture.protected_days', label: 'Keep incident captures (days)', type: 'number' },
+    { path: 'deep_capture.protect_auto', label: 'Keep capture for', type: 'select',
+      options: [['critical', 'critical incidents'], ['all', 'all incidents'], ['none', 'reported lag only']],
+      help: 'Reported lags are always kept. "All" can cost a lot of space depending on how often incidents occur.' },
   ]);
   main.append(h('div', { style: { height: '16px' } }),
-    section('Speicher & Deep Capture', 'Die Tages-Zusammenfassung ist von der Aufbewahrung ausgenommen – '
-      + 'sie ist winzig und hält den Langzeitvergleich am Leben.', ret));
+    section('Storage & Deep Capture', 'The daily summary is exempt from retention - '
+      + 'it is tiny and keeps the long-term comparison alive.', ret));
 
   main.append(h('div', { style: { height: '16px' } }), databaseCard());
 
-  // ---------------------------------------------------------------- Login
+  // ---------------------------------------------------------------- login
   const en = h('input', { type: 'checkbox', checked: cfg.security.login_enabled && cfg.security.password_set });
-  const pw = h('input', { type: 'password', placeholder: 'Neues Passwort (min. 8 Zeichen)', autocomplete: 'new-password' });
-  const curPw = h('input', { type: 'password', placeholder: 'Aktuelles Passwort', autocomplete: 'current-password' });
-  const saveLogin = h('button', { class: 'btn primary', type: 'button' }, 'Speichern');
+  const pw = h('input', { type: 'password', placeholder: 'New password (min. 8 characters)', autocomplete: 'new-password' });
+  const curPw = h('input', { type: 'password', placeholder: 'Current password', autocomplete: 'current-password' });
+  const saveLogin = h('button', { class: 'btn primary', type: 'button' }, 'Save');
   saveLogin.addEventListener('click', async () => {
     try {
       await api('api/auth/setup', { method: 'POST', body: { enabled: en.checked, password: pw.value || null, current_password: curPw.value || null } });
-      toast('Login-Einstellung gespeichert'); pw.value = ''; curPw.value = '';
+      toast('Login setting saved'); pw.value = ''; curPw.value = '';
     } catch (e) { toast(e.message, 5000); }
   });
-  main.append(h('div', { style: { height: '16px' } }), h('div', { class: 'card stack' }, h('h3', null, 'Zugriffsschutz'),
-    h('p', { class: 'small muted' }, 'Optional. Die Oberfläche ist nur im LAN erreichbar; ein Login verhindert, dass andere Geräte im Netz Einstellungen ändern.'),
-    h('div', { class: 'form-grid' }, h('label', { class: 'check' }, en, 'Login aktivieren'), pw, cfg.security.password_set ? curPw : null), h('div', { class: 'row' }, saveLogin)));
+  main.append(h('div', { style: { height: '16px' } }), h('div', { class: 'card stack' }, h('h3', null, 'Access protection'),
+    h('p', { class: 'small muted' }, 'Recommended as soon as guests or untrusted devices are on the network: without a login, any device on the LAN can change settings and delete data.'),
+    h('div', { class: 'form-grid' }, h('label', { class: 'check' }, en, 'Enable login'), pw, cfg.security.password_set ? curPw : null), h('div', { class: 'row' }, saveLogin)));
 }

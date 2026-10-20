@@ -138,7 +138,7 @@ def _v3_compact_storage(conn: sqlite3.Connection) -> None:
                 probes, lost FROM tm_old""")
         conn.execute("DROP TABLE tm_old")
 
-    # ---- bufferbloat: ebenfalls in 1/100 ms ----------------------------------
+    # ---- bufferbloat: also in 1/100 ms -----------------------------------------
     if _table_exists(conn, "bufferbloat") and _is_real(conn, "bufferbloat", "idle_ms"):
         conn.execute("ALTER TABLE bufferbloat RENAME TO bb_old")
         conn.execute("""
@@ -221,5 +221,5 @@ def migrate(conn: sqlite3.Connection, path: str, target: int) -> dict:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     except sqlite3.OperationalError:       # pragma: no cover - e.g. not enough space
         log.warning("VACUUM after the migration not possible")
-    log.info("Migration abgeschlossen: %s → %s in %.1f s", have, target, report["seconds"])
+    log.info("Migration finished: %s → %s in %.1f s", have, target, report["seconds"])
     return report

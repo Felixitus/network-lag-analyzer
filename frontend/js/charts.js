@@ -1,4 +1,4 @@
-// uPlot-Hilfen: Zeitreihen-Charts mit gemeinsamem Cursor, Tooltip und Event-Markern.
+// uPlot helpers: time series charts with a shared cursor, tooltip and event markers.
 /* global uPlot */
 import { cssVar, fmtTime, h } from './lib.js';
 
@@ -20,19 +20,19 @@ function withAlpha(color, a) {
 }
 
 const p2 = n => String(n).padStart(2, '0');
-/** Deutsche 24-h-Zeitachse; Datum nur, wenn der Bereich über einen Tag geht. */
+/** 24 h time axis; date only when the range spans more than a day. */
 function xValues(u, splits, axisIdx, space, incr) {
   const span = u.scales.x.max - u.scales.x.min;
   return splits.map(ts => {
     const d = new Date(ts * 1000);
     const hm = `${p2(d.getHours())}:${p2(d.getMinutes())}`;
-    if (incr >= 86400) return `${p2(d.getDate())}.${p2(d.getMonth() + 1)}.`;
-    if (span > 86400) return `${p2(d.getDate())}.${p2(d.getMonth() + 1)}. ${hm}`;
+    if (incr >= 86400) return `${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+    if (span > 86400) return `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${hm}`;
     return incr < 60 ? `${hm}:${p2(d.getSeconds())}` : hm;
   });
 }
 
-/** Tooltip: Zeit + Wert jeder Serie an der Cursor-Position. */
+/** Tooltip: time + value of every series at the cursor position. */
 function tooltipPlugin(specs) {
   let tt;
   return {
@@ -62,7 +62,7 @@ function tooltipPlugin(specs) {
 
 function nullPlugin() { return { hooks: {} }; }
 
-/** Schraffur über Zeiträume ohne Messdaten – damit "nicht gemessen" nicht wie 0 aussieht. */
+/** Hatching over periods without measurements - so that "not measured" does not look like 0. */
 function drawGaps(u, gaps) {
   const ctx = u.ctx;
   const top = u.bbox.top, hgt = u.bbox.height, left = u.bbox.left, right = left + u.bbox.width;
@@ -73,7 +73,7 @@ function drawGaps(u, gaps) {
     const x1 = Math.min(right, u.valToPos(g[1], 'x', true));
     if (x1 <= x0) continue;
     ctx.fillRect(x0, top, x1 - x0, hgt);
-    // schmale Diagonalen, damit die Fläche eindeutig als "keine Daten" lesbar ist
+    // narrow diagonals so that the area clearly reads as "no data"
     ctx.save();
     ctx.beginPath();
     ctx.rect(x0, top, x1 - x0, hgt);
@@ -90,7 +90,7 @@ function drawGaps(u, gaps) {
   ctx.restore();
 }
 
-/** Incident-Bänder (hinter den Daten) und Event-Ticks (oben). */
+/** Incident bands (behind the data) and event ticks (on top). */
 function markerPlugin(getMarkers) {
   return {
     hooks: {
@@ -128,7 +128,7 @@ function markerPlugin(getMarkers) {
 }
 
 /**
- * Zeitreihen-Chart.
+ * Time series chart.
  * specs: [{label, color, width, dash, fill, fmt, bars}]
  */
 export function timeChart(container, specs, opts = {}) {
@@ -147,7 +147,7 @@ export function timeChart(container, specs, opts = {}) {
   const uopts = {
     width: Math.max(200, container.clientWidth || 600), height,
     series,
-    padding: [10, 24, 0, 0],   // feste Geometrie → alle Charts einer Seite liegen exakt übereinander
+    padding: [10, 24, 0, 0],   // fixed geometry → all charts on a page line up exactly
     cursor: { sync: opts.sync ? { key: opts.sync } : undefined, drag: { x: !!opts.onSelect, y: false },
       points: { size: 8, width: 2 } },
     legend: { show: false },
@@ -166,7 +166,7 @@ export function timeChart(container, specs, opts = {}) {
           u.setSelect({ width: 0, height: 0 }, false);
         }
       }] : [],
-      // Werte an der Cursor-Position nach außen melden (gemeinsame Ableseleiste)
+      // report the values at the cursor position to the outside (shared readout bar)
       setCursor: opts.onCursor ? [u => {
         const i = u.cursor.idx;
         opts.onCursor(i === null || i === undefined || u.cursor.left < 0
@@ -215,7 +215,7 @@ export function legend(specs) {
     s.label)));
 }
 
-/** Kartenrahmen mit Titel + Legende + Chart. */
+/** Card frame with title + legend + chart. */
 export function chartCard(title, specs, opts = {}) {
   const card = h('div', { class: 'card chart-card' });
   const head = h('div', { class: 'chart-title' }, h('h3', null, title), opts.sub ? h('span', { class: 'muted small' }, opts.sub) : null);

@@ -1,4 +1,4 @@
-"""Jitter, Packet Loss, Sekunden-Assembler, Traffic-Aggregation."""
+"""Jitter, packet loss, per-second assembler, traffic aggregation."""
 from backend.analysis.metrics import MetricsHub, TargetInfo, jitter_ms, loss_percent
 
 
@@ -253,9 +253,9 @@ def test_probe_scheduler_spreads_pings_over_the_interval():
         await sch.stop()
 
     asyncio.run(run())
-    assert len(sends) >= 8, f"zu wenige Probes: {len(sends)}"
+    assert len(sends) >= 8, f"too few probes: {len(sends)}"
     deltas = [b[0] - a[0] for a, b in zip(sends, sends[1:])]
-    assert min(deltas) >= 0.04, f"Pings zu dicht hintereinander: {min(deltas) * 1000:.0f} ms"
+    assert min(deltas) >= 0.04, f"pings too close together: {min(deltas) * 1000:.0f} ms"
     # every target equally often
     counts = {}
     for _, tid in sends:

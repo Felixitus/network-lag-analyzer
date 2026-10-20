@@ -195,7 +195,7 @@ def test_critical_policy_keeps_only_the_relevant_incidents():
     assert Core._protect_pcap_for(sicher, inc, []) is True
 
 
-# ------------------------------------------------------------------ Abschalten
+# ------------------------------------------------------------------ disabling
 def _core_mit_pcaps(tmp_path, protected_flags, enabled):
     """Core in dev mode with existing captures (file + database row)."""
     import os

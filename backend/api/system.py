@@ -144,7 +144,7 @@ class DeleteRange(BaseModel):
     def _known(cls, v):
         for t in v or []:
             if t not in repo.TIME_TABLES:
-                raise ValueError(f"Unbekannte Tabelle: {t}")
+                raise ValueError(f"Unknown table: {t}")
         return v
 
 
@@ -170,7 +170,7 @@ async def database_delete(request: Request, body: DeleteRange):
     deleted = await core.db.write(lambda c: repo.delete_range(c, body.start, end, body.tables))
     freed = await core.db.maintenance(repo.vacuum)
     size = await core.db.read(repo.db_size)
-    core.hub.drop_range(body.start, end)               # Ringpuffer nachziehen
+    core.hub.drop_range(body.start, end)               # update the ring buffer too
     return {"deleted": deleted, "total": sum(deleted.values()), "freed_bytes": freed["freed"],
             "size": size, "end": end}
 

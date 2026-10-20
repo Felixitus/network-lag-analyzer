@@ -1,4 +1,4 @@
-// Einstieg: Routing, Live-Stream (SSE), Banner, Theme, Login.
+// Entry point: routing, live stream (SSE), banners, theme, login.
 import { api, clear, h, toast } from './lib.js';
 import { destroyAll } from './charts.js';
 import * as dashboard from './pages/dashboard.js';
@@ -37,7 +37,7 @@ async function render() {
     await mod.mount(main, { args, route: name, store, refreshStatus });
   } catch (e) {
     console.error(e);
-    if (e.status !== 401) main.append(h('div', { class: 'card' }, h('h3', null, 'Fehler beim Laden'), h('p', { class: 'muted' }, String(e.message || e))));
+    if (e.status !== 401) main.append(h('div', { class: 'card' }, h('h3', null, 'Error while loading'), h('p', { class: 'muted' }, String(e.message || e))));
   }
   window.scrollTo(0, 0);
 }
@@ -51,7 +51,7 @@ function connect() {
   for (const kind of ['tick', 'tick_patch', 'event', 'incident', 'gaming']) {
     es.addEventListener(kind, ev => store.emit(kind, JSON.parse(ev.data)));
   }
-  es.onerror = () => { pill.textContent = '● Getrennt – verbinde neu…'; pill.className = 'pill pill-bad'; };
+  es.onerror = () => { pill.textContent = '● Disconnected - reconnecting…'; pill.className = 'pill pill-bad'; };
 }
 
 // ------------------------------------------------------------------ Banner
@@ -62,39 +62,39 @@ export async function refreshStatus() {
   const s = store.status;
   const b = clear(document.getElementById('banners'));
   if (s.dev_mode) {
-    b.append(h('div', { class: 'banner demo' }, h('b', null, 'DEMO-MODUS'),
-      h('span', null, 'Alle angezeigten Werte sind simuliert (dev_mode). Für echte Messungen dev_mode in der config.yaml deaktivieren.')));
+    b.append(h('div', { class: 'banner demo' }, h('b', null, 'DEMO MODE'),
+      h('span', null, 'All values shown are simulated (dev_mode). For real measurements disable dev_mode in config.yaml.')));
   }
   if (!s.setup_done && !s.dev_mode) {
-    b.append(h('div', { class: 'banner info' }, h('b', null, 'Ersteinrichtung'),
-      h('span', null, 'Der Setup-Wizard prüft, welche Daten in deinem Netzwerk tatsächlich messbar sind. '),
-      h('a', { href: '#/settings' }, 'Setup öffnen →')));
+    b.append(h('div', { class: 'banner info' }, h('b', null, 'First-time setup'),
+      h('span', null, 'The setup wizard checks which data can actually be measured in your network. '),
+      h('a', { href: '#/settings' }, 'Open setup →')));
   }
   if (s.icmp && s.icmp.error) {
-    b.append(h('div', { class: 'banner warn' }, h('b', null, 'Ping-Messung nicht möglich'), h('span', null, s.icmp.error)));
+    b.append(h('div', { class: 'banner warn' }, h('b', null, 'Ping measurement not possible'), h('span', null, s.icmp.error)));
   }
   const cap = s.capture || {};
   if (!s.dev_mode && cap.state !== 'running') {
-    b.append(h('div', { class: 'banner info' }, h('b', null, 'Traffic pro Gerät: Not available'),
-      h('span', null, cap.error || (cap.state === 'paused' ? 'Mitschnitt wegen hoher CPU-Last pausiert.' : `Status: ${cap.state || 'aus'}`)),
+    b.append(h('div', { class: 'banner info' }, h('b', null, 'Traffic per device: Not available'),
+      h('span', null, cap.error || (cap.state === 'paused' ? 'Capture paused because of high CPU load.' : `Status: ${cap.state || 'off'}`)),
       h('a', { href: '#/settings' }, 'Details')));
   }
   const tot = (s.targets || []).filter(t => t.unreachable);
   if (tot.length) {
-    b.append(h('div', { class: 'banner warn' }, h('b', null, tot.length > 1 ? 'Ziele antworten nicht' : 'Ziel antwortet nicht'),
+    b.append(h('div', { class: 'banner warn' }, h('b', null, tot.length > 1 ? 'Targets not answering' : 'Target not answering'),
       h('span', null, `${tot.map(t => t.name ? `${t.name} (${t.address})` : t.address).join(', ')} `
-        + 'beantwortet keine Pings mehr. Das Ziel wird aus Paketverlust und Latenz herausgerechnet, '
-        + 'damit es keinen Dauerverlust vortäuscht. '),
-      h('a', { href: '#/settings' }, 'Ziel ersetzen →')));
+        + 'no longer answers pings. The target is excluded from packet loss and latency '
+        + 'so that it does not fake a permanent loss. '),
+      h('a', { href: '#/settings' }, 'Replace target →')));
   }
   if (s.system && s.system.level > 0) {
-    b.append(h('div', { class: 'banner warn' }, h('b', null, `Load Guard Stufe ${s.system.level}`),
-      h('span', null, s.system.level === 1 ? 'Flow-Analyse reduziert, um Pi-hole zu schonen.'
-        : s.system.level === 2 ? 'Traffic-Werte werden per Sampling geschätzt (CPU-Last).' : 'Mitschnitt pausiert (Überlast).')));
+    b.append(h('div', { class: 'banner warn' }, h('b', null, `Load Guard level ${s.system.level}`),
+      h('span', null, s.system.level === 1 ? 'Flow analysis reduced to spare Pi-hole.'
+        : s.system.level === 2 ? 'Traffic values are estimated by sampling (CPU load).' : 'Capture paused (overload).')));
   }
 }
 
-// ------------------------------------------------------------------ Theme
+// ------------------------------------------------------------------ theme
 function initTheme() {
   let t = null;
   try { t = localStorage.getItem('nla-theme'); } catch { /* */ }
@@ -105,17 +105,17 @@ function initTheme() {
     const next = cur === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
     try { localStorage.setItem('nla-theme', next); } catch { /* */ }
-    render();   // Charts mit neuen Farben neu aufbauen
+    render();   // rebuild charts with the new colors
   });
 }
 
-// ------------------------------------------------------------------ Login
+// ------------------------------------------------------------------ login
 function showLogin() {
   const main = clear(document.getElementById('main'));
-  const pw = h('input', { type: 'password', placeholder: 'Passwort', autocomplete: 'current-password' });
+  const pw = h('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password' });
   const form = h('form', { class: 'card', style: { maxWidth: '360px', margin: '60px auto' } },
-    h('h3', null, 'Anmeldung'), h('p', { class: 'muted' }, 'Der Zugriff auf den Network Lag Analyzer ist geschützt.'),
-    h('div', { class: 'stack' }, pw, h('button', { class: 'btn primary', type: 'submit' }, 'Anmelden')));
+    h('h3', null, 'Sign in'), h('p', { class: 'muted' }, 'Access to the Network Lag Analyzer is protected.'),
+    h('div', { class: 'stack' }, pw, h('button', { class: 'btn primary', type: 'submit' }, 'Sign in')));
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
     try { await api('api/auth/login', { method: 'POST', body: { password: pw.value } }); location.reload(); }

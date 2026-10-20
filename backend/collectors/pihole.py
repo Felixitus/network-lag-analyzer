@@ -58,7 +58,7 @@ class PiholeReader:
             with self._conn() as c:
                 c.execute("SELECT 1 FROM network LIMIT 1").fetchall()
                 self.version = "v6" if os.path.exists("/etc/pihole/pihole.toml") else "v5"
-            return True, f"FTL-Datenbank lesbar ({self.version})"
+            return True, f"FTL database readable ({self.version})"
         except sqlite3.Error as e:
             return False, f"FTL database not readable: {e} (user in group 'pihole'?)"
 

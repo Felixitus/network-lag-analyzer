@@ -61,7 +61,7 @@ def test_traffic_to_router_itself_is_not_wan():
 def test_tcp_retransmission_detected_per_direction():
     a = analyzer()
     t = 10.0
-    for seq in (5000, 6000, 6000, 7000):       # 6000 doppelt → 1 Retransmission
+    for seq in (5000, 6000, 6000, 7000):       # 6000 twice → 1 retransmission
         pkt, olen = eth_ipv4(ROUTER, CLIENT, "17.1.2.3", "192.168.178.42", 6, tcp(443, 50000, seq), 1000)
         a.process(t, pkt, olen)
     g = a.bins[10]["g"]

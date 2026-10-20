@@ -60,7 +60,7 @@ def make_v2(path, seconds=600):
     c.executescript(SCHEMA_V2)
     c.execute("INSERT INTO meta VALUES('schema_version', '2')")
     c.execute("INSERT INTO devices(mac, hostname, custom_name, first_seen, last_seen, active) "
-              "VALUES(?,?,?,?,?,1)", (MAC_A, "ps5", "PS5 Wohnzimmer", T0, T0))
+              "VALUES(?,?,?,?,?,1)", (MAC_A, "ps5", "PS5 living room", T0, T0))
     # MAC_B is deliberately NOT in devices - only in the traffic. It must not get lost.
     for i in range(seconds):
         c.execute("INSERT INTO measurements(res, ts, rtt_avg, rtt_min, rtt_max, gw_rtt, jitter, loss_pct, "
@@ -102,7 +102,7 @@ def test_migration_converts_and_keeps_every_value(tmp_path):
 
     # The device name survives, and the device known only from traffic gets an entry
     devs = db.read_sync(lambda c: {r["mac"]: dict(r) for r in c.execute("SELECT * FROM devices")})
-    assert devs[MAC_A]["custom_name"] == "PS5 Wohnzimmer"
+    assert devs[MAC_A]["custom_name"] == "PS5 living room"
     assert MAC_B in devs, "device only from device_traffic was not created"
     assert all(d["id"] for d in devs.values())
 

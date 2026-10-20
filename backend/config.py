@@ -212,7 +212,7 @@ class Config(BaseModel):
     deep_capture: DeepCaptureCfg = DeepCaptureCfg()
     load_guard: LoadGuardCfg = LoadGuardCfg()
     security: SecurityCfg = SecurityCfg()
-    local_networks: list[str] = Field(default_factory=list)  # leer = automatisch
+    local_networks: list[str] = Field(default_factory=list)  # empty = automatic
 
     @field_validator("gateway")
     @classmethod

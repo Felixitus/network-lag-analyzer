@@ -177,7 +177,7 @@ def find_anomalies(rows: list[dict], baseline_rows: list[dict], thresholds, devi
             out.append({"ts": ts, "kind": "game_gap", "text": f"Game server {gap:.0f} ms without packets", "value": gap})
         for server, ms, status, kind in r.get("dns") or []:
             if ms is None or status == "servfail":
-                wo = " (ungecacht)" if kind == "uncached" else ""
+                wo = " (uncached)" if kind == "uncached" else ""
                 out.append({"ts": ts, "kind": "dns", "text": f"DNS {server}{wo}: {status}", "value": None})
     out.extend(traffic_onsets(rows, device_label, context=context))
     out.sort(key=lambda x: (x["ts"], x["kind"]))
@@ -264,7 +264,7 @@ def _collapse(run: list[dict]) -> list[dict]:
         "ping": f"Ping elevated, up to {peak:.0f} ms ({n} s)" if peak is not None else f"Ping elevated ({n} s)",
         "loss": f"Packet loss in {n} seconds ({int(sum(vals))} probes lost)",
         "jitter": f"Jitter elevated, up to {peak:.0f} ms ({n} s)" if peak is not None else f"Jitter elevated ({n} s)",
-        "gateway": f"Router langsam/unerreichbar ({n} s)",
+        "gateway": f"Router slow/unreachable ({n} s)",
         "game_gap": f"Game server packet gaps, up to {peak:.0f} ms ({n} s)" if peak is not None else f"Game packet gaps ({n} s)",
         "dns": f"{first['text']} ({n}×)",
     }[kind]

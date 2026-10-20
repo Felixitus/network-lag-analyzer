@@ -327,8 +327,8 @@ class MetricsHub:
             st["unreachable"] = True
             st["since"] = sec - st["consec_lost"] + 1
             t = self.targets.get(tid)
-            log.warning("Target %s has not answered ICMP for %s s - excluded from the loss calculation "
-                        "ausgenommen", t.address if t else tid, st["consec_lost"])
+            log.warning("Target %s has not answered ICMP for %s s - excluded from the "
+                        "loss calculation", t.address if t else tid, st["consec_lost"])
             return True
         return False
 

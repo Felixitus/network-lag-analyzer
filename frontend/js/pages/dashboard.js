@@ -1,4 +1,4 @@
-// Dashboard: Netzwerkstatus, LAG-Button, Live-Charts, Top-Geräte, letzte Incidents.
+// Dashboard: network status, LAG button, live charts, top devices, latest incidents.
 import { api, ago, confBadge, deviceColor, EVENT_LABEL, fmtMbit, fmtMs, fmtRate, h, levelFor, NA, SERIES, clear, toast, fmtTime } from '../lib.js';
 import { chartCard, fmt } from '../charts.js';
 import { BLOAT_RANGES, buildMarkers, latencyUnderLoad, RANGES, segmented } from './common.js';
@@ -13,17 +13,17 @@ export async function mount(main, { store }) {
   const th = settings.config.thresholds;
   let range = 'live';
 
-  // ---------------------------------------------------------------- Kopf
+  // ---------------------------------------------------------------- header
   const st0 = store.status || {};
   main.append(h('div', { class: 'page-head' },
     h('div', null, h('h1', null, 'Network Status'),
-      h('p', null, 'Live-Messung vom Raspberry Pi – alle Werte gemessen, nichts geschätzt.'),
+      h('p', null, 'Live measurement from the Raspberry Pi - every value measured, nothing estimated.'),
       st0.capture_delay >= 4 ? h('p', { class: 'small muted', style: { margin: '4px 0 0' } },
-        `Hinweis: Dein Router liefert den Mitschnitt ~${Math.round(st0.capture_delay)} s gepuffert. `
-        + 'Ping, Jitter und Paketverlust sind live; Traffic-Werte werden nachgetragen, '
-        + `die Ursachenanalyse wartet ${Math.round(st0.analysis_delay || 0)} s auf vollständige Daten.`) : null)));
+        `Note: your router delivers the capture buffered by ~${Math.round(st0.capture_delay)} s. `
+        + 'Ping, jitter and packet loss are live; traffic values are filled in later, '
+        + `the root cause analysis waits ${Math.round(st0.analysis_delay || 0)} s for complete data.`) : null)));
 
-  // ---------------------------------------------------------------- Kacheln + LAG-Button
+  // ---------------------------------------------------------------- tiles + LAG button
   const tiles = h('div', { class: 'tiles', role: 'list' });
   const T = {};
   for (const [key, label] of [['internet', 'Internet'], ['ping', 'Ping'], ['jitter', 'Jitter'], ['loss', 'Packet Loss'],
@@ -33,31 +33,31 @@ export async function mount(main, { store }) {
     T[key] = { el, v, f }; tiles.append(el);
   }
   let lagWindow = 30;
-  const lagBtn = h('button', { class: 'lag-btn', type: 'button' }, 'ICH HATTE GERADE LAG', h('small', null, 'analysiert sofort die letzten Sekunden'));
+  const lagBtn = h('button', { class: 'lag-btn', type: 'button' }, 'I JUST HAD LAG', h('small', null, 'analyzes the last seconds right away'));
   lagBtn.addEventListener('click', async () => {
     lagBtn.disabled = true;
-    lagBtn.firstChild.textContent = 'Analysiere…';
+    lagBtn.firstChild.textContent = 'Analyzing…';
     try {
       const inc = await api('api/lag-report', { method: 'POST', body: { window: lagWindow } });
       location.hash = `#/incident/${inc.id}`;
-    } catch (e) { toast(`Analyse fehlgeschlagen: ${e.message}`); lagBtn.disabled = false; lagBtn.firstChild.textContent = 'ICH HATTE GERADE LAG'; }
+    } catch (e) { toast(`Analysis failed: ${e.message}`); lagBtn.disabled = false; lagBtn.firstChild.textContent = 'I JUST HAD LAG'; }
   });
   const gamingBox = h('div', { class: 'row small' });
   const lagCard = h('div', { class: 'card lag-card' }, lagBtn,
-    h('div', { class: 'row small' }, h('span', { class: 'muted' }, 'Zeitraum:'),
+    h('div', { class: 'row small' }, h('span', { class: 'muted' }, 'Time span:'),
       segmented([[10, '10 s'], [30, '30 s'], [60, '60 s'], [300, '5 min']], 30, v => { lagWindow = v; })),
     gamingBox);
   main.append(h('div', { class: 'status-wrap' }, tiles, lagCard));
 
-  // ---------------------------------------------------------------- Charts
+  // ---------------------------------------------------------------- charts
   const sync = 'dash';
   const markers = { events: [], incidents: [] };
   const mk = () => buildMarkers(markers.events, markers.incidents);
   const pingSpecs = [
-    { label: 'Internet (Median)', color: SERIES(1), fmt: fmt.ms },
-    { label: 'Internet (Max)', color: SERIES(1), width: 1, dash: [4, 4], fmt: fmt.ms },
+    { label: 'Internet (median)', color: SERIES(1), fmt: fmt.ms },
+    { label: 'Internet (max)', color: SERIES(1), width: 1, dash: [4, 4], fmt: fmt.ms },
     { label: 'Router', color: SERIES(3), fmt: fmt.ms },
-    { label: 'Game-Server', color: SERIES(2), fmt: fmt.ms },
+    { label: 'Game server', color: SERIES(2), fmt: fmt.ms },
   ];
   const c1 = chartCard('Ping', pingSpecs, { sync, yFmt: fmt.msAxis, yLabel: 'ms', markers: mk, height: 200, yMinMax: 30 });
   const c2 = chartCard('Jitter', [{ label: 'Jitter', color: SERIES(7), fmt: fmt.ms }], { sync, yFmt: fmt.msAxis, yLabel: 'ms', markers: mk, height: 130, yMinMax: 5 });
@@ -66,23 +66,23 @@ export async function mount(main, { store }) {
     { label: 'Download', color: SERIES(1), fmt: fmt.mbit, fill: 0.10 },
     { label: 'Upload', color: SERIES(2), fmt: fmt.mbit, fill: 0.10 },
   ];
-  const c4 = chartCard('Durchsatz (WAN gesamt)', tputSpecs, { sync, yFmt: fmt.mbitAxis, yLabel: 'Mbit/s', markers: mk, height: 160, yMinMax: 1e6,
-    naText: 'Not available – keine Traffic-Quelle (FRITZ!Box-Zugang im Setup eintragen)' });
+  const c4 = chartCard('Throughput (WAN total)', tputSpecs, { sync, yFmt: fmt.mbitAxis, yLabel: 'Mbit/s', markers: mk, height: 160, yMinMax: 1e6,
+    naText: 'Not available - no traffic source (enter FRITZ!Box access in Setup)' });
   const rangeSeg = segmented(RANGES, range, v => { range = v; loadHistory(); });
   const chartsCard = h('section', { class: 'stack', style: { marginTop: '16px' } },
-    h('div', { class: 'row' }, h('h2', null, 'Verlauf'), h('span', { class: 'spacer' }), rangeSeg),
+    h('div', { class: 'row' }, h('h2', null, 'History'), h('span', { class: 'spacer' }), rangeSeg),
     h('div', { class: 'grid grid-2' }, c1.card, c4.card), h('div', { class: 'grid grid-2' }, c2.card, c3.card));
   main.append(chartsCard);
   const ch = [c1.mount(), c2.mount(), c3.mount(), c4.mount()];
 
-  // ---------------------------------------------------------------- Latenz unter Last (Bufferbloat)
-  const bloatBody = h('div', null, h('div', { class: 'empty' }, 'wird geladen…'));
+  // ---------------------------------------------------------------- latency under load (bufferbloat)
+  const bloatBody = h('div', null, h('div', { class: 'empty' }, 'loading…'));
   const bloatFoot = h('div', { class: 'small muted' });
   let bloatRange = '24h';
   main.append(h('div', { class: 'card stack', style: { marginTop: '16px' } },
     h('div', { class: 'card-head' },
-      h('div', null, h('h2', null, 'Latenz unter Last'),
-        h('div', { class: 'sub' }, 'Wie viel Ping kommt dazu, wenn die Leitung voll ist')),
+      h('div', null, h('h2', null, 'Latency under load'),
+        h('div', { class: 'sub' }, 'How much ping is added when the line is full')),
       segmented(BLOAT_RANGES, bloatRange, v => { bloatRange = v; loadBloat(); })),
     bloatBody, bloatFoot));
 
@@ -92,30 +92,30 @@ export async function mount(main, { store }) {
       clear(bloatBody);
       bloatBody.append(latencyUnderLoad(r.summary, { showAdvice: true }));
       bloatFoot.textContent = r.source === 'live'
-        ? `Aus ${r.seconds_covered} Sekundenwerten${bloatRange === '1h' ? ' des Zeitraums' : ' der letzten Stunde – für längere Zeiträume liegen noch keine ausgewerteten Fenster vor'}.`
-        : `Aus ${r.summary.windows || 0} ausgewerteten ${Math.round(r.window_seconds / 60)}-Minuten-Fenstern `
-          + '(Sekundenwerte werden nur einen Tag aufbewahrt).';
+        ? `From ${r.seconds_covered} per-second values${bloatRange === '1h' ? ' of the time span' : ' of the last hour - no evaluated windows exist yet for longer spans'}.`
+        : `From ${r.summary.windows || 0} evaluated ${Math.round(r.window_seconds / 60)}-minute windows `
+          + '(per-second values are only kept for one day).';
     } catch (e) {
       clear(bloatBody);
-      bloatBody.append(h('div', { class: 'empty' }, `Not available – ${e.message}`));
+      bloatBody.append(h('div', { class: 'empty' }, `Not available - ${e.message}`));
       bloatFoot.textContent = '';
     }
   }
   await loadBloat();
 
-  // ---------------------------------------------------------------- Untere Reihe
+  // ---------------------------------------------------------------- bottom row
   const talkers = h('ul', { class: 'list' });
   const incList = h('ul', { class: 'list' });
   const openEv = h('ul', { class: 'list' });
   const talkerNote = h('span', { class: 'sub' });
   main.append(h('div', { class: 'grid grid-3', style: { marginTop: '16px' } },
     h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Top Devices right now'), talkerNote), talkers,
-      h('a', { href: '#/devices', class: 'small' }, 'Historische Ansicht →')),
-    h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Letzte Incidents'), h('a', { href: '#/incidents', class: 'small' }, 'alle →')), incList),
-    h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Aktive Events')), openEv)));
+      h('a', { href: '#/devices', class: 'small' }, 'Historical view →')),
+    h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Latest Incidents'), h('a', { href: '#/incidents', class: 'small' }, 'all →')), incList),
+    h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Active Events')), openEv)));
 
-  // ---------------------------------------------------------------- Daten
-  let data = null;   // Spaltenarrays für LIVE
+  // ---------------------------------------------------------------- data
+  let data = null;   // column arrays for LIVE
   function toCols(s) {
     return {
       ts: s.ts, ping: [s.rtt_avg, s.rtt_max, s.gw_rtt, s.game_rtt], jit: [s.jitter], loss: [s.loss_pct], tput: [s.down_bps, s.up_bps],
@@ -138,12 +138,12 @@ export async function mount(main, { store }) {
 
   function renderIncidents(items) {
     clear(incList);
-    if (!items.length) { incList.append(h('li', { class: 'empty' }, 'Noch keine Incidents – gut so.')); return; }
+    if (!items.length) { incList.append(h('li', { class: 'empty' }, 'No incidents yet - good.')); return; }
     for (const i of items) {
       incList.append(h('li', { class: 'inc-row' }, h('a', { href: `#/incident/${i.id}` },
-        h('div', { class: 'row' }, h('span', { class: 'title' }, i.source === 'user' ? 'Lag gemeldet' : (i.title || `Incident #${i.id}`)),
+        h('div', { class: 'row' }, h('span', { class: 'title' }, i.source === 'user' ? 'Lag reported' : (i.title || `Incident #${i.id}`)),
           h('span', { class: 'spacer' }), h('span', { class: 'when' }, ago(i.ts_start)))),
-        h('div', { class: 'row small secondary' }, i.cause || 'läuft…', confBadge(i.confidence))));
+        h('div', { class: 'row small secondary' }, i.cause || 'running…', confBadge(i.confidence))));
     }
   }
   async function loadIncidents() {
@@ -166,27 +166,27 @@ export async function mount(main, { store }) {
     T.internet.el.className = 'tile';
     T.internet.v.append(h('span', { class: 'state' }, h('span', { class: `dot ${online === true ? 'good' : online === false ? 'critical' : 'muted'}` }),
       online === true ? 'Online' : online === false ? 'Offline' : NA));
-    T.internet.f.textContent = f ? `Stand ${fmtTime(f.ts)}` : '';
+    T.internet.f.textContent = f ? `As of ${fmtTime(f.ts)}` : '';
     set('ping', fmtMs(m.rtt_avg), 'ms', m.rtt_min !== null && m.rtt_min !== undefined ? `${fmtMs(m.rtt_min)}–${fmtMs(m.rtt_max)} ms` : '',
       levelFor(m.rtt_avg, th.ping_warning, th.ping_critical));
-    set('jitter', fmtMs(m.jitter), 'ms', '10-s-Fenster', levelFor(m.jitter, th.jitter_warning));
+    set('jitter', fmtMs(m.jitter), 'ms', '10 s window', levelFor(m.jitter, th.jitter_warning));
     const l = f ? f.loss : {};
     const l10 = l['10s'];
     set('loss', l10 === null || l10 === undefined ? null : l10.toFixed(l10 === 0 ? 0 : 1), '%',
       l['60s'] !== null && l['60s'] !== undefined ? `60 s: ${l['60s'].toFixed(1)} % · 5 min: ${(l['300s'] || 0).toFixed(1)} %` : '',
       levelFor(l10, th.packet_loss_warning, 5));
-    set('gw', fmtMs(m.gw_rtt), 'ms', 'Router-Latenz', levelFor(m.gw_rtt, th.gateway_warning));
+    set('gw', fmtMs(m.gw_rtt), 'ms', 'Router latency', levelFor(m.gw_rtt, th.gateway_warning));
     const sticky = stickyTraffic(f);
     const tm = sticky ? { down_bps: sticky.down, up_bps: sticky.up, traffic_src: sticky.src } : m;
-    const src = tm.traffic_src === 'tr064' ? 'FRITZ!Box gesamt (Summe)'
-      : tm.traffic_src?.startsWith('capture') ? (sticky ? `Mitschnitt ${fmtTime(sticky.ts)}`
-        : `Mitschnitt${tm.traffic_src.endsWith('~') ? ' (geschätzt)' : ''}`) : '';
+    const src = tm.traffic_src === 'tr064' ? 'FRITZ!Box total (sum)'
+      : tm.traffic_src?.startsWith('capture') ? (sticky ? `Capture ${fmtTime(sticky.ts)}`
+        : `Capture${tm.traffic_src.endsWith('~') ? ' (estimated)' : ''}`) : '';
     set('down', fmtMbit(tm.down_bps), 'Mbit/s', src);
     set('up', fmtMbit(tm.up_bps), 'Mbit/s', src);
   }
 
-  // Letzte Sekunde MIT Traffic-Daten. Der Router liefert den Mitschnitt gepuffert,
-  // deshalb zeigen wir zwischenzeitlich den letzten gemessenen Stand – mit Zeitangabe.
+  // Last second WITH traffic data. The router delivers the capture buffered,
+  // so in the meantime we show the last measured state - with its timestamp.
   let lastTraffic = null;
   function updateSticky(f) {
     if (f && f.m.traffic_src && f.m.traffic_src.startsWith('capture')) {
@@ -203,12 +203,12 @@ export async function mount(main, { store }) {
     const traffic = f && f.m.traffic_src && f.m.traffic_src.startsWith('capture');
     const sticky = stickyTraffic(f);
     const devs = traffic ? f.devices : sticky ? sticky.devices : [];
-    talkerNote.textContent = traffic ? 'letzte Sekunde' : sticky ? `Stand ${fmtTime(sticky.ts)}` : '';
+    talkerNote.textContent = traffic ? 'last second' : sticky ? `As of ${fmtTime(sticky.ts)}` : '';
     if (!traffic && !sticky) {
-      talkers.append(h('li', { class: 'empty' }, 'Not available – Traffic pro Gerät benötigt den FRITZ!Box-Mitschnitt, Port-Mirroring oder den Pi als Gateway.'));
+      talkers.append(h('li', { class: 'empty' }, 'Not available - traffic per device needs the FRITZ!Box capture, port mirroring or the Pi as gateway.'));
       return;
     }
-    if (!devs.length) { talkers.append(h('li', { class: 'empty' }, 'Kein nennenswerter Traffic.')); return; }
+    if (!devs.length) { talkers.append(h('li', { class: 'empty' }, 'No significant traffic.')); return; }
     const max = Math.max(1, ...devs.map(d => Math.max(d.up_bps, d.down_bps)));
     for (const d of devs.slice(0, 6)) {
       const c = deviceColor(d.mac);
@@ -219,33 +219,33 @@ export async function mount(main, { store }) {
           h('div', { class: 'bar-row' }, h('span', { title: 'Upload' }, '↑'), h('div', { class: 'bar-track' }, h('div', { class: 'bar-fill', style: { width: `${100 * d.up_bps / max}%`, background: c } })), h('b', null, `${fmtMbit(d.up_bps)}`)),
           h('div', { class: 'bar-row' }, h('span', { title: 'Download' }, '↓'), h('div', { class: 'bar-track' }, h('div', { class: 'bar-fill', style: { width: `${100 * d.down_bps / max}%`, background: c, opacity: 0.55 } })), h('b', null, `${fmtMbit(d.down_bps)}`)))));
     }
-    talkers.append(h('li', { class: 'small muted' }, 'Werte in Mbit/s · ↑ Upload · ↓ Download'));
+    talkers.append(h('li', { class: 'small muted' }, 'Values in Mbit/s · ↑ upload · ↓ download'));
   }
 
   function renderOpenEvents(evs) {
     clear(openEv);
-    if (!evs.length) { openEv.append(h('li', { class: 'empty' }, 'Keine aktiven Auffälligkeiten.')); return; }
+    if (!evs.length) { openEv.append(h('li', { class: 'empty' }, 'No active anomalies.')); return; }
     for (const e of evs) {
       openEv.append(h('li', null, h('div', { class: 'row' },
-        h('span', { class: `badge ${e.severity === 'critical' ? 'critical' : 'warning'}` }, e.severity === 'critical' ? '⚠ kritisch' : '▲ Warnung'),
-        h('b', null, EVENT_LABEL[e.type] || e.type), h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, `seit ${fmtTime(e.ts_start)}`)),
-        h('div', { class: 'small secondary' }, e.peak !== null && e.peak !== undefined ? `Spitze: ${e.type.includes('UPLOAD') || e.type.includes('DOWNLOAD') ? fmtRate(e.peak) : e.peak.toFixed(1)}` : '')));
+        h('span', { class: `badge ${e.severity === 'critical' ? 'critical' : 'warning'}` }, e.severity === 'critical' ? '⚠ critical' : '▲ warning'),
+        h('b', null, EVENT_LABEL[e.type] || e.type), h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, `since ${fmtTime(e.ts_start)}`)),
+        h('div', { class: 'small secondary' }, e.peak !== null && e.peak !== undefined ? `Peak: ${e.type.includes('UPLOAD') || e.type.includes('DOWNLOAD') ? fmtRate(e.peak) : e.peak.toFixed(1)}` : '')));
     }
   }
 
   function renderGaming(sess) {
     clear(gamingBox);
     if (sess) {
-      gamingBox.append(h('span', { class: 'dot good' }), h('b', null, 'Gaming Session läuft'),
-        h('span', { class: 'muted' }, `seit ${fmtTime(sess.ts_start)}`), h('span', { class: 'spacer' }),
-        h('button', { class: 'btn', onclick: async () => { const r = await api('api/gaming/stop', { method: 'POST' }); location.hash = `#/gaming/${r.id}`; } }, 'Beenden'));
+      gamingBox.append(h('span', { class: 'dot good' }), h('b', null, 'Gaming session running'),
+        h('span', { class: 'muted' }, `since ${fmtTime(sess.ts_start)}`), h('span', { class: 'spacer' }),
+        h('button', { class: 'btn', onclick: async () => { const r = await api('api/gaming/stop', { method: 'POST' }); location.hash = `#/gaming/${r.id}`; } }, 'Stop'));
     } else {
-      gamingBox.append(h('span', { class: 'muted' }, 'Gaming Mode: aus'), h('span', { class: 'spacer' }),
-        h('button', { class: 'btn', onclick: async () => { await api('api/gaming/start', { method: 'POST', body: {} }); toast('Gaming Session gestartet – detailliertes Monitoring aktiv'); } }, 'Gaming Session starten'));
+      gamingBox.append(h('span', { class: 'muted' }, 'Gaming Mode: off'), h('span', { class: 'spacer' }),
+        h('button', { class: 'btn', onclick: async () => { await api('api/gaming/start', { method: 'POST', body: {} }); toast('Gaming session started - detailed monitoring active'); } }, 'Start gaming session'));
     }
   }
 
-  // Beim Laden den letzten gemessenen Traffic-Stand aus der Historie holen (gepufferter Stream)
+  // On load, fetch the last measured traffic state from the history (buffered stream)
   try {
     const tt = await api('api/top-talkers?seconds=12');
     if (tt.devices.length) {
@@ -254,19 +254,19 @@ export async function mount(main, { store }) {
         down: tt.devices.reduce((a, d) => a + d.down_bps, 0), up: tt.devices.reduce((a, d) => a + d.up_bps, 0),
       };
     }
-  } catch { /* ohne Traffic-Quelle egal */ }
+  } catch { /* irrelevant without a traffic source */ }
 
   const st = store.status;
   if (st && st.last) { updateSticky(st.last); renderTiles(st.last); renderTalkers(st.last); renderOpenEvents(st.last.open_events || []); }
   else renderTiles(null);
   renderGaming(st ? st.gaming : null);
 
-  // ---------------------------------------------------------------- Live-Updates
+  // ---------------------------------------------------------------- live updates
   let lastGaming = st ? st.gaming : null;
   let lastFrame = st ? st.last : null;
   off = store.on((kind, d) => {
     if (kind === 'tick_patch') {
-      // Verspätet eingetroffene Traffic-Daten (gepufferter Router-Stream) nachtragen
+      // Fill in late traffic data (buffered router stream)
       if (data) {
         const i = data.ts.lastIndexOf(d.ts);
         if (i >= 0) { data.tput[0][i] = d.m.down_bps; data.tput[1][i] = d.m.up_bps; draw(); }
