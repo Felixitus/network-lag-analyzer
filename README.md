@@ -44,6 +44,7 @@ Alles läuft lokal. Keine Cloud, keine Telemetrie, keine Payload-Speicherung.
 15. [Performance & Load Guard](#performance--load-guard)
 16. [Troubleshooting](#troubleshooting)
 17. [Entwicklung & Tests](#entwicklung--tests)
+18. [Lizenz](#lizenz)
 
 ---
 
@@ -129,8 +130,8 @@ Pi-hole läuft unverändert weiter. Der Dienst hat niedrigere CPU-Priorität als
 ## Installation
 
 ```bash
-# Projekt auf den Pi kopieren (z. B. per scp) und entpacken
-tar xzf network-lag-analyzer.tar.gz
+sudo apt install -y git
+git clone https://github.com/Felixitus/network-lag-analyzer.git
 cd network-lag-analyzer
 sudo ./install.sh
 ```
@@ -152,7 +153,7 @@ http://raspberrypi:8088      oder      http://IP-DES-PI:8088
 
 Beim ersten Aufruf auf **Setup** gehen, Diagnose ausführen, FRITZ!Box-Zugang eintragen.
 
-Update: neue Version entpacken, erneut `sudo ./install.sh` – Konfiguration und Daten bleiben.
+Update: `git pull && sudo ./install.sh` im geklonten Verzeichnis – Konfiguration und Daten bleiben.
 Deinstallation: `sudo ./install.sh --uninstall`.
 
 **Pi-hole wird nicht verändert.** Der Installer fasst weder `/etc/pihole`, dnsmasq/FTL noch
@@ -530,10 +531,15 @@ Wiederherstellen: Dienst stoppen, Datei zurückkopieren (`chown nla:nla`), Diens
 * CSRF-Schutz für alle schreibenden Requests (Double-Submit-Token), Origin-Prüfung.
 * Security-Header (CSP ohne Inline-Skripte, `X-Frame-Options: DENY`, `nosniff`).
 * Hostnamen aus dem Netz werden im Browser ausschließlich als Text gerendert (kein `innerHTML`).
-* Optionaler Login (Setup → Zugriffsschutz): scrypt-Hash, HttpOnly-Session-Cookie.
-* Das FRITZ!Box-Passwort wird nie über die API ausgegeben. `config.yaml` hat die Rechte 0640 (root:nla).
+* Optionaler Login (Setup → Zugriffsschutz): scrypt-Hash, HttpOnly-Session-Cookie,
+  nach 5 Fehlversuchen je Adresse 15 Minuten Sperre. **Empfohlen**, sobald Gäste oder
+  fremde Geräte im WLAN sind – ohne Login darf jedes Gerät im LAN alles.
+* Das FRITZ!Box-Passwort wird nie über die API ausgegeben und nur an die Adresse geschickt,
+  für die es eingegeben wurde. `config.yaml` hat die Rechte 0640 (root:nla).
 * Pi-hole-Datenbank nur lesend. Payloads werden nie gespeichert (snaplen, nur Header).
 * Nur für das LAN gedacht – den Port **nicht** im Router freigeben.
+
+Bedrohungsmodell und Meldeweg für Sicherheitslücken: [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -603,6 +609,9 @@ python -m pytest -q                       # Unit-, Szenario- und API-Tests
 python -m backend.main --dev --data-dir /tmp/nla --port 8099   # Demo mit simulierten Daten
 ```
 
+Git-Ablauf, Commit-Regeln und Release: [CONTRIBUTING.md](CONTRIBUTING.md).
+Änderungen je Version: [CHANGELOG.md](CHANGELOG.md).
+
 Simulierte Testszenarien (`tests/test_scenarios.py`): Upload Saturation, Download
 Saturation, ISP Packet Loss, lokales Gateway-Problem, nur ein Zielserver betroffen,
 DNS-Ausfall, Game-Server-Problem sowie Normalbetrieb ohne Fehlalarme.
@@ -627,3 +636,10 @@ DNS-Ausfall, Game-Server-Problem sowie Normalbetrieb ohne Fehlalarme.
 * Game-Server, die ICMP blockieren, werden nur über Paketlücken im Game-Flow bewertet.
 * Retransmissions werden heuristisch erkannt (wie Wireshark: Sequenz ≤ bereits gesehen).
   Umsortierte Pakete zählen mit.
+
+---
+
+## Lizenz
+
+[MIT](LICENSE). Enthält [uPlot](https://github.com/leeoniya/uPlot) (MIT, siehe
+`frontend/vendor/uPlot.LICENSE`).

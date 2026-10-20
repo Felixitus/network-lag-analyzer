@@ -1,9 +1,29 @@
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
 venv/
+.venv/
+
+# Laufzeitdaten – enthalten Messwerte, Geräte-MACs und ggf. das FRITZ!Box-Passwort
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
 *.bak
+*.pcap
+*.pcapng
+session.key
+data/
+
+# Lokale Konfiguration (nur config.example.yaml gehört ins Repo)
 config.yaml
+.env
+
+# Editor / Betriebssystem
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
