@@ -1,7 +1,7 @@
-"""Konfiguration: config.yaml + Überschreibungen aus der Weboberfläche (DB).
+"""Configuration: config.yaml + overrides from the web UI (DB).
 
-Reihenfolge: Defaults (dieses Modul) < config.yaml < DB-Setting "config_overrides".
-Alle Werte werden über Pydantic validiert.
+Order: defaults (this module) < config.yaml < DB setting "config_overrides".
+All values are validated with Pydantic.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ DEFAULT_DATA_DIR = "/var/lib/network-lag-analyzer"
 
 
 def _valid_host(value: str) -> str:
-    """Erlaubt IPv4-Adressen und einfache Hostnamen (keine Shell-Sonderzeichen)."""
+    """Allows IPv4 addresses and simple host names (no shell special characters)."""
     value = value.strip()
     try:
         ipaddress.IPv4Address(value)
@@ -32,7 +32,7 @@ def _valid_host(value: str) -> str:
     import re
 
     if not re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9\-\.]{0,251}[A-Za-z0-9])?", value):
-        raise ValueError(f"Ungültiges Ziel: {value!r}")
+        raise ValueError(f"Invalid target: {value!r}")
     return value
 
 
@@ -61,11 +61,11 @@ class DnsProbeCfg(BaseModel):
     enabled: bool = True
     interval: float = Field(5.0, ge=1, le=300)
     timeout: float = Field(2.0, ge=0.5, le=10)
-    # Gecachter Name: misst nur, ob der eigene Resolver noch reagiert (RFC 2606).
+    # Cached name: only measures whether your own resolver still responds (RFC 2606).
     query_name: str = "example.com"
-    # Ungecachte Probe: zufälliger Name unter dieser Endung erzwingt den vollen Weg
-    # zum Upstream. ".invalid" ist dafür reserviert und belastet keine fremde Zone.
-    # Leer lassen schaltet die zweite Probe ab.
+    # Uncached probe: a random name under this suffix forces the full path
+    # to the upstream. ".invalid" is reserved for this and burdens no foreign zone.
+    # Leaving it empty disables the second probe.
     uncached_suffix: str = "nla-probe.invalid"
     servers: list[str] = Field(default_factory=lambda: ["local", "1.1.1.1"])
 
@@ -85,33 +85,33 @@ class GamingPcCfg(BaseModel):
 class Thresholds(BaseModel):
     ping_warning: float = 50
     ping_critical: float = 100
-    spike_factor: float = 3.0          # RTT >= Baseline * Faktor ...
-    spike_min_delta: float = 25        # ... und mindestens so viele ms über Baseline
+    spike_factor: float = 3.0          # RTT >= baseline * factor ...
+    spike_min_delta: float = 25        # ... and at least this many ms above baseline
     jitter_warning: float = 20
-    packet_loss_warning: float = 1     # Prozent im 10-s-Fenster
-    packet_loss_min_lost: int = 2      # mindestens so viele verlorene Probes im 10-s-Fenster
+    packet_loss_warning: float = 1     # percent in the 10 s window
+    packet_loss_min_lost: int = 2      # at least this many lost probes in the 10 s window
     gateway_warning: float = 20
     connection_drop_seconds: int = 3
-    high_upload_pct: float = 70        # Prozent der Upload-Kapazität
+    high_upload_pct: float = 70        # percent of the upload capacity
     high_download_pct: float = 80
     retrans_warning_pct: float = 3
     game_gap_ms: float = 250
 
 
 class CapacityCfg(BaseModel):
-    """Leitungskapazität in Mbit/s. 'auto' = aus FRITZ!Box (TR-064)."""
+    """Line capacity in Mbit/s. 'auto' = from the FRITZ!Box (TR-064)."""
     down_mbit: float | Literal["auto"] = "auto"
     up_mbit: float | Literal["auto"] = "auto"
 
 
 class FritzCfg(BaseModel):
     enabled: bool = False
-    host: str = "auto"                 # auto = Default-Gateway
+    host: str = "auto"                 # auto = default gateway
     username: str = ""
     password: str = ""
     tr064_port: int = 49000
     capture_enabled: bool = True
-    capture_interface: str = "1-lan"   # LAN-Bridge der FRITZ!Box
+    capture_interface: str = "1-lan"   # LAN bridge of the FRITZ!Box
     snaplen: int = Field(128, ge=64, le=256)
     poll_interval: float = Field(2.0, ge=1, le=60)
     hostlist_interval: float = Field(120, ge=30, le=3600)
@@ -133,38 +133,38 @@ class PiholeCfg(BaseModel):
 
 
 class RetentionCfg(BaseModel):
-    raw_days: float = Field(1, ge=0.1, le=30)          # 1-s-Werte
-    detailed_days: float = Field(7, ge=1, le=90)       # 10-s-Aggregate
-    aggregate_days: float = Field(30, ge=1, le=730)    # 60-s-Aggregate
+    raw_days: float = Field(1, ge=0.1, le=30)          # 1 s values
+    detailed_days: float = Field(7, ge=1, le=90)       # 10 s aggregates
+    aggregate_days: float = Field(30, ge=1, le=730)    # 60 s aggregates
     flow_days: float = Field(7, ge=1, le=90)
     event_days: float = Field(90, ge=1, le=3650)
-    # Einzelne ICMP-Probes. Keine Auswertung liest sie, sie kosten aber rund 14 MB
-    # je Tag an Schreibzugriffen auf die SD-Karte. Nur für die Fehlersuche einschalten.
+    # Individual ICMP probes. No evaluation reads them, but they cost about 14 MB
+    # of writes to the SD card per day. Only enable for troubleshooting.
     ping_samples: bool = False
-    # Notbremse: Wird die Datenbank größer, werden die am wenigsten wichtigen Daten
-    # gelöscht (erst Rohdaten, dann 1-s-Werte, dann 10-s-Werte). 0 = keine Grenze.
+    # Emergency brake: if the database grows larger, the least important data is
+    # deleted (first raw data, then 1 s values, then 10 s values). 0 = no limit.
     max_db_mb: int = Field(1024, ge=0, le=100_000)
 
 
 class DeepCaptureCfg(BaseModel):
-    """PCAP-Ringpuffer. `max_files` × `file_size_mb` gilt nur für die LAUFENDEN Dateien.
+    """PCAP ring buffer. `max_files` × `file_size_mb` only applies to the RUNNING files.
 
-    Zu einem Incident gehörende Dateien werden aus dem Ring genommen, damit sie nicht
-    überschrieben werden – sie brauchen deshalb eine eigene Grenze. `max_total_mb` ist
-    die Obergrenze für das gesamte Verzeichnis und die einzige Zahl, auf die man sich
-    verlassen kann.
+    Files belonging to an incident are taken out of the ring so that they are not
+    overwritten - they therefore need their own limit. `max_total_mb` is the
+    upper limit for the whole directory and the only number you can
+    rely on.
     """
     enabled: bool = False
     max_files: int = Field(5, ge=2, le=50)
     file_size_mb: int = Field(50, ge=5, le=500)
-    # Harte Obergrenze für das ganze pcap-Verzeichnis (Ring + geschützte Dateien).
+    # Hard upper limit for the whole pcap directory (ring + protected files).
     max_total_mb: int = Field(1024, ge=50, le=200_000)
-    # So lange werden Incident-Mitschnitte höchstens aufgehoben. Vorher galt die
-    # Event-Retention (90 Tage) – viel zu lang für 50-MB-Dateien.
+    # Incident captures are kept at most this long. Previously the event retention
+    # applied (90 days) - far too long for 50 MB files.
     protected_days: float = Field(7, ge=0.5, le=365)
-    # Für welche automatisch erkannten Incidents überhaupt ein Mitschnitt festgehalten
-    # wird. "critical" spart den Großteil: Ein kurzer Jitter-Ausschlag friert sonst
-    # 50 MB ein. Gemeldete Lags ("ICH HATTE GERADE LAG") werden immer festgehalten.
+    # For which automatically detected incidents a capture is kept at all.
+    # "critical" saves most of it: otherwise a short jitter blip freezes
+    # 50 MB. Reported lags ("I JUST HAD LAG") are always kept.
     protect_auto: Literal["none", "critical", "all"] = "critical"
 
 
@@ -184,7 +184,7 @@ class SecurityCfg(BaseModel):
 
 class GamingCfg(BaseModel):
     auto_detect: bool = True
-    min_pps: float = 15                # UDP-Pakete/s je Richtung
+    min_pps: float = 15                # UDP packets/s per direction
     min_seconds: int = 20
     stop_after_idle: int = 60
 
@@ -224,7 +224,7 @@ class Config(BaseModel):
     def _nets(cls, v: list[str]) -> list[str]:
         return [str(ipaddress.ip_network(n, strict=False)) for n in v]
 
-    # --- Ansicht für die API: Geheimnisse entfernen -----------------------
+    # --- view for the API: remove secrets -----------------------
     def public_dict(self) -> dict[str, Any]:
         d = self.model_dump()
         d["fritzbox"]["password"] = "********" if self.fritzbox.password else ""
@@ -234,18 +234,18 @@ class Config(BaseModel):
 
 
 def fritz_target(cfg: Config) -> tuple[str, str | None]:
-    """Wohin das FRITZ!Box-Passwort geschickt wird. Bei "auto" entscheidet das Gateway."""
+    """Where the FRITZ!Box password is sent. With "auto" the gateway decides."""
     host = cfg.fritzbox.host.strip().lower()
     return host, (cfg.gateway if host == "auto" else None)
 
 
-# Felder, die über die Weboberfläche geändert werden dürfen (Top-Level-Schlüssel).
+# Fields that may be changed via the web UI (top-level keys).
 EDITABLE_SECTIONS = {
     "gateway", "targets", "probe", "dns_probe", "gaming_pc", "gaming", "thresholds",
     "capacity", "fritzbox", "capture", "pihole", "retention", "deep_capture",
     "load_guard", "local_networks",
 }
-# Änderungen an diesen Sektionen erfordern einen Neustart der Collectors.
+# Changes to these sections require a restart of the collectors.
 RESTART_SECTIONS = {"fritzbox", "capture", "pihole", "server"}
 
 
@@ -267,13 +267,13 @@ def load_yaml(path: str | None = None) -> tuple[dict, str | None]:
     with p.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     if not isinstance(data, dict):
-        raise ValueError(f"{path}: erwartet ein YAML-Mapping")
+        raise ValueError(f"{path}: expected a YAML mapping")
     return _normalize_yaml(data), str(p)
 
 
-# Umbenannte Schlüssel. Eine bestehende config.yaml soll nach einem Update weiter
-# funktionieren, statt beim Start mit einem Validierungsfehler stehen zu bleiben.
-# Format: ("alter.pfad", "neuer.pfad"). Einträge werden nie entfernt.
+# Renamed keys. An existing config.yaml should keep working after an update
+# instead of stopping with a validation error on start.
+# Format: ("old.path", "new.path"). Entries are never removed.
 CONFIG_ALIASES: list[tuple[str, str]] = [
     ("retention.keep_raw_days", "retention.raw_days"),
     ("retention.max_size_mb", "retention.max_db_mb"),
@@ -295,7 +295,7 @@ def _dig(data: dict, path: str, create: bool = False) -> tuple[dict | None, str]
 
 
 def apply_aliases(data: dict) -> list[str]:
-    """Alte Schlüsselnamen auf die aktuellen umschreiben. Liefert die Umbenennungen."""
+    """Rewrite old key names to the current ones. Returns the renames."""
     done = []
     for old, new in CONFIG_ALIASES:
         src, key = _dig(data, old)
@@ -303,17 +303,17 @@ def apply_aliases(data: dict) -> list[str]:
             continue
         value = src.pop(key)
         dst, nkey = _dig(data, new, create=True)
-        if nkey not in dst:                     # ein bereits gesetzter neuer Wert gewinnt
+        if nkey not in dst:                     # a new value that is already set wins
             dst[nkey] = value
         done.append(f"{old} → {new}")
     return done
 
 
 def _normalize_yaml(data: dict) -> dict:
-    """Erlaubt die Kurzform `targets: [1.1.1.1, 8.8.8.8]` und übersetzt alte Schlüssel."""
+    """Allows the short form `targets: [1.1.1.1, 8.8.8.8]` and translates old keys."""
     renamed = apply_aliases(data)
     if renamed:
-        log.warning("Veraltete Schlüssel in der Konfiguration übersetzt: %s", ", ".join(renamed))
+        log.warning("Translated outdated keys in the configuration: %s", ", ".join(renamed))
     t = data.get("targets")
     if isinstance(t, list):
         data["targets"] = [{"address": x} if isinstance(x, str) else x for x in t]

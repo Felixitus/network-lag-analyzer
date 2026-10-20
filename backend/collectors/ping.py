@@ -1,10 +1,10 @@
-"""ICMP-Latenzmessung ohne externe Prozesse.
+"""ICMP latency measurement without external processes.
 
-* Ein einziger Socket für alle Ziele, eingebunden in die asyncio-Eventloop.
-* Bevorzugt unprivilegierter ICMP-Datagram-Socket (net.ipv4.ping_group_range),
-  sonst Raw-Socket (benötigt CAP_NET_RAW, wird vom systemd-Service gesetzt).
-* Empfangszeitpunkt über Kernel-Zeitstempel (SO_TIMESTAMPNS), damit Verzögerungen
-  der Eventloop die RTT nicht verfälschen.
+* A single socket for all targets, hooked into the asyncio event loop.
+* Prefers an unprivileged ICMP datagram socket (net.ipv4.ping_group_range),
+  otherwise a raw socket (needs CAP_NET_RAW, set by the systemd service).
+* Receive time from kernel timestamps (SO_TIMESTAMPNS), so that event loop
+  delays do not distort the RTT.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from typing import Callable
 
 log = logging.getLogger(__name__)
 
-SO_TIMESTAMPNS = 35  # Linux, nicht in Pythons socket-Modul definiert
+SO_TIMESTAMPNS = 35  # Linux, not defined in Python's socket module
 ICMP_ECHO_REQUEST = 8
 ICMP_ECHO_REPLY = 0
 
@@ -43,7 +43,7 @@ def build_echo(ident: int, seq: int, payload: bytes) -> bytes:
 
 
 def parse_reply(data: bytes, raw: bool) -> tuple[int, int, int] | None:
-    """Gibt (type, ident, seq) zurück. Raw-Sockets liefern den IP-Header mit."""
+    """Returns (type, ident, seq). Raw sockets include the IP header."""
     off = 0
     if raw:
         if len(data) < 20:
@@ -80,19 +80,19 @@ class _Pending:
 @dataclass
 class ProbeTarget:
     target_id: int
-    address: str            # Hostname oder IP
+    address: str            # hostname or IP
     kind: str               # gateway | internet | game
     name: str | None = None
     resolved: str | None = None
     resolved_at: float = 0.0
-    fast: bool = False      # im Gaming-Modus erhöhte Frequenz
+    fast: bool = False      # higher frequency in gaming mode
 
 
 class IcmpProber:
     def __init__(self, on_result: ResultCallback, timeout: float = 1.5):
         self._on_result = on_result
-        # Zusätzliche Mithörer, z. B. die Ziel-Prüfung im Setup-Wizard. Sie bekommen
-        # dieselben Ergebnisse, ohne dass ein zweiter Socket geöffnet werden muss.
+        # Additional listeners, e.g. the target check in the setup wizard. They get
+        # the same results without a second socket having to be opened.
         self.extra_callbacks: list[ResultCallback] = []
         self.timeout = timeout
         self.sock: socket.socket | None = None
@@ -112,8 +112,8 @@ class IcmpProber:
         for cb in list(self.extra_callbacks):
             try:
                 cb(target_id, send_ts, rtt)
-            except Exception:                      # pragma: no cover - Mithörer darf nie stören
-                log.exception("Zusätzlicher Ping-Callback fehlgeschlagen")
+            except Exception:                      # pragma: no cover - a listener must never interfere
+                log.exception("Additional ping callback failed")
 
     # --------------------------------------------------------------- lifecycle
     def open(self) -> bool:
@@ -132,10 +132,10 @@ class IcmpProber:
                 self.kernel_ts = False
             self.sock, self.mode = s, mode
             self.error = None
-            log.info("ICMP-Socket geöffnet (%s, Kernel-Zeitstempel=%s)", mode, self.kernel_ts)
+            log.info("ICMP socket opened (%s, kernel timestamps=%s)", mode, self.kernel_ts)
             return True
-        self.error = "ICMP nicht möglich – " + "; ".join(errors) + \
-            " (CAP_NET_RAW fehlt oder net.ipv4.ping_group_range schließt die Gruppe aus)"
+        self.error = "ICMP not possible - " + "; ".join(errors) + \
+            " (CAP_NET_RAW missing or net.ipv4.ping_group_range excludes the group)"
         log.error(self.error)
         return False
 
@@ -164,20 +164,20 @@ class IcmpProber:
             return
         self._seq = (self._seq + 1) & 0xFFFF
         seq = self._seq
-        # Payload: 8 Byte Kennung, damit fremde Replies sicher verworfen werden
+        # Payload: 8-byte identifier so that foreign replies are reliably discarded
         pkt = build_echo(self.ident, seq, b"NLAPROBE" + struct.pack("!d", now_wall))
         send_mono = time.monotonic()
         send_wall = time.time()
         try:
             self.sock.sendto(pkt, (address, 0))
         except OSError as e:
-            # z. B. Netz nicht erreichbar → sofort als verloren werten
+            # e.g. network unreachable → count as lost immediately
             log.debug("sendto %s: %s", address, e)
             self._emit(target_id, send_wall, None)
             return
         self.sent += 1
         old = self._pending.pop(seq, None)
-        if old:  # Sequenz-Überlauf nach 65536 Probes ohne Antwort
+        if old:  # sequence overflow after 65536 probes without a reply
             self._emit(old.target_id, old.send_wall, None)
         self._pending[seq] = _Pending(target_id, address, send_wall, send_mono, send_mono + self.timeout)
 
@@ -201,7 +201,7 @@ class IcmpProber:
             if typ != ICMP_ECHO_REPLY:
                 continue
             if self.mode == "raw" and ident != self.ident:
-                continue  # Antwort auf fremden Ping
+                continue  # reply to someone else's ping
             p = self._pending.get(seq)
             if p is None or addr[0] != p.address:
                 continue
@@ -209,7 +209,7 @@ class IcmpProber:
             rtt = (recv_mono - p.send_mono) * 1000.0
             if recv_kernel is not None:
                 k = (recv_kernel - p.send_wall) * 1000.0
-                # Kernel-Zeit bevorzugen, außer bei Uhrsprung (NTP) → dann monotone Zeit
+                # Prefer kernel time, except on a clock jump (NTP) → then monotonic time
                 if 0 <= k <= rtt + 1.0:
                     rtt = k
             if rtt > self.timeout * 1000:
@@ -229,7 +229,7 @@ class IcmpProber:
 
 
 class ProbeScheduler:
-    """Sendet periodisch Probes an alle Ziele, ausgerichtet am Sekundenraster."""
+    """Periodically sends probes to all targets, aligned to the second grid."""
 
     def __init__(self, prober: IcmpProber, interval: float, fast_interval: float):
         self.prober = prober
@@ -272,13 +272,13 @@ class ProbeScheduler:
             self._resolve_errors.pop(t.target_id, None)
         except OSError as e:
             self._resolve_errors[t.target_id] = str(e)
-            # Alte Auflösung weiterverwenden, falls vorhanden
+            # Keep using the old resolution if there is one
         return t.resolved
 
     async def _run(self) -> None:
         while True:
-            # Ein Zyklus je Messintervall (im Gaming-Modus entsprechend kürzer),
-            # ausgerichtet am Sekundenraster.
+            # One cycle per measuring interval (correspondingly shorter in gaming mode),
+            # aligned to the second grid.
             cycle = self.fast_interval if self.fast_mode else self.interval
             now = time.time()
             nxt = (int(now / cycle) + 1) * cycle
@@ -287,15 +287,15 @@ class ProbeScheduler:
             if not due:
                 await asyncio.sleep(cycle)
                 continue
-            # Pings gleichmäßig über das Intervall verteilen statt als Bündel zu senden.
-            # Ein Burst aus mehreren ICMP-Paketen innerhalb weniger Millisekunden wird von
-            # Routern, Providern und Zielservern häufig rate-limitiert – das sähe wie
-            # Paketverlust aus, obwohl die Leitung in Ordnung ist.
+            # Spread pings evenly over the interval instead of sending them as a burst.
+            # A burst of several ICMP packets within a few milliseconds is often
+            # rate-limited by routers, providers and target servers - that would look like
+            # packet loss although the line is fine.
             spacing = max(0.01, min(0.25, cycle * 0.7 / len(due)))
             for i, t in enumerate(due):
                 addr = await self._resolve(t)
                 if addr is None:
-                    # Name nicht auflösbar: kein ICMP-Verlust, sondern DNS-Problem → keine Probe
+                    # Name not resolvable: not ICMP loss but a DNS problem → no probe
                     continue
                 self.prober.send(t.target_id, addr)
                 if i < len(due) - 1:

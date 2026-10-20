@@ -1,9 +1,9 @@
-"""Sicherheit: optionaler Login, CSRF-Schutz (Double-Submit-Token), Security-Header.
+"""Security: optional login, CSRF protection (double-submit token), security headers.
 
-* CSRF: Beim Laden der Seite wird ein Cookie `nla_csrf` gesetzt (SameSite=Strict).
-  Jeder schreibende API-Request muss denselben Wert im Header `X-CSRF-Token` senden.
-  Fremde Webseiten können den Cookie nicht lesen und damit keinen gültigen Request bauen.
-* Login (optional): scrypt-Passworthash, signiertes Session-Cookie (HMAC-SHA256).
+* CSRF: loading the page sets a cookie `nla_csrf` (SameSite=Strict). Every writing
+  API request must send the same value in the `X-CSRF-Token` header. Foreign websites
+  cannot read the cookie and therefore cannot build a valid request.
+* Login (optional): scrypt password hash, signed session cookie (HMAC-SHA256).
 """
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ class SessionSigner:
         else:
             p.parent.mkdir(parents=True, exist_ok=True)
             self.key = secrets.token_bytes(32)
-            # Gleich mit 0600 anlegen – write + chmod ließe die Datei kurz für alle lesbar.
+            # Create with 0600 right away - write + chmod would leave the file world-readable for a moment.
             fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
             with os.fdopen(fd, "wb") as fh:
                 fh.write(self.key)
@@ -80,16 +80,16 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             sec = self.core.cfg.security
             if sec.login_enabled and sec.password_hash and path not in OPEN_API:
                 if not self.signer.valid(request.cookies.get(SESSION_COOKIE)):
-                    return JSONResponse({"detail": "Login erforderlich"}, status_code=401)
+                    return JSONResponse({"detail": "Login required"}, status_code=401)
             if request.method in UNSAFE:
                 cookie = request.cookies.get(CSRF_COOKIE)
                 header = request.headers.get(CSRF_HEADER)
                 if not cookie or not header or not hmac.compare_digest(cookie, header):
-                    return JSONResponse({"detail": "CSRF-Token fehlt oder ungültig"}, status_code=403)
+                    return JSONResponse({"detail": "CSRF token missing or invalid"}, status_code=403)
                 origin = request.headers.get("origin")
                 host = request.headers.get("host")
                 if origin and host and origin.split("://", 1)[-1] != host:
-                    return JSONResponse({"detail": "Fremde Herkunft abgelehnt"}, status_code=403)
+                    return JSONResponse({"detail": "Cross-origin request rejected"}, status_code=403)
         response = await call_next(request)
         if CSRF_COOKIE not in request.cookies and not path.startswith("/api/stream"):
             response.set_cookie(CSRF_COOKIE, secrets.token_urlsafe(24), samesite="strict", httponly=False,

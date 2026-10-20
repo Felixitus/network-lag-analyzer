@@ -1,20 +1,20 @@
-"""Ursachenanalyse (Root Cause Rules).
+"""Root cause analysis (root cause rules).
 
-Jede Regel ist eine eigene Funktion `rule_*` mit dokumentierter Logik. Eine Regel
-bekommt ein `Window` (alle Messwerte rund um den Incident) und liefert entweder
-None (trifft nicht zu) oder ein `Finding` mit Punktzahl und Evidenzliste.
+Each rule is a separate function `rule_*` with documented logic. A rule receives a
+`Window` (all measurements around the incident) and returns either None (does not
+apply) or a `Finding` with a score and a list of evidence.
 
-Die Regel mit der höchsten Punktzahl wird als Ursache gewählt. Die Confidence
-leitet sich aus der Punktzahl ab und wird bewusst vorsichtig formuliert:
+The rule with the highest score is chosen as the cause. The confidence is derived
+from the score and deliberately worded cautiously:
 
-    Punktzahl >= 80  → high   → "wahrscheinlicher Verursacher"
-    Punktzahl >= 55  → medium → "möglicher Verursacher"
-    sonst            → low    → "zeitlich korreliert"
+    score >= 80  → high   → "likely cause"
+    score >= 55  → medium → "possible cause"
+    otherwise    → low    → "temporally correlated"
 
-Grundsätze:
-* Keine Kausalität vortäuschen: Gleichzeitigkeit allein ergibt höchstens "low".
-* Ein Gerät wird nur benannt, wenn Traffic pro Gerät tatsächlich gemessen wurde.
-* Fehlende Datenquellen werden in `notes` ausdrücklich genannt.
+Principles:
+* Do not fake causality: simultaneity alone yields at most "low".
+* A device is only named if traffic per device was actually measured.
+* Missing data sources are stated explicitly in `notes`.
 """
 from __future__ import annotations
 
@@ -26,32 +26,32 @@ from . import bufferbloat
 from .events import (CONNECTION_DROP, DNS_FAILURE)
 
 CATEGORY_LABELS = {
-    "upload": "Upload-Sättigung / Bufferbloat",
-    "download": "Download-Sättigung / Bufferbloat",
-    "local": "LAN/WLAN/Router-Problem",
-    "wan": "WAN/ISP-Problem",
-    "target": "Zielserver/Routing",
-    "game_server": "Game-Server/Routing",
-    "loss": "Paketverluste/Übertragungsprobleme",
-    "dns": "DNS-Störung",
-    "drop_wan": "Internet-Ausfall (WAN)",
-    "drop_local": "Verbindungsverlust im LAN",
-    "unknown": "Unbekannt",
+    "upload": "Upload saturation / bufferbloat",
+    "download": "Download saturation / bufferbloat",
+    "local": "LAN/Wi-Fi/router problem",
+    "wan": "WAN/ISP problem",
+    "target": "Target server/routing",
+    "game_server": "Game server/routing",
+    "loss": "Packet loss/transmission problems",
+    "dns": "DNS disruption",
+    "drop_wan": "Internet outage (WAN)",
+    "drop_local": "Connection loss in the LAN",
+    "unknown": "Unknown",
 }
-CONFIDENCE_LABELS = {"high": "wahrscheinlicher Verursacher", "medium": "möglicher Verursacher",
-                     "low": "zeitlich korreliert"}
+CONFIDENCE_LABELS = {"high": "likely cause", "medium": "possible cause",
+                     "low": "temporally correlated"}
 
-TARGET_DELTA_MS = 25.0       # ab dieser Erhöhung gilt ein Ziel als "betroffen"
-UTIL_HIGH = 0.6              # Auslastung, ab der eine Leitung als "hoch ausgelastet" zählt
-DOMINANT_SHARE = 0.6         # Anteil am Gesamt-Traffic, ab dem ein Gerät dominiert
+TARGET_DELTA_MS = 25.0       # from this increase on a target counts as "affected"
+UTIL_HIGH = 0.6              # utilization from which a line counts as "highly utilized"
+DOMINANT_SHARE = 0.6         # share of total traffic from which a device dominates
 
 
-# =============================================================================== Datenmodell
+# =============================================================================== data model
 @dataclass
 class Window:
-    rows: list[dict]                   # 1-s-Zeilen [t0 - pre, t1 + post]
-    t0: int                            # Beginn der Auffälligkeit
-    t1: int                            # Ende der Auffälligkeit
+    rows: list[dict]                   # 1 s rows [t0 - pre, t1 + post]
+    t0: int                            # start of the anomaly
+    t1: int                            # end of the anomaly
     targets: dict[int, dict]           # target_id → {"address", "name", "kind"}
     events: list[dict] = field(default_factory=list)
     cap_down: float | None = None      # bit/s
@@ -59,9 +59,9 @@ class Window:
     cap_source: str | None = None      # config | tr064 | learned
     thresholds: object | None = None
     device_label: Callable[[str], dict] = lambda mac: {"mac": mac, "name": mac, "ip": None}
-    gaming: dict | None = None         # aktive Gaming Session (server_ip, mac, …)
+    gaming: dict | None = None         # active gaming session (server_ip, mac, …)
 
-    # ---- abgeleitete Größen (lazy) ----
+    # ---- derived values (lazy) ----
     def pre(self) -> list[dict]:
         return [r for r in self.rows if r["ts"] < self.t0]
 
@@ -94,7 +94,7 @@ class Finding:
     details: dict = field(default_factory=dict)
 
 
-# =============================================================================== Hilfsfunktionen
+# =============================================================================== helpers
 def _med(vals: list[float | None]) -> float | None:
     v = [x for x in vals if x is not None]
     return statistics.median(v) if v else None
@@ -133,7 +133,7 @@ def gateway_stable(w: Window) -> bool | None:
 
 
 def target_impact(w: Window) -> dict[int, dict]:
-    """Pro Internet-/Game-Ziel: Baseline, Spitze, Verluste, betroffen ja/nein."""
+    """Per internet/game target: baseline, peak, losses, affected yes/no."""
     out: dict[int, dict] = {}
     for tid, info in w.targets.items():
         if info["kind"] == "gateway":
@@ -154,7 +154,7 @@ def target_impact(w: Window) -> dict[int, dict]:
 
 
 def utilization(w: Window, direction: str) -> tuple[list[float], float | None]:
-    """Auslastung je Sekunde im Incident (0..1) bezogen auf die Kapazität."""
+    """Utilization per second in the incident (0..1) relative to the capacity."""
     cap = w.cap_up if direction == "up" else w.cap_down
     key = "up_bps" if direction == "up" else "down_bps"
     if not cap:
@@ -164,7 +164,7 @@ def utilization(w: Window, direction: str) -> tuple[list[float], float | None]:
 
 
 def device_rates(w: Window, rows: list[dict], direction: str) -> dict[str, list[tuple[int, float]]]:
-    """mac → [(ts, bit/s)] für Upload (tx) bzw. Download (rx)."""
+    """mac → [(ts, bit/s)] for upload (tx) or download (rx)."""
     idx = 1 if direction == "up" else 0
     out: dict[str, list[tuple[int, float]]] = {}
     for r in rows:
@@ -174,7 +174,7 @@ def device_rates(w: Window, rows: list[dict], direction: str) -> dict[str, list[
 
 
 def top_device(w: Window, direction: str) -> tuple[str | None, float, float]:
-    """(mac, Anteil am Gesamt-Traffic im Incident, Spitzenrate) des stärksten Geräts."""
+    """(mac, share of total traffic in the incident, peak rate) of the strongest device."""
     rates = device_rates(w, w.inside(), direction)
     if not rates:
         return None, 0.0, 0.0
@@ -187,11 +187,11 @@ def top_device(w: Window, direction: str) -> tuple[str | None, float, float]:
 
 
 def onset(w: Window, series: list[tuple[int, float]], level: float) -> int | None:
-    """Beginn des zusammenhängenden Abschnitts >= level, der den Incident-Start berührt."""
+    """Start of the contiguous section >= level that touches the incident start."""
     by_ts = dict(series)
     t = None
     s = w.t0 + 1
-    # vom Incident-Start aus rückwärts suchen
+    # search backwards from the incident start
     for ts in range(s, w.t0 - 60, -1):
         if by_ts.get(ts, 0.0) >= level:
             t = ts
@@ -199,7 +199,7 @@ def onset(w: Window, series: list[tuple[int, float]], level: float) -> int | Non
             break
     if t is not None:
         return t
-    # sonst: erster Zeitpunkt innerhalb des Incidents
+    # otherwise: first point in time inside the incident
     for ts in range(w.t0, w.t1 + 1):
         if by_ts.get(ts, 0.0) >= level:
             return ts
@@ -207,7 +207,7 @@ def onset(w: Window, series: list[tuple[int, float]], level: float) -> int | Non
 
 
 def latency_onset(w: Window) -> int:
-    """Erste Sekunde, in der die Internet-RTT deutlich über der Baseline lag oder Verlust auftrat."""
+    """First second in which the internet RTT was clearly above the baseline or loss occurred."""
     base = _med([r.get("rtt_avg") for r in w.pre()])
     for r in w.around(0):
         rtt = r.get("rtt_avg")
@@ -220,20 +220,20 @@ def _confidence(score: int) -> str:
     return "high" if score >= 80 else "medium" if score >= 55 else "low"
 
 
-# =============================================================================== Regeln
+# =============================================================================== rules
 def _saturation_rule(w: Window, direction: str) -> Finding | None:
-    """Gemeinsame Logik für Upload- und Download-Sättigung (Bufferbloat).
+    """Shared logic for upload and download saturation (bufferbloat).
 
-    Hintergrund: Ist eine Richtung der Leitung voll ausgelastet, füllen sich die
-    Puffer im Router/Modem und ALLE Pakete (auch Game-Pakete und Pings) warten.
-    Typisch: Router-Ping bleibt niedrig, alle Internetziele steigen gleichzeitig.
+    Background: if one direction of the line is fully utilized, the buffers in the
+    router/modem fill up and ALL packets (game packets and pings too) wait.
+    Typical: router ping stays low, all internet targets rise at the same time.
 
-    Evidenz und Punkte:
-      E1 (Pflicht, 40)  Richtung im Incident >= 60 % ausgelastet (mind. die Hälfte der Sekunden)
-      E2 (20)           Traffic-Anstieg begann vor oder mit dem Latenzanstieg
-      E3 (15)           Router-Latenz blieb stabil (spricht gegen LAN/WLAN-Problem)
-      E4 (10)           mehrere Internetziele gleichzeitig betroffen (gemeinsamer Engpass)
-      E5 (15)           ein Gerät verursacht >= 60 % des Traffics → wird benannt
+    Evidence and points:
+      E1 (required, 40) direction >= 60 % utilized in the incident (at least half of the seconds)
+      E2 (20)           traffic increase started before or with the latency increase
+      E3 (15)           router latency stayed stable (speaks against a LAN/Wi-Fi problem)
+      E4 (10)           several internet targets affected at once (common bottleneck)
+      E5 (15)           one device causes >= 60 % of the traffic → it is named
     """
     utils, peak_util = utilization(w, direction)
     name = "Upload" if direction == "up" else "Download"
@@ -244,67 +244,67 @@ def _saturation_rule(w: Window, direction: str) -> Finding | None:
     if not utils or high_secs < max(1, len(utils) / 2):
         return None
     score = 40
-    ev = [f"{name}-Auslastung bis {peak_util * 100:.0f} % der Leitung "
-          f"({_mbit(_max([r.get(key) for r in w.inside()]))} von {_mbit(w.cap_up if direction == 'up' else w.cap_down)}"
-          f"{', Kapazität geschätzt' if w.cap_source == 'learned' else ''})"]
+    ev = [f"{name} utilization up to {peak_util * 100:.0f} % of the line "
+          f"({_mbit(_max([r.get(key) for r in w.inside()]))} of {_mbit(w.cap_up if direction == 'up' else w.cap_down)}"
+          f"{', capacity estimated' if w.cap_source == 'learned' else ''})"]
     cap = w.cap_up if direction == "up" else w.cap_down
     total_series = [(r["ts"], r.get(key) or 0.0) for r in w.rows]
     lat_on = latency_onset(w)
     t_on = onset(w, total_series, cap * UTIL_HIGH * 0.8)
     if t_on is not None and t_on <= lat_on + 1:
         score += 20
-        ev.append(f"{name}-Anstieg begann {'vor' if t_on < lat_on else 'gleichzeitig mit'} dem Latenzanstieg "
-                  f"({lat_on - t_on} s vorher)" if t_on < lat_on else f"{name}-Anstieg zeitgleich mit dem Latenzanstieg")
+        ev.append(f"{name} increase started {'before' if t_on < lat_on else 'together with'} the latency increase "
+                  f"({lat_on - t_on} s earlier)" if t_on < lat_on else f"{name} increase at the same time as the latency increase")
     if high_secs >= len(utils) * 0.8:
-        ev.append(f"{name} blieb während fast des gesamten Incidents hoch")
+        ev.append(f"{name} stayed high for almost the entire incident")
     gs = gateway_stable(w)
     if gs:
         score += 15
-        ev.append("Router-Latenz blieb stabil")
+        ev.append("Router latency stayed stable")
     impacted = [t for t in target_impact(w).values() if t["affected"] and t["kind"] == "internet"]
     if len(impacted) >= 2:
         score += 10
-        ev.append(f"{len(impacted)} externe Ziele zeigten gleichzeitig erhöhte Latenz/Verlust")
+        ev.append(f"{len(impacted)} external targets showed increased latency/loss at the same time")
     device = None
     if w.per_device_available:
         mac, share, dev_peak = top_device(w, direction)
         if mac and share >= DOMINANT_SHARE:
             score += 15
             device = {**w.device_label(mac), "share": round(share, 2), "peak_bps": dev_peak}
-            ev.append(f"{device['name']} verursachte {share * 100:.0f} % des {name}s (Spitze {_mbit(dev_peak)})")
+            ev.append(f"{device['name']} caused {share * 100:.0f} % of the {name.lower()} (peak {_mbit(dev_peak)})")
             dev_on = onset(w, device_rates(w, w.rows, direction).get(mac, []), dev_peak * 0.5)
             if dev_on is not None:
                 device["onset"] = dev_on
         elif mac:
-            ev.append(f"Kein einzelnes Gerät dominiert (stärkstes: {w.device_label(mac)['name']} mit {share * 100:.0f} %)")
-    cause = f"{name}-Sättigung" + (f" durch {device['name']}" if device else "")
+            ev.append(f"No single device dominates (strongest: {w.device_label(mac)['name']} with {share * 100:.0f} %)")
+    cause = f"{name} saturation" + (f" by {device['name']}" if device else "")
     if not w.per_device_available:
-        cause += " (Gerät nicht bestimmbar – kein Traffic pro Gerät verfügbar)"
+        cause += " (device not identifiable - no traffic per device available)"
     return Finding(f"rule_{direction}load_saturation", "upload" if direction == "up" else "download",
                    score, cause, ev, device, {"peak_util": round(peak_util, 3), "onset": t_on})
 
 
 def rule_upload_saturation(w: Window) -> Finding | None:
-    """Hoher Upload eines Gerätes + gleichzeitig Internet-Ping/Jitter hoch → Upload Saturation/Bufferbloat."""
+    """High upload of a device + internet ping/jitter high at the same time → upload saturation/bufferbloat."""
     return _saturation_rule(w, "up")
 
 
 def rule_download_saturation(w: Window) -> Finding | None:
-    """Hoher Download + Ping-Spike → Download Saturation/Bufferbloat."""
+    """High download + ping spike → download saturation/bufferbloat."""
     return _saturation_rule(w, "down")
 
 
 def rule_local_problem(w: Window) -> Finding | None:
-    """Gateway-Ping hoch + Internet-Ping hoch → mögliches LAN/WLAN/Routerproblem.
+    """Gateway ping high + internet ping high → possible LAN/Wi-Fi/router problem.
 
-    Der Router ist nur einen Hop entfernt. Steigt schon dessen Latenz (oder
-    antwortet er nicht), liegt das Problem vor dem Internetanschluss: LAN, WLAN,
-    Router-CPU – oder die Anbindung des Raspberry Pi selbst.
-      Pflicht (50)  Router-Latenz über Schwelle oder Router-Verluste
-      +20           Internetziele gleichzeitig betroffen
-      +15           Router-Anstieg begann nicht nach dem Internet-Anstieg
-    Abzug -25, wenn gleichzeitig eine Leitung stark ausgelastet ist (ein
-    ausgelasteter Router antwortet oft verzögert auf ICMP).
+    The router is only one hop away. If its latency already rises (or it does
+    not answer), the problem lies before the internet connection: LAN, Wi-Fi,
+    router CPU - or the connection of the Raspberry Pi itself.
+      required (50) router latency above threshold or router losses
+      +20           internet targets affected at the same time
+      +15           router increase did not start after the internet increase
+    Deduction -25 if a line is heavily utilized at the same time (a busy
+    router often answers ICMP with a delay).
     """
     g = gateway_stats(w)
     if g["probes"] == 0:
@@ -314,36 +314,36 @@ def rule_local_problem(w: Window) -> Finding | None:
     if not bad:
         return None
     score = 50
-    ev = [f"Router-Latenz {g['before'] or 0:.1f} → {g['peak'] or 0:.1f} ms"
-          + (f", {g['lost']}/{g['probes']} Router-Probes verloren" if g["lost"] else "")]
+    ev = [f"Router latency {g['before'] or 0:.1f} → {g['peak'] or 0:.1f} ms"
+          + (f", {g['lost']}/{g['probes']} router probes lost" if g["lost"] else "")]
     impacted = [t for t in target_impact(w).values() if t["affected"]]
     if impacted:
         score += 20
-        ev.append("Internetziele gleichzeitig betroffen")
+        ev.append("Internet targets affected at the same time")
     gw_series = [(r["ts"], r.get("gw_rtt") or (thr if (r.get("gw_lost") or 0) else 0.0)) for r in w.rows]
     gw_on = onset(w, gw_series, thr)
     if gw_on is not None and gw_on <= latency_onset(w):
         score += 15
-        ev.append("Router-Latenz stieg zuerst bzw. gleichzeitig")
+        ev.append("Router latency rose first or at the same time")
     for d in ("up", "down"):
         _, pu = utilization(w, d)
         if pu is not None and pu >= 0.85:
             score -= 25
-            ev.append(f"Achtung: {'Upload' if d == 'up' else 'Download'} gleichzeitig stark ausgelastet – "
-                      "Router könnte nur wegen Last langsam auf Pings antworten")
-    ev.append("Hinweis: Gemessen vom Raspberry Pi aus – auch dessen eigene LAN/WLAN-Anbindung kann betroffen sein")
-    return Finding("rule_local_problem", "local", score, "LAN/WLAN- oder Router-Problem", ev)
+            ev.append(f"Caution: {'upload' if d == 'up' else 'download'} heavily utilized at the same time - "
+                      "the router might answer pings slowly only because of the load")
+    ev.append("Note: measured from the Raspberry Pi - its own LAN/Wi-Fi connection may be affected too")
+    return Finding("rule_local_problem", "local", score, "LAN/Wi-Fi or router problem", ev)
 
 
 def rule_wan_isp(w: Window) -> Finding | None:
-    """Gateway normal + Internet-Ping hoch → WAN/ISP/Bufferbloat möglich.
+    """Gateway normal + internet ping high → WAN/ISP/bufferbloat possible.
 
-    Router antwortet normal, aber mehrere externe Ziele gleichzeitig schlecht und
-    keine eigene Leitungsauslastung → Engpass hinter dem Router (Anschluss/ISP).
-      Pflicht (45)  Router stabil UND mindestens 2 Internetziele betroffen
-      +15           alle Internetziele betroffen
-      +10           keine Leitung über 50 % ausgelastet (eigener Traffic unwahrscheinlich)
-      +10           Retransmissions in Download-Richtung erhöht (Verluste vor dem Router)
+    The router answers normally, but several external targets are bad at once and
+    your own line is not utilized → bottleneck behind the router (connection/ISP).
+      required (45) router stable AND at least 2 internet targets affected
+      +15           all internet targets affected
+      +10           no line above 50 % utilization (own traffic unlikely)
+      +10           retransmissions in download direction increased (losses before the router)
     """
     if not gateway_stable(w):
         return None
@@ -352,30 +352,30 @@ def rule_wan_isp(w: Window) -> Finding | None:
     if len(impacted) < 2:
         return None
     score = 45
-    ev = ["Router-Latenz blieb stabil",
-          f"{len(impacted)} von {len(ti)} externen Zielen betroffen: " +
+    ev = ["Router latency stayed stable",
+          f"{len(impacted)} of {len(ti)} external targets affected: " +
           ", ".join(f"{t['name'] or t['address']}" for t in impacted)]
     if len(impacted) == len(ti):
         score += 15
     utils = [utilization(w, d)[1] for d in ("up", "down")]
     if all(u is not None for u in utils) and max(utils) < 0.5:
         score += 10
-        ev.append("Eigene Leitung nicht ausgelastet – Engpass vermutlich beim Anschluss/ISP")
+        ev.append("Own line not utilized - bottleneck probably at the connection/ISP")
     elif all(u is None for u in utils):
-        ev.append("Leitungsauslastung unbekannt – Upload/Download-Sättigung nicht ausschließbar")
+        ev.append("Line utilization unknown - upload/download saturation cannot be ruled out")
     rd = sum(r.get("retrans_down") or 0 for r in w.inside())
     if rd >= 5:
         score += 10
-        ev.append(f"{rd} TCP-Retransmissions aus dem Internet (Verluste vor dem Router)")
-    return Finding("rule_wan_isp", "wan", score, "WAN/ISP-Problem oder Bufferbloat beim Anschluss", ev)
+        ev.append(f"{rd} TCP retransmissions from the internet (losses before the router)")
+    return Finding("rule_wan_isp", "wan", score, "WAN/ISP problem or bufferbloat at the connection", ev)
 
 
 def rule_multi_target_loss(w: Window) -> Finding | None:
-    """Mehrere externe Ziele gleichzeitig Packet Loss → WAN/ISP wahrscheinlicher als einzelner Server.
+    """Several external targets with packet loss at once → WAN/ISP more likely than a single server.
 
-      Pflicht (55)  in derselben Sekunde Verluste bei >= 2 Internetzielen, Router ohne Verlust
-      +15           in mehreren Sekunden aufgetreten
-      +10           Router-Latenz stabil
+      required (55) losses at >= 2 internet targets in the same second, router without loss
+      +15           occurred in several seconds
+      +10           router latency stable
     """
     ids = [tid for tid, i in w.targets.items() if i["kind"] == "internet"]
     multi_secs = 0
@@ -387,26 +387,26 @@ def rule_multi_target_loss(w: Window) -> Finding | None:
     if multi_secs == 0 or g["lost"] > 0:
         return None
     score = 55 + (15 if multi_secs >= 2 else 0)
-    ev = [f"In {multi_secs} Sekunde(n) Paketverlust bei mehreren externen Zielen gleichzeitig",
-          "Router ohne Paketverlust"]
+    ev = [f"Packet loss at several external targets at once in {multi_secs} second(s)",
+          "Router without packet loss"]
     if gateway_stable(w):
         score += 10
-    # Eigene Sättigung kann ebenfalls Verluste verursachen → Abzug
+    # Own saturation can cause losses as well → deduction
     for d in ("up", "down"):
         _, pu = utilization(w, d)
         if pu is not None and pu >= 0.85:
             score -= 30
-            ev.append(f"{'Upload' if d == 'up' else 'Download'} zeitgleich stark ausgelastet – Verluste evtl. durch eigenen Traffic")
-    return Finding("rule_multi_target_loss", "wan", score, "Paketverlust hinter dem Router (WAN/ISP)", ev)
+            ev.append(f"{'Upload' if d == 'up' else 'Download'} heavily utilized at the same time - losses possibly caused by own traffic")
+    return Finding("rule_multi_target_loss", "wan", score, "Packet loss behind the router (WAN/ISP)", ev)
 
 
 def rule_single_target(w: Window) -> Finding | None:
-    """Gateway normal + Internet normal + einzelnes Ziel problematisch → Zielserver/Routingproblem möglich.
-    Nur ein externes Ziel betroffen → Routing/Zielserver wahrscheinlicher.
+    """Gateway normal + internet normal + a single target problematic → target server/routing problem possible.
+    Only one external target affected → routing/target server more likely.
 
-      Pflicht (50)  genau ein Ziel betroffen, alle anderen normal, Router stabil
-      +10           das Ziel hatte Paketverluste
-      +10           das Ziel ist der Game-Server
+      required (50) exactly one target affected, all others normal, router stable
+      +10           the target had packet loss
+      +10           the target is the game server
     """
     ti = target_impact(w)
     impacted = [t for t in ti.values() if t["affected"]]
@@ -415,9 +415,9 @@ def rule_single_target(w: Window) -> Finding | None:
         return None
     t = impacted[0]
     score = 50
-    ev = [f"Nur {t['name'] or t['address']} betroffen "
-          f"({(t['base'] or 0):.0f} → {(t['peak'] or 0):.0f} ms, {t['lost']}/{t['probes']} verloren)",
-          f"{len(normal)} andere Ziele normal", "Router-Latenz stabil"]
+    ev = [f"Only {t['name'] or t['address']} affected "
+          f"({(t['base'] or 0):.0f} → {(t['peak'] or 0):.0f} ms, {t['lost']}/{t['probes']} lost)",
+          f"{len(normal)} other targets normal", "Router latency stable"]
     if t["lost"]:
         score += 10
     cat = "target"
@@ -425,17 +425,17 @@ def rule_single_target(w: Window) -> Finding | None:
         score += 10
         cat = "game_server"
     return Finding("rule_single_target", cat, score,
-                   f"Problem beim Ziel {t['name'] or t['address']} oder dem Routing dorthin", ev)
+                   f"Problem at the target {t['name'] or t['address']} or the routing to it", ev)
 
 
 def rule_tcp_retransmissions(w: Window) -> Finding | None:
-    """TCP Retransmissions stark erhöht → mögliche Paketverluste/Übertragungsprobleme.
+    """TCP retransmissions strongly increased → possible packet loss/transmission problems.
 
-    Retransmissions sind ein indirektes Verlustsignal. Die Richtung hilft:
-    * Download-Richtung (Server sendet erneut): Verlust zwischen Server und Router
-    * Upload-Richtung (Client sendet erneut): Verlust auf dem Upload oder im LAN/WLAN
-      Pflicht (35)  >= 3 % Retransmissions bei >= 50 Datensegmenten
-      +10           gleichzeitig ICMP-Verluste
+    Retransmissions are an indirect loss signal. The direction helps:
+    * download direction (server resends): loss between server and router
+    * upload direction (client resends): loss on the upload or in the LAN/Wi-Fi
+      required (35) >= 3 % retransmissions with >= 50 data segments
+      +10           ICMP losses at the same time
     """
     segs = sum(r.get("tcp_segs") or 0 for r in w.inside())
     rd = sum(r.get("retrans_down") or 0 for r in w.inside())
@@ -443,26 +443,26 @@ def rule_tcp_retransmissions(w: Window) -> Finding | None:
     if segs < 50 or (rd + ru) / segs < 0.03:
         return None
     score = 35
-    ev = [f"{(rd + ru) / segs * 100:.1f} % TCP-Retransmissions ({rd} aus dem Internet, {ru} von LAN-Geräten)"]
+    ev = [f"{(rd + ru) / segs * 100:.1f} % TCP retransmissions ({rd} from the internet, {ru} from LAN devices)"]
     if sum(r.get("lost") or 0 for r in w.inside()) > 0:
         score += 10
-        ev.append("Gleichzeitig ICMP-Paketverlust")
-    where = "zwischen Internet-Servern und Router" if rd >= ru else "im Upload oder LAN/WLAN"
-    return Finding("rule_tcp_retransmissions", "loss", score, f"Paketverluste/Übertragungsprobleme ({where})", ev)
+        ev.append("ICMP packet loss at the same time")
+    where = "between internet servers and router" if rd >= ru else "in the upload or LAN/Wi-Fi"
+    return Finding("rule_tcp_retransmissions", "loss", score, f"Packet loss/transmission problems ({where})", ev)
 
 
 def rule_game_server(w: Window) -> Finding | None:
-    """Router und Internet normal, aber Game-Verbindung hat Probleme → Game-Server/Routing (Fall C).
+    """Router and internet normal, but the game connection has problems → game server/routing (case C).
 
-    Nur während einer Gaming Session auswertbar (sonst ist nicht bekannt, ob der
-    beobachtete UDP-Strom überhaupt ein Spiel ist). Signal: Lücken im Downstream des
-    Game-Flows (keine Pakete vom Server) oder erhöhte ICMP-RTT zum Game-Server,
-    während alle Referenzziele normal sind.
-      Pflicht (55)  Game-Paketlücke oder Game-RTT-Anstieg, Referenzziele normal, Router stabil
-      +10           Lücke >= 500 ms
+    Only evaluable during a gaming session (otherwise it is not known whether the
+    observed UDP stream is a game at all). Signal: gaps in the downstream of the
+    game flow (no packets from the server) or increased ICMP RTT to the game server,
+    while all reference targets are normal.
+      required (55) game packet gap or game RTT increase, reference targets normal, router stable
+      +10           gap >= 500 ms
     """
     if not w.gaming:
-        return None          # ohne laufende Session ist kein Game-Flow beobachtet worden
+        return None          # without a running session no game flow was observed
     ins = w.inside()
     gaps = [r.get("game_gap_ms") for r in ins if r.get("game_gap_ms") is not None]
     game_rtt_pre = _med([r.get("game_rtt") for r in w.pre()])
@@ -476,23 +476,23 @@ def rule_game_server(w: Window) -> Finding | None:
     if any(t["affected"] for t in inet) or gateway_stable(w) is False:
         return None
     score = 55
-    ev = ["Referenzziele (Internet) und Router normal"]
+    ev = ["Reference targets (internet) and router normal"]
     if gap_bad:
-        ev.append(f"Game-Flow: bis zu {max(gaps):.0f} ms keine Pakete vom Server")
+        ev.append(f"Game flow: up to {max(gaps):.0f} ms without packets from the server")
         if max(gaps) >= 500:
             score += 10
     if rtt_bad:
-        ev.append(f"Ping zum Game-Server {game_rtt_pre:.0f} → {game_rtt_peak:.0f} ms")
+        ev.append(f"Ping to the game server {game_rtt_pre:.0f} → {game_rtt_peak:.0f} ms")
     srv = (w.gaming or {}).get("server_ip")
     return Finding("rule_game_server", "game_server", score,
-                   "Problem beim Game-Server oder im Routing dorthin" + (f" ({srv})" if srv else ""), ev)
+                   "Problem at the game server or in the routing to it" + (f" ({srv})" if srv else ""), ev)
 
 
 def rule_dns_failure(w: Window) -> Finding | None:
-    """DNS-Ausfall bei normaler Erreichbarkeit → DNS-Problem (kein Lag im Spiel).
+    """DNS failure with normal reachability → DNS problem (no in-game lag).
 
-      Pflicht (60)  DNS-Probes fehlgeschlagen, ICMP-Ziele erreichbar ohne Verlust
-      +15           nur der lokale Resolver (Pi-hole) betroffen → Pi-hole/Pi prüfen
+      required (60) DNS probes failed, ICMP targets reachable without loss
+      +15           only the local resolver (Pi-hole) affected → check Pi-hole/Pi
     """
     dns = [x for r in w.around(5) for x in (r.get("dns") or [])]
     fails = [x for x in dns if x[1] is None or x[2] == "servfail"]
@@ -503,28 +503,28 @@ def rule_dns_failure(w: Window) -> Finding | None:
     failed_servers = sorted({x[0] for x in fails} | {e.get("target") for e in w.events_of(DNS_FAILURE) if e.get("target")})
     ok_servers = sorted({x[0] for x in dns if x[1] is not None} - set(failed_servers))
     score = 60
-    ev = [f"DNS-Anfragen fehlgeschlagen an: {', '.join(failed_servers)}", "ICMP-Erreichbarkeit normal"]
-    cause = "DNS-Störung"
-    # Fiel nur die ungecachte Probe aus, funktioniert der Resolver noch, aber die
-    # Auflösung nach außen nicht – das ist der Upstream, nicht Pi-hole.
+    ev = [f"DNS queries failed at: {', '.join(failed_servers)}", "ICMP reachability normal"]
+    cause = "DNS disruption"
+    # If only the uncached probe failed, the resolver still works, but resolution
+    # to the outside does not - that is the upstream, not Pi-hole.
     kinds = {x[3] for x in fails if len(x) > 3}
     if kinds == {"uncached"}:
-        cause = "DNS-Störung beim Upstream-Resolver"
-        ev.append("Gecachte Antworten kamen weiter – der lokale Resolver läuft, "
-                  "die Auflösung nach außen nicht")
+        cause = "DNS disruption at the upstream resolver"
+        ev.append("Cached answers kept coming - the local resolver is running, "
+                  "resolution to the outside is not")
     elif failed_servers == ["127.0.0.1"] or (ok_servers and all(s != "127.0.0.1" for s in ok_servers)):
         score += 15
-        cause = "DNS-Störung des lokalen Resolvers (Pi-hole)"
-        ev.append("Upstream-DNS funktionierte → Pi-hole/FTL prüfen")
-    ev.append("DNS beeinflusst keine laufende Spielverbindung, aber Verbindungsaufbau/Matchmaking")
+        cause = "DNS disruption of the local resolver (Pi-hole)"
+        ev.append("Upstream DNS worked → check Pi-hole/FTL")
+    ev.append("DNS does not affect a running game connection, but connection setup/matchmaking")
     return Finding("rule_dns_failure", "dns", score, cause, ev)
 
 
 def rule_connection_drop(w: Window) -> Finding | None:
-    """Kompletter Verbindungsverlust.
+    """Complete loss of connection.
 
-    * Router weiterhin erreichbar → Internetanschluss ausgefallen (WAN/ISP), 75 Punkte
-    * Router ebenfalls nicht erreichbar → Verbindungsverlust im LAN (bzw. Pi), 70 Punkte
+    * router still reachable → internet connection down (WAN/ISP), 75 points
+    * router not reachable either → connection loss in the LAN (or Pi), 70 points
     """
     drops = w.events_of(CONNECTION_DROP)
     if not drops:
@@ -532,10 +532,10 @@ def rule_connection_drop(w: Window) -> Finding | None:
     g = gateway_stats(w)
     dur = sum(((e.get("ts_end") or w.t1) - e["ts_start"] + 1) for e in drops)
     if g["probes"] and g["lost"] < g["probes"] * 0.5:
-        return Finding("rule_connection_drop", "drop_wan", 75, "Internet-Ausfall (Router erreichbar, Internet nicht)",
-                       [f"Alle externen Ziele {dur:.0f} s nicht erreichbar", "Router antwortete weiterhin"])
-    return Finding("rule_connection_drop", "drop_local", 70, "Verbindungsverlust im LAN/zum Router",
-                   [f"Alle externen Ziele {dur:.0f} s nicht erreichbar", "Auch der Router antwortete nicht"])
+        return Finding("rule_connection_drop", "drop_wan", 75, "Internet outage (router reachable, internet not)",
+                       [f"All external targets unreachable for {dur:.0f} s", "Router kept answering"])
+    return Finding("rule_connection_drop", "drop_local", 70, "Connection loss in the LAN/to the router",
+                   [f"All external targets unreachable for {dur:.0f} s", "The router did not answer either"])
 
 
 RULES: list[Callable[[Window], Finding | None]] = [
@@ -552,148 +552,148 @@ RULES: list[Callable[[Window], Finding | None]] = [
 ]
 
 
-# =============================================================================== Handlungsempfehlung
-# Zu jeder Kategorie gehört eine konkrete Maßnahme – die Diagnose allein hilft nicht weiter.
-# `scope` sagt ehrlich, ob sich das überhaupt selbst beheben lässt:
-#   self     → in der eigenen Hand (Gerät, Router, WLAN)
-#   provider → nur der Anschlussanbieter kann es ändern
-#   remote   → liegt beim Zielserver/Routing, lokal nicht behebbar
+# =============================================================================== recommendations
+# Every category comes with a concrete action - the diagnosis alone does not help.
+# `scope` says honestly whether it can be fixed by yourself at all:
+#   self     → in your own hands (device, router, Wi-Fi)
+#   provider → only the internet provider can change it
+#   remote   → lies with the target server/routing, cannot be fixed locally
 RECOMMENDATIONS: dict[str, dict] = {
     "upload": {
         "scope": "self",
-        "headline": "Upload begrenzen oder Spiel priorisieren",
+        "headline": "Limit the upload or prioritize the game",
         "steps": [
-            "FRITZ!Box → Internet → Filter → Priorisierung: {device_or_gamer} als „Echtzeitanwendung“ eintragen. "
-            "Beim Upload steht die Warteschlange im eigenen Router, deshalb wirkt die Priorisierung hier wirklich.",
-            "{uploader} während des Spielens drosseln oder pausieren "
-            "(Cloud-Backup, Video-Upload, Streaming, Seeding).",
-            "Dauerhaft: Upload-Rate der verursachenden Anwendung auf ca. 80 % der Leitung begrenzen – "
-            "ein zu 100 % gefüllter Upload erzeugt den Lag, nicht die Datenmenge an sich.",
+            "FRITZ!Box → Internet → Filters → Prioritization: add {device_or_gamer} as a \"real-time application\". "
+            "On the upload the queue sits in your own router, so prioritization really works here.",
+            "Throttle or pause {uploader} while gaming "
+            "(cloud backup, video upload, streaming, seeding).",
+            "Permanently: limit the upload rate of the causing application to about 80 % of the line - "
+            "a 100 % full upload causes the lag, not the amount of data itself.",
         ],
     },
     "download": {
         "scope": "self",
-        "headline": "Download drosseln – Priorisierung hilft hier nicht",
+        "headline": "Throttle the download - prioritization does not help here",
         "steps": [
-            "{uploader} bremsen: Steam → Einstellungen → Downloads → Bandbreite begrenzen, "
-            "PS5/Xbox-Downloads pausieren, Streaming-Qualität senken.",
-            "Wichtig: Die Warteschlange steht beim Provider, nicht im eigenen Router. "
-            "Eine Priorisierung in der FRITZ!Box kann Pakete, die bereits beim Provider warten, nicht überholen.",
-            "Dauerhafte Lösung wäre ein Router mit SQM/CAKE, der den Download künstlich knapp unter die "
-            "Leitungsgrenze bremst – die FRITZ!Box beherrscht das nicht.",
+            "Slow down {uploader}: Steam → Settings → Downloads → limit bandwidth, "
+            "pause PS5/Xbox downloads, lower streaming quality.",
+            "Important: the queue sits at the provider, not in your own router. "
+            "Prioritization in the FRITZ!Box cannot overtake packets that are already waiting at the provider.",
+            "A permanent solution would be a router with SQM/CAKE that limits the download to just below the "
+            "line limit - the FRITZ!Box cannot do that.",
         ],
     },
     "local": {
         "scope": "self",
-        "headline": "Verbindung im eigenen Netz prüfen",
+        "headline": "Check the connection in your own network",
         "steps": [
-            "Läuft der Gaming-PC über WLAN? Mit Kabel testen – das ist der häufigste Einzelbefund.",
-            "WLAN: Kanal und Band prüfen (5 GHz statt 2,4 GHz), Abstand zum Access Point, "
-            "Mesh-Übergänge (Deco) im Blick behalten.",
-            "Router-Auslastung prüfen (FRITZ!Box → System → Ereignisse), Router-Neustart als letzter Test.",
-            "Zur Einordnung: Gemessen wird vom Raspberry Pi aus. Hängt der Pi selbst am WLAN, "
-            "kann auch dessen Anbindung die Ursache sein – dann ist das Spiel womöglich gar nicht betroffen.",
+            "Is the gaming PC on Wi-Fi? Test with a cable - that is the most common single finding.",
+            "Wi-Fi: check channel and band (5 GHz instead of 2.4 GHz), distance to the access point, "
+            "keep an eye on mesh handovers (Deco).",
+            "Check router load (FRITZ!Box → System → Event Log), restart the router as a last test.",
+            "For context: measurements are taken from the Raspberry Pi. If the Pi itself is on Wi-Fi, "
+            "its own connection may be the cause - then the game may not be affected at all.",
         ],
     },
     "wan": {
         "scope": "provider",
-        "headline": "Anschluss dokumentieren und beim Anbieter melden",
+        "headline": "Document the connection and report it to the provider",
         "steps": [
-            "FRITZ!Box → Internet → DSL-Informationen → Störsicherheit: Fehlerzähler (ES/SES, CRC) "
-            "und Leitungsdämpfung notieren – steigende Werte sind belastbare Argumente.",
-            "Diesen Incident als Beleg aufheben: Uhrzeit, Dauer und betroffene Ziele stehen hier bereits.",
-            "Wiederholt es sich zur gleichen Tageszeit, spricht das für Überbuchung im Segment des Anbieters – "
-            "das lässt sich lokal nicht beheben, nur melden.",
-            "Lokal bleibt nur Schadensbegrenzung: eigene Leitung während des Spielens frei halten.",
+            "FRITZ!Box → Internet → DSL Information → Line Quality: note the error counters (ES/SES, CRC) "
+            "and line attenuation - rising values are solid arguments.",
+            "Keep this incident as evidence: time, duration and affected targets are already recorded here.",
+            "If it repeats at the same time of day, that points to overbooking in the provider's segment - "
+            "that cannot be fixed locally, only reported.",
+            "Locally only damage control remains: keep your own line free while gaming.",
         ],
     },
     "target": {
         "scope": "remote",
-        "headline": "Liegt beim Ziel oder am Weg dorthin",
+        "headline": "Lies with the target or the path to it",
         "steps": [
-            "Nur ein Ziel war betroffen – die eigene Leitung und der Router waren in Ordnung.",
-            "Falls es der Spiel- oder Matchmaking-Server ist: anderen Server bzw. andere Region wählen.",
-            "Sonst keine lokale Maßnahme sinnvoll; wiederholt sich das Muster, hilft ein Traceroute zum Ziel "
-            "während des Problems.",
+            "Only one target was affected - your own line and the router were fine.",
+            "If it is the game or matchmaking server: choose another server or region.",
+            "Otherwise no local action makes sense; if the pattern repeats, a traceroute to the target "
+            "during the problem helps.",
         ],
     },
     "game_server": {
         "scope": "remote",
-        "headline": "Game-Server oder Routing dorthin",
+        "headline": "Game server or the routing to it",
         "steps": [
-            "Referenzziele und Router waren gleichzeitig unauffällig – das Problem liegt auf der Strecke zum Spielserver.",
-            "Anderen Server / andere Region im Spiel wählen und beobachten, ob es verschwindet.",
-            "Serverstatus des Spiels prüfen, bevor am eigenen Netz geschraubt wird.",
+            "Reference targets and router were unremarkable at the same time - the problem lies on the path to the game server.",
+            "Choose another server / region in the game and watch whether it disappears.",
+            "Check the game's server status before tinkering with your own network.",
         ],
     },
     "loss": {
         "scope": "self",
-        "headline": "Übertragungsfehler eingrenzen",
+        "headline": "Narrow down transmission errors",
         "steps": [
-            "Richtung beachten: Verluste aus dem Internet deuten auf Anschluss/Provider, "
-            "Verluste beim Senden auf Upload-Sättigung oder WLAN.",
-            "WLAN-Geräte testweise per Kabel anschließen, um Funkstörungen auszuschließen.",
-            "Bleibt es, den Anschluss prüfen lassen (DSL-Fehlerzähler wie oben).",
+            "Note the direction: losses from the internet point to the connection/provider, "
+            "losses when sending to upload saturation or Wi-Fi.",
+            "Connect Wi-Fi devices by cable as a test to rule out radio interference.",
+            "If it persists, have the connection checked (DSL error counters as above).",
         ],
     },
     "dns": {
         "scope": "self",
-        "headline": "Pi-hole / DNS prüfen",
+        "headline": "Check Pi-hole / DNS",
         "steps": [
-            "Pi-hole-Dienst prüfen: `pihole status`, danach `sudo systemctl restart pihole-FTL`.",
-            "Upstream-DNS in Pi-hole kontrollieren (Settings → DNS) und einen zweiten Upstream eintragen.",
-            "Zur Einordnung: DNS unterbricht kein laufendes Spiel – es trifft Verbindungsaufbau, "
-            "Matchmaking, Updates und Webseiten.",
+            "Check the Pi-hole service: `pihole status`, then `sudo systemctl restart pihole-FTL`.",
+            "Check the upstream DNS in Pi-hole (Settings → DNS) and add a second upstream.",
+            "For context: DNS does not interrupt a running game - it affects connection setup, "
+            "matchmaking, updates and websites.",
         ],
     },
     "drop_wan": {
         "scope": "provider",
-        "headline": "Internetausfall dokumentieren",
+        "headline": "Document the internet outage",
         "steps": [
-            "Der Router war erreichbar, das Internet nicht – der Ausfall lag hinter dem Router.",
-            "FRITZ!Box → System → Ereignisse: dort steht, ob die PPP-/DSL-Verbindung getrennt wurde.",
-            "Häufen sich die Trennungen, mit Zeitstempeln beim Anbieter melden. "
-            "Eine tägliche Zwangstrennung nachts ist dagegen normal.",
+            "The router was reachable, the internet was not - the outage was behind the router.",
+            "FRITZ!Box → System → Event Log: it shows whether the PPP/DSL connection was dropped.",
+            "If the disconnections pile up, report them to the provider with timestamps. "
+            "A daily forced disconnection at night, on the other hand, is normal.",
         ],
     },
     "drop_local": {
         "scope": "self",
-        "headline": "Verbindung des Messgeräts und des LAN prüfen",
+        "headline": "Check the connection of the measuring device and the LAN",
         "steps": [
-            "Auch der Router war nicht erreichbar – das betrifft den Weg Pi ↔ Router.",
-            "Kabel/Port am Raspberry Pi prüfen; hängt der Pi am WLAN, auf Kabel umstellen.",
-            "Access Point bzw. Switch auf Neustarts prüfen (Deco-App → Ereignisprotokoll).",
+            "The router was not reachable either - this concerns the path Pi ↔ router.",
+            "Check cable/port on the Raspberry Pi; if the Pi is on Wi-Fi, switch to a cable.",
+            "Check the access point or switch for restarts (Deco app → event log).",
         ],
     },
     "unknown": {
         "scope": "none",
-        "headline": "Keine belastbare Empfehlung",
+        "headline": "No reliable recommendation",
         "steps": [
-            "Die Messwerte reichen für keine eindeutige Zuordnung. "
-            "Fehlende Datenquellen stehen unter „Hinweise“ – werden die ergänzt, wird die nächste Analyse genauer.",
+            "The measurements are not enough for a clear assignment. "
+            "Missing data sources are listed under \"Notes\" - once they are added, the next analysis gets more precise.",
         ],
     },
 }
 
 
 def recommend(w: Window, best: Finding) -> dict:
-    """Konkrete Maßnahme zur erkannten Kategorie – mit Gerätenamen, wo bekannt."""
+    """Concrete action for the detected category - with device names where known."""
     tpl = RECOMMENDATIONS.get(best.category) or RECOMMENDATIONS["unknown"]
     dev = (best.device or {}).get("name")
     gmac = (w.gaming or {}).get("mac")
-    gamer = f"„{w.device_label(gmac)['name']}“" if gmac else "den Gaming-PC"
+    gamer = f"\"{w.device_label(gmac)['name']}\"" if gmac else "the gaming PC"
     fields = {
-        "uploader": f"„{dev}“" if dev else "Das verursachende Gerät",
+        "uploader": f"\"{dev}\"" if dev else "the causing device",
         "device_or_gamer": gamer,
     }
     steps = [s.format(**fields) for s in tpl["steps"]]
     if best.category in ("upload", "download") and not w.per_device_available:
-        steps.append("Kein Traffic pro Gerät verfügbar – welches Gerät die Leitung füllt, "
-                     "zeigt erst ein laufender FRITZ!Box-Mitschnitt (Einstellungen → FRITZ!Box).")
+        steps.append("No traffic per device available - which device fills the line is only shown "
+                     "by a running FRITZ!Box capture (Settings → FRITZ!Box).")
     return {"category": best.category, "scope": tpl["scope"], "headline": tpl["headline"], "steps": steps}
 
 
-# =============================================================================== Auswertung
+# =============================================================================== evaluation
 def summarize_metrics(w: Window) -> dict:
     pre, ins = w.pre(), w.inside()
     probes = sum(r.get("probes") or 0 for r in ins)
@@ -714,8 +714,8 @@ def summarize_metrics(w: Window) -> dict:
         "traffic_source": next((r.get("traffic_src") for r in ins if r.get("traffic_src")), None),
         "game_gap_peak": _max([r.get("game_gap_ms") for r in ins]),
         "game_rtt_peak": _max([r.get("game_rtt") for r in ins]),
-        # Latenz unter Last: Vergleich ruhige Sekunden ↔ ausgelastete Sekunden im Fenster.
-        # Baseline notfalls aus dem gesamten Fenster, weil der Incident selbst durchgehend belastet sein kann.
+        # Latency under load: quiet seconds ↔ saturated seconds in the window.
+        # Baseline from the whole window if needed, because the incident itself may be loaded throughout.
         "latency_under_load": bufferbloat.measure(ins, w.cap_down, w.cap_up, idle_rows=w.rows),
     }
 
@@ -743,43 +743,43 @@ def top_talkers(w: Window, rows: list[dict] | None = None, n: int = 5) -> list[d
 
 
 def analyze(w: Window) -> dict:
-    """Wendet alle Regeln an und liefert das Analyseergebnis (JSON-serialisierbar)."""
+    """Applies all rules and returns the analysis result (JSON-serializable)."""
     findings = []
     for rule in RULES:
         try:
             f = rule(w)
-        except Exception as e:  # pragma: no cover - eine defekte Regel darf die Analyse nicht stoppen
-            f = Finding(rule.__name__, "unknown", 0, f"Regel fehlgeschlagen: {e}", [])
+        except Exception as e:  # pragma: no cover - a broken rule must not stop the analysis
+            f = Finding(rule.__name__, "unknown", 0, f"Rule failed: {e}", [])
         if f is not None:
             findings.append(f)
     findings.sort(key=lambda f: f.score, reverse=True)
     notes = []
     if not w.traffic_available:
-        notes.append("Traffic-Daten nicht verfügbar – Upload/Download-Sättigung kann nicht bewertet werden.")
+        notes.append("Traffic data not available - upload/download saturation cannot be assessed.")
     elif not w.per_device_available:
-        notes.append("Nur Gesamt-Traffic (FRITZ!Box TR-064) verfügbar – kein Traffic pro Gerät, daher kein Gerät benennbar.")
+        notes.append("Only total traffic (FRITZ!Box TR-064) available - no traffic per device, so no device can be named.")
     if w.cap_up is None or w.cap_down is None:
-        notes.append("Leitungskapazität unbekannt – Auslastung in % nicht berechenbar.")
+        notes.append("Line capacity unknown - utilization in % cannot be calculated.")
     elif w.cap_source == "learned":
-        notes.append("Leitungskapazität aus bisher gemessenen Spitzenwerten geschätzt.")
+        notes.append("Line capacity estimated from the peak values measured so far.")
     if not w.gaming:
-        notes.append("Keine Gaming Session aktiv – Verbindung zum Game-Server wurde nicht beobachtet.")
+        notes.append("No gaming session active - the connection to the game server was not observed.")
 
     if findings and findings[0].score > 0:
         best = findings[0]
         conf = _confidence(best.score)
     else:
-        best = Finding("fallback", "unknown", 10, "Keine eindeutige Ursache erkennbar",
-                       ["Keine Regel traf eindeutig zu"])
+        best = Finding("fallback", "unknown", 10, "No clear cause identifiable",
+                       ["No rule clearly applied"])
         conf = "low"
-    # Konkurrierende Erklärungen mit ähnlicher Punktzahl → Confidence senken
+    # Competing explanations with a similar score → lower the confidence
     if len(findings) >= 2 and findings[1].score >= best.score - 5 and findings[1].category != best.category:
         conf = {"high": "medium", "medium": "low", "low": "low"}[conf]
-        notes.append(f"Alternative Erklärung ähnlich plausibel: {findings[1].cause}")
+        notes.append(f"Alternative explanation similarly plausible: {findings[1].cause}")
 
     correlated = []
     if w.per_device_available:
-        # Nur Geräte, deren Traffic sich im Incident deutlich verändert hat (nicht Dauer-Hintergrund)
+        # Only devices whose traffic changed clearly during the incident (not permanent background)
         pre = {t["mac"]: t for t in top_talkers(w, rows=w.pre(), n=50)}
         for t in top_talkers(w, n=3):
             if best.device and t["mac"] == best.device.get("mac"):

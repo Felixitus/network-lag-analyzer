@@ -1,11 +1,11 @@
-"""FRITZ!Box-Anbindung: Login (SID), TR-064 (WAN-Raten, Linkrate, Hostliste), Mitschnitt-URL.
+"""FRITZ!Box connection: login (SID), TR-064 (WAN rates, link rate, host list), capture URL.
 
-Voraussetzungen auf der FRITZ!Box:
-* Heimnetz → Netzwerk → Netzwerkeinstellungen → "Zugriff für Anwendungen zulassen" (TR-064)
-* Ein FRITZ!Box-Benutzer mit dem Recht "FRITZ!Box Einstellungen" (für den Paketmitschnitt)
+Prerequisites on the FRITZ!Box:
+* Home Network → Network → Network Settings → "Allow access for applications" (TR-064)
+* A FRITZ!Box user with the "FRITZ!Box Settings" permission (for packet capture)
 
-Es werden ausschließlich lesende Aktionen ausgeführt. Der Mitschnitt enthält wegen
-`snaplen` nur Paket-Header.
+Only read-only actions are performed. Because of `snaplen` the capture contains
+packet headers only.
 """
 from __future__ import annotations
 
@@ -45,13 +45,13 @@ class FritzError(Exception):
 
 
 def compute_login_response(challenge: str, password: str) -> str:
-    """Antwort auf die Login-Challenge (PBKDF2 ab FRITZ!OS 7.24, sonst MD5)."""
+    """Response to the login challenge (PBKDF2 from FRITZ!OS 7.24, MD5 otherwise)."""
     if challenge.startswith("2$"):
         _, it1, salt1, it2, salt2 = challenge.split("$")
         h1 = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt1), int(it1))
         h2 = hashlib.pbkdf2_hmac("sha256", h1, bytes.fromhex(salt2), int(it2))
         return f"{salt2}${h2.hex()}"
-    # Altes Verfahren: Nicht-Latin-1-Zeichen werden durch "." ersetzt
+    # Old scheme: non-Latin-1 characters are replaced by "."
     pw = "".join(c if ord(c) < 256 else "." for c in password)
     md5 = hashlib.md5(f"{challenge}-{pw}".encode("utf-16le")).hexdigest()
     return f"{challenge}-{md5}"
@@ -79,10 +79,10 @@ class HostEntry:
 
 
 class FritzClient:
-    """Synchroner Client (wird im Hauptprozess über Threads, im Capture-Prozess direkt genutzt)."""
+    """Synchronous client (used via threads in the main process, directly in the capture process)."""
 
     def __init__(self, host: str, username: str, password: str, tr064_port: int = 49000, timeout: float = 8.0):
-        # "fritz.box", "192.168.178.1" oder "host:port" – der Port gilt nur für die Weboberfläche
+        # "fritz.box", "192.168.178.1" or "host:port" - the port only applies to the web UI
         self.web_port: int | None = None
         if host.count(":") == 1 and host.rsplit(":", 1)[1].isdigit():
             host, port = host.rsplit(":", 1)
@@ -117,7 +117,7 @@ class FritzClient:
             root = ET.fromstring(r.text)
             block = int(_xml_text(root, "BlockTime") or 0)
             if block > 0:
-                raise FritzError(f"FRITZ!Box-Login gesperrt für {block} s (zu viele Fehlversuche)")
+                raise FritzError(f"FRITZ!Box login blocked for {block} s (too many failed attempts)")
             challenge = _xml_text(root, "Challenge") or ""
             user = self.username
             if not user:
@@ -130,12 +130,12 @@ class FritzClient:
             root = ET.fromstring(r.text)
             sid = _xml_text(root, "SID") or "0" * 16
             if set(sid) == {"0"}:
-                raise FritzError("FRITZ!Box-Login fehlgeschlagen (Benutzer/Passwort prüfen)")
+                raise FritzError("FRITZ!Box login failed (check user/password)")
             self._sid, self._sid_time = sid, time.time()
             return sid
 
     def rights(self) -> dict[str, int]:
-        """Rechte der aktuellen Session (z. B. {'BoxAdmin': 2})."""
+        """Permissions of the current session (e.g. {'BoxAdmin': 2})."""
         sid = self.login()
         r = self._http.get(f"{self.base}/login_sid.lua", params={"version": "2", "sid": sid})
         root = ET.fromstring(r.text)
@@ -173,7 +173,7 @@ class FritzClient:
                         ctrl[st] = cu
                 self.model = _xml_text(root, "modelName") or self.model
         except (httpx.HTTPError, ET.ParseError) as e:
-            log.debug("tr64desc.xml nicht lesbar: %s", e)
+            log.debug("tr64desc.xml not readable: %s", e)
         self._control = ctrl
         return ctrl
 
@@ -188,13 +188,13 @@ class FritzClient:
             auth=httpx.DigestAuth(self.username or "", self.password),
         )
         if r.status_code == 401:
-            raise FritzError("TR-064: Anmeldung abgelehnt (401)")
+            raise FritzError("TR-064: login rejected (401)")
         if r.status_code >= 400:
             raise FritzError(f"TR-064 {action}: HTTP {r.status_code}")
         root = _strip_ns(ET.fromstring(r.content))
         resp = root.find(f".//{action}Response")
         if resp is None:
-            raise FritzError(f"TR-064 {action}: unerwartete Antwort")
+            raise FritzError(f"TR-064 {action}: unexpected response")
         return {child.tag: (child.text or "") for child in resp}
 
     def device_info(self) -> dict[str, str]:
@@ -204,14 +204,14 @@ class FritzClient:
         return d
 
     def wan_rates(self) -> tuple[float, float]:
-        """(download_bps, upload_bps) – von der FRITZ!Box gemittelte Gesamtrate."""
+        """(download_bps, upload_bps) - total rate averaged by the FRITZ!Box."""
         d = self.soap(SVC_WAN_COMMON, "GetAddonInfos")
         down = float(d.get("NewByteReceiveRate") or 0) * 8
         up = float(d.get("NewByteSendRate") or 0) * 8
         return down, up
 
     def link_capacity(self) -> tuple[float | None, float | None]:
-        """(down_bps, up_bps) Synchronisations-/Linkrate der WAN-Leitung."""
+        """(down_bps, up_bps) sync/link rate of the WAN line."""
         d = self.soap(SVC_WAN_COMMON, "GetCommonLinkProperties")
         down = float(d.get("NewLayer1DownstreamMaxBitRate") or 0) or None
         up = float(d.get("NewLayer1UpstreamMaxBitRate") or 0) or None
@@ -221,7 +221,7 @@ class FritzClient:
         d = self.soap(SVC_HOSTS, "X_AVM-DE_GetHostListPath")
         path = d.get("NewX_AVM-DE_HostListPath")
         if not path:
-            raise FritzError("Hostliste nicht verfügbar")
+            raise FritzError("Host list not available")
         r = self._http.get(f"http://{self.host}:{self.tr064_port}{path}")
         r.raise_for_status()
         root = ET.fromstring(r.content)
@@ -236,10 +236,10 @@ class FritzClient:
             ))
         return out
 
-    # ----------------------------------------------------------------- Mitschnitt
+    # ----------------------------------------------------------------- capture
     def capture_url(self, iface: str, snaplen: int, action: str = "Start") -> str:
         if not IFACE_RE.match(iface):
-            raise FritzError("Ungültiger Interface-Name")
+            raise FritzError("Invalid interface name")
         sid = self.login()
         return (f"{self.base}/cgi-bin/capture_notimeout?ifaceorminor={quote(iface)}"
                 f"&snaplen={int(snaplen)}&capture={action}&sid={sid}")
@@ -251,7 +251,7 @@ class FritzClient:
             pass
 
     def discover_capture_interfaces(self) -> list[str]:
-        """Best effort: liest die Mitschnitt-Seite und sucht Interface-Kennungen."""
+        """Best effort: reads the capture page and looks for interface identifiers."""
         found: list[str] = []
         sid = self.login()
         pages = [

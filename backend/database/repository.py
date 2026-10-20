@@ -1,9 +1,9 @@
-"""Datenbankzugriff: ein Writer-Thread mit Batch-Inserts, Leser über eigene Verbindungen.
+"""Database access: one writer thread with batch inserts, readers via their own connections.
 
-* WAL-Modus erlaubt parallele Leser während geschrieben wird.
-* Alle Schreibzugriffe laufen über genau einen Thread (keine Lock-Konflikte).
-* Hochfrequente Inserts werden gesammelt und einmal pro Sekunde in einer
-  Transaktion geschrieben (`enqueue` + `flush`).
+* WAL mode allows parallel readers while writing.
+* All writes go through exactly one thread (no lock conflicts).
+* High-frequency inserts are collected and written once per second in one
+  transaction (`enqueue` + `flush`).
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _connect(path: str, readonly: bool = False) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout = 10000")
     if not readonly:
         conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA synchronous = NORMAL")   # WAL + NORMAL: sicher genug, wenig fsync
+        conn.execute("PRAGMA synchronous = NORMAL")   # WAL + NORMAL: safe enough, little fsync
         conn.execute("PRAGMA temp_store = MEMORY")
         conn.execute("PRAGMA cache_size = -8000")     # 8 MB
         conn.execute("PRAGMA wal_autocheckpoint = 2000")
@@ -53,14 +53,14 @@ class Database:
         self._pending: dict[str, list[tuple]] = defaultdict(list)
         self._pending_lock = threading.Lock()
         self.stats = {"flushes": 0, "rows": 0, "last_flush_ms": 0.0}
-        self.migration: dict | None = None      # Bericht des letzten Starts, für /api/status
+        self.migration: dict | None = None      # report of the last start, for /api/status
 
     # ------------------------------------------------------------------ setup
     def init_sync(self) -> None:
-        """Fällige Migrationen anwenden, dann das Schema anlegen. Läuft im Writer-Thread."""
+        """Apply due migrations, then create the schema. Runs in the writer thread."""
         def _init() -> None:
             self._wconn = _connect(self.path)
-            # Reihenfolge: erst umbauen, was es schon gibt, dann neue Tabellen anlegen.
+            # Order: first rebuild what already exists, then create new tables.
             self.migration = migrations.migrate(self._wconn, self.path, SCHEMA_VERSION)
             self._wconn.executescript(SCHEMA)
             self._wconn.execute(
@@ -76,7 +76,7 @@ class Database:
         try:
             self.flush_sync()
         except Exception:  # pragma: no cover
-            log.exception("Flush beim Beenden fehlgeschlagen")
+            log.exception("Flush on shutdown failed")
         def _close() -> None:
             if self._wconn:
                 self._wconn.execute("PRAGMA optimize")
@@ -124,7 +124,7 @@ class Database:
         return await asyncio.get_running_loop().run_in_executor(None, self.flush_sync)
 
     async def write(self, fn: Callable[[sqlite3.Connection], T]) -> T:
-        """Führt fn(conn) im Writer-Thread in einer Transaktion aus."""
+        """Runs fn(conn) in the writer thread inside a transaction."""
         def _run() -> T:
             assert self._wconn is not None
             self._wconn.execute("BEGIN IMMEDIATE")
@@ -155,7 +155,7 @@ class Database:
         c = getattr(self._local, "conn", None)
         if c is None:
             if self.path == ":memory:":
-                # In-Memory (Tests): Leser nutzen die Writer-Verbindung
+                # In-memory (tests): readers use the writer connection
                 assert self._wconn is not None
                 c = self._wconn
             else:
@@ -174,9 +174,9 @@ class Database:
             return self._writer.submit(lambda: fn(self._wconn)).result()
         return self._readers.submit(lambda: fn(self._rconn())).result()
 
-    # ------------------------------------------------------------- Wartung
+    # ------------------------------------------------------------- maintenance
     def maintenance_sync(self, fn: Callable[[sqlite3.Connection], T]) -> T:
-        """Wie write_sync, aber OHNE Transaktion – für VACUUM und Checkpoints."""
+        """Like write_sync, but WITHOUT a transaction - for VACUUM and checkpoints."""
         def _run() -> T:
             assert self._wconn is not None
             return fn(self._wconn)
@@ -207,11 +207,11 @@ INSERT_DEVICE_TRAFFIC = (
     "INSERT OR REPLACE INTO device_traffic(res, ts, dev, rx_bytes, tx_bytes) VALUES (?,?,?,?,?)"
 )
 
-# ------------------------------------------------- Einheiten (siehe models.py)
-CENTI = 100          # 1/100 ms bzw. 1/100 %
+# ------------------------------------------------- units (see models.py)
+CENTI = 100          # 1/100 ms or 1/100 %
 CENTI_COLS = frozenset({"rtt_avg", "rtt_min", "rtt_max", "gw_rtt", "jitter", "loss_pct",
                         "dns_ms", "game_rtt", "game_pps", "game_gap_ms"})
-ROUND_COLS = frozenset({"down_bps", "up_bps"})          # ganze bit/s
+ROUND_COLS = frozenset({"down_bps", "up_bps"})          # whole bit/s
 
 
 def enc(value: float | None, col: str) -> int | None:
@@ -233,7 +233,7 @@ def dec(value, col: str):
 
 
 def decode_row(row) -> dict:
-    """sqlite3.Row einer Messtabelle → Dict mit Millisekunden/Prozent."""
+    """sqlite3.Row of a measurement table → dict with milliseconds/percent."""
     return {k: dec(row[k], k) for k in row.keys()}
 INSERT_FLOW = (
     "INSERT INTO network_flows(ts_start, ts_end, proto, mac, local_ip, local_port, remote_ip, "
@@ -306,8 +306,8 @@ def ensure_target(conn: sqlite3.Connection, address: str, name: str | None, kind
 
 
 # ------------------------------------------------------------- aggregation
-# Alle Werte liegen als Ganzzahlen vor; AVG() liefert Fließkomma, deshalb wird
-# beim Zurückschreiben gerundet. Die Einheit bleibt dieselbe wie in der Quelle.
+# All values are integers; AVG() returns floats, so the value is rounded
+# when written back. The unit stays the same as in the source.
 _AVG = "CAST(ROUND(AVG({0})) AS INTEGER)"
 
 AGG_MEASUREMENTS = f"""
@@ -326,8 +326,8 @@ FROM measurements
 WHERE res = :src AND ts >= :t0 AND ts < :t1
 GROUP BY ts / :dst
 """
-# Hinweis: AVG(down_bps) ist über den Bucket korrekt, weil jeder 1-s-Wert eine Rate ist.
-# MAX im 60-s-Bucket wird zusätzlich über rtt_max erhalten.
+# Note: AVG(down_bps) is correct over the bucket because every 1 s value is a rate.
+# MAX in the 60 s bucket is additionally kept via rtt_max.
 
 AGG_TARGETS = f"""
 INSERT OR REPLACE INTO target_measurements(res, ts, target_id, rtt_avg, rtt_max, probes, lost)
@@ -348,7 +348,7 @@ GROUP BY dev, ts / :dst
 
 
 def aggregate(conn: sqlite3.Connection, src: int, dst: int, t0: int, t1: int) -> None:
-    """Verdichtet [t0, t1) von Auflösung src auf dst. t0/t1 müssen auf dst ausgerichtet sein."""
+    """Condenses [t0, t1) from resolution src to dst. t0/t1 must be aligned to dst."""
     p = {"src": src, "dst": dst, "t0": t0, "t1": t1}
     conn.execute(AGG_MEASUREMENTS, p)
     conn.execute(AGG_TARGETS, p)
@@ -373,8 +373,8 @@ def apply_retention(conn: sqlite3.Connection, now: float, ret: Any) -> dict[str,
         ("dt_10", "DELETE FROM device_traffic WHERE res=10 AND ts < ?", cut_det),
         ("dt_60", "DELETE FROM device_traffic WHERE res=60 AND ts < ?", cut_agg),
         ("flows", "DELETE FROM network_flows WHERE ts_end < ?", now - ret.flow_days * day),
-        # Bufferbloat-Fenster sind winzig (9 Zahlen je 10 min) und sollen den Langzeitverlauf zeigen
-        # → sie bleiben so lange wie Events, nicht so lange wie die 1-s-Rohwerte.
+        # Bufferbloat windows are tiny (9 numbers per 10 min) and are meant to show the long-term
+        # history → they are kept as long as events, not as long as the 1 s raw values.
         ("bufferbloat", "DELETE FROM bufferbloat WHERE ts < ?", now - ret.event_days * day),
         ("dns", "DELETE FROM dns_queries WHERE ts < ?", cut_det),
         ("events", "DELETE FROM events WHERE ts_start < ?", now - ret.event_days * day),
@@ -389,27 +389,27 @@ def rows_to_dicts(rows: Iterable[sqlite3.Row]) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-# ------------------------------------------------------------- Platz & Aufräumen
-# Welche Tabelle hängt an welcher Zeitspalte? Grundlage für das Löschen nach Datum
-# und für den Größenbericht. daily_stats fehlt hier bewusst: Die Tages-Zusammenfassung
-# ist winzig und soll den Langzeitvergleich überleben.
+# ------------------------------------------------------------- space & cleanup
+# Which table hangs on which time column? Basis for deleting by date
+# and for the size report. daily_stats is deliberately missing: the daily summary
+# is tiny and is meant to survive for long-term comparison.
 TIME_TABLES: dict[str, tuple[str, str]] = {
-    "measurements": ("ts", "Messwerte je Sekunde/Minute"),
-    "target_measurements": ("ts", "Messwerte je Ziel"),
-    "device_traffic": ("ts", "Traffic je Gerät"),
-    "ping_samples": ("ts", "einzelne Pings (Rohdaten)"),
-    "network_flows": ("ts_end", "Verbindungen (nur Metadaten)"),
-    "dns_queries": ("ts", "DNS-Aktivität je Client"),
-    "events": ("ts_start", "erkannte Events"),
-    "incidents": ("ts_start", "Incidents inkl. Analyse"),
-    "bufferbloat": ("ts", "Latenz unter Last (10-Minuten-Fenster)"),
+    "measurements": ("ts", "Measurements per second/minute"),
+    "target_measurements": ("ts", "Measurements per target"),
+    "device_traffic": ("ts", "Traffic per device"),
+    "ping_samples": ("ts", "Individual pings (raw data)"),
+    "network_flows": ("ts_end", "Connections (metadata only)"),
+    "dns_queries": ("ts", "DNS activity per client"),
+    "events": ("ts_start", "Detected events"),
+    "incidents": ("ts_start", "Incidents incl. analysis"),
+    "bufferbloat": ("ts", "Latency under load (10-minute windows)"),
     "gaming_sessions": ("ts_start", "Gaming Sessions"),
 }
 PROTECTED_TABLES = ("daily_stats", "devices", "targets", "settings", "meta")
 
 
 def table_sizes(conn: sqlite3.Connection) -> list[dict]:
-    """Belegter Platz je Tabelle. Fällt auf Zeilenzahlen zurück, wenn dbstat fehlt."""
+    """Space used per table. Falls back to row counts if dbstat is missing."""
     sizes: dict[str, int] = {}
     try:
         for r in conn.execute("SELECT name, SUM(pgsize) AS b FROM dbstat GROUP BY name"):
@@ -429,7 +429,7 @@ def table_sizes(conn: sqlite3.Connection) -> list[dict]:
 
 
 def oldest_data(conn: sqlite3.Connection) -> float | None:
-    """Ältester Zeitstempel über alle Zeittabellen – für die Datumsauswahl."""
+    """Oldest timestamp across all time tables - for the date picker."""
     best = None
     for table, (col, _l) in TIME_TABLES.items():
         try:
@@ -443,7 +443,7 @@ def oldest_data(conn: sqlite3.Connection) -> float | None:
 
 def count_range(conn: sqlite3.Connection, start: float | None, end: float,
                 tables: Iterable[str] | None = None) -> dict[str, int]:
-    """Wie viele Zeilen würde `delete_range` treffen? Für die Vorschau vor dem Löschen."""
+    """How many rows would `delete_range` hit? For the preview before deleting."""
     out: dict[str, int] = {}
     for table in (tables or TIME_TABLES):
         if table not in TIME_TABLES:
@@ -462,10 +462,10 @@ def count_range(conn: sqlite3.Connection, start: float | None, end: float,
 
 def delete_range(conn: sqlite3.Connection, start: float | None, end: float,
                  tables: Iterable[str] | None = None) -> dict[str, int]:
-    """Löscht Messdaten in [start, end). start=None bedeutet "alles davor".
+    """Deletes measurements in [start, end). start=None means "everything before".
 
-    Geräte, Ziele, Einstellungen und die Tages-Zusammenfassung bleiben erhalten –
-    sonst wären nach dem Aufräumen die Namen aller Geräte weg.
+    Devices, targets, settings and the daily summary are kept -
+    otherwise all device names would be gone after the cleanup.
     """
     names = list(tables) if tables else list(TIME_TABLES)
     out: dict[str, int] = {}
@@ -482,11 +482,11 @@ def delete_range(conn: sqlite3.Connection, start: float | None, end: float,
 
 
 def db_size(conn: sqlite3.Connection) -> dict:
-    """Belegter Platz. `used` zählt freie Seiten nicht mit.
+    """Space used. `used` does not count free pages.
 
-    Das ist der entscheidende Unterschied für die Größengrenze: Nach einem DELETE
-    bleibt die Datei gleich groß, die Seiten sind nur als frei markiert. Ohne
-    diese Unterscheidung würde die Notbremse endlos weiterlöschen.
+    That is the crucial difference for the size limit: after a DELETE the
+    file stays the same size, the pages are only marked as free. Without
+    this distinction the emergency brake would keep deleting forever.
     """
     page = conn.execute("PRAGMA page_size").fetchone()[0]
     total = conn.execute("PRAGMA page_count").fetchone()[0]
@@ -494,7 +494,7 @@ def db_size(conn: sqlite3.Connection) -> dict:
     return {"file": page * total, "used": page * (total - free), "free": page * free}
 
 
-# Reihenfolge, in der bei Platznot geopfert wird – von "vermisst niemand" abwärts.
+# Order in which data is sacrificed when space runs out - from "nobody misses it" down.
 SIZE_GUARD_STEPS: list[tuple[str, str]] = [
     ("ping_samples", "DELETE FROM ping_samples"),
     ("meas_1", "DELETE FROM measurements WHERE res=1 AND ts < ?"),
@@ -505,11 +505,11 @@ SIZE_GUARD_STEPS: list[tuple[str, str]] = [
     ("tm_10", "DELETE FROM target_measurements WHERE res=10 AND ts < ?"),
     ("dt_10", "DELETE FROM device_traffic WHERE res=10 AND ts < ?"),
 ]
-SIZE_GUARD_AGES = (12, 6, 1)      # Stunden: erst Altes opfern, dann immer Jüngeres
+SIZE_GUARD_AGES = (12, 6, 1)      # hours: sacrifice old data first, then ever younger
 
 
 def vacuum(conn: sqlite3.Connection) -> dict:
-    """Datei tatsächlich verkleinern. Muss außerhalb einer Transaktion laufen."""
+    """Actually shrink the file. Must run outside a transaction."""
     before = db_size(conn)["file"]
     conn.execute("VACUUM")
     conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")

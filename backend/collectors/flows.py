@@ -1,11 +1,11 @@
-"""Paketanalyse: Traffic pro Gerät, Flows, TCP-Retransmissions, Game-Flow-Lücken.
+"""Packet analysis: traffic per device, flows, TCP retransmissions, game flow gaps.
 
-Arbeitet ausschließlich auf Header-Metadaten. Payload wird nie gelesen oder gespeichert.
+Works exclusively on header metadata. Payload is never read or stored.
 
-Richtungslogik (Capture auf der LAN-Seite des Routers):
-* src_mac = Client, dst_mac = Router, Gegenstelle öffentlich → Upload (tx) des Clients
-* src_mac = Router, dst_mac = Client, Gegenstelle öffentlich → Download (rx) des Clients
-* alles andere → LAN-intern (lan_bytes)
+Direction logic (capture on the LAN side of the router):
+* src_mac = client, dst_mac = router, peer public → upload (tx) of the client
+* src_mac = router, dst_mac = client, peer public → download (rx) of the client
+* everything else → LAN-internal (lan_bytes)
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def mac_bytes(s: str) -> bytes:
 
 
 def seq_after(a: int, b: int) -> bool:
-    """a liegt (modulo 2^32) nach b."""
+    """a is after b (modulo 2^32)."""
     return a != b and ((a - b) % SEQ_MOD) < HALF
 
 
@@ -76,7 +76,7 @@ def ip_str(b: bytes) -> str:
 
 
 class PacketAnalyzer:
-    """Zustandsbehaftete Analyse eines Paketstroms (läuft im Capture-Prozess)."""
+    """Stateful analysis of a packet stream (runs in the capture process)."""
 
     def __init__(self, local_nets: list[str] | None = None, router_macs: list[str] | None = None,
                  ignore_pair: tuple[str, str] | None = None, gaming_mac: str | None = None,
@@ -90,12 +90,12 @@ class PacketAnalyzer:
             try:
                 self.ignore_pair = {socket.inet_aton(ignore_pair[0]), socket.inet_aton(ignore_pair[1])}
             except OSError:
-                self.ignore_pair = None   # kein IPv4-Paar → nichts ausfiltern
+                self.ignore_pair = None   # no IPv4 pair → filter nothing
         self.gaming_mac = gaming_mac
         self.flow_idle_udp = flow_idle_udp
         self.flow_idle_tcp = flow_idle_tcp
         self.flow_min_bytes = flow_min_bytes
-        self.level = 0                     # Load-Guard-Stufe
+        self.level = 0                     # load guard level
         self.sample_n = 4
         self._sample_i = 0
         self.bins: dict[int, dict] = {}    # sec → {"dev": {mac: [7]}, "g": {...}}
@@ -109,7 +109,7 @@ class PacketAnalyzer:
         self.ignored = 0
         self._cand_t = 0.0
 
-    # ------------------------------------------------------------------ Hilfen
+    # ------------------------------------------------------------------ helpers
     def set_router_macs(self, macs: list[str]) -> None:
         self.router_macs = {mac_bytes(m) for m in macs if m}
 
@@ -147,7 +147,7 @@ class PacketAnalyzer:
                     return True
         return False
 
-    # ------------------------------------------------------------------ Hauptroutine
+    # ------------------------------------------------------------------ main routine
     def process(self, ts: float, data: bytes, orig_len: int, linktype: int = 1) -> None:
         if linktype != 1 or len(data) < 14:
             return
@@ -189,8 +189,8 @@ class PacketAnalyzer:
                 return
             s_local = self.is_local_v4(sip)
             d_local = self.is_local_v4(dip)
-            # Router-MAC lernen: sendet Pakete mit öffentlicher Quell-IP ins LAN
-            # (auch wenn eine MAC aus ARP bekannt ist – FRITZ!Box kann mehrere MACs nutzen)
+            # Learn router MAC: sends packets with a public source IP into the LAN
+            # (even if a MAC is known from ARP - the FRITZ!Box may use several MACs)
             if not s_local and d_local and src_mac not in self.router_macs:
                 self._vote_router(src_mac)
         elif etype == ETH_IPV6:
@@ -204,7 +204,7 @@ class PacketAnalyzer:
             s_local = not _v6_global(sip)
             d_local = not _v6_global(dip)
         else:
-            # ARP & Co.: nur LAN-Zähler des Absenders
+            # ARP & co.: only the sender's LAN counter
             if not (src_mac in self.router_macs):
                 self._dev(b, self._mac(src_mac))[LAN] += size
             return
@@ -245,7 +245,7 @@ class PacketAnalyzer:
             return
         if self.level >= 1 or len(data) < l4 + 4:
             return
-        # ---------------------------------------------------------- Flow-Analyse
+        # ---------------------------------------------------------- flow analysis
         sport, dport = _unpack_HH(data, l4)
         lport, rport = (sport, dport) if up else (dport, sport)
         key = (proto, lip, lport, rip, rport)
@@ -271,7 +271,7 @@ class PacketAnalyzer:
                     f.max_gap = gap
             f.last_down = wall
         if proto == PROTO_UDP and mac == self.gaming_mac:
-            # Game-Flow-Statistik direkt im Sekunden-Bin (zeitlich exakt zugeordnet)
+            # Game flow statistics directly in the per-second bin (exact time assignment)
             gf = b.get("gf")
             if gf is None:
                 gf = b["gf"] = {}
@@ -303,7 +303,7 @@ class PacketAnalyzer:
                         f.max_up = end
                     else:
                         f.max_down = end
-                elif payload > 1:  # payload 1 = TCP-Keepalive, keine Retransmission
+                elif payload > 1:  # payload 1 = TCP keepalive, not a retransmission
                     f.retrans += 1
                     d[RETR] += scale
                     if up:
@@ -326,9 +326,9 @@ class PacketAnalyzer:
         self.macip[mac] = ips
         self._macip_new[mac] = ips
 
-    # ------------------------------------------------------------------ Ausgabe
+    # ------------------------------------------------------------------ output
     def take_bins(self, upto_sec: int, fill_from: int | None = None) -> list[tuple[int, dict]]:
-        """Liefert fertige Bins (<= upto_sec). Lücken werden mit leeren Bins gefüllt."""
+        """Returns finished bins (<= upto_sec). Gaps are filled with empty bins."""
         out = []
         secs = sorted(s for s in self.bins if s <= upto_sec)
         start = fill_from if fill_from is not None else (secs[0] if secs else None)
@@ -337,7 +337,7 @@ class PacketAnalyzer:
         for s in range(start, upto_sec + 1):
             b = self.bins.pop(s, None) or {"dev": {}, "g": {"wan_rx": 0, "wan_tx": 0, "tcp_segs": 0,
                                                             "retrans_down": 0, "retrans_up": 0, "pkts": 0}}
-            for rm in self.router_macs:           # der Router selbst ist kein "Gerät"
+            for rm in self.router_macs:           # the router itself is not a "device"
                 b["dev"].pop(self._mac(rm), None)
             b["g"]["tcp_analysis"] = self.level == 0
             gf = b.pop("gf", None)
@@ -354,9 +354,9 @@ class PacketAnalyzer:
         return out
 
     def udp_candidates(self) -> list[dict]:
-        """UDP-Flows mit Paketen in beide Richtungen seit dem letzten Aufruf (für Game-Erkennung).
+        """UDP flows with packets in both directions since the last call (for game detection).
 
-        Liefert Paketraten pro Sekunde; setzt die Zähler zurück.
+        Returns packet rates per second; resets the counters.
         """
         now = time_now()
         dt = max(0.2, now - self._cand_t) if self._cand_t else 1.0

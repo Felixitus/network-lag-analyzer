@@ -1,13 +1,13 @@
-"""Pi-hole-Integration (nur lesend).
+"""Pi-hole integration (read-only).
 
-Liest die FTL-Datenbank (`/etc/pihole/pihole-FTL.db`, Pi-hole v5 und v6):
-* `network` / `network_addresses`: MAC, IP, Hostname, Hersteller
-* `queries`: DNS-Anfragen je Client → Aktivität und Top-Domains pro Minute
+Reads the FTL database (`/etc/pihole/pihole-FTL.db`, Pi-hole v5 and v6):
+* `network` / `network_addresses`: MAC, IP, hostname, vendor
+* `queries`: DNS queries per client → activity and top domains per minute
 
-WICHTIG: DNS-Anfragen sind KEIN Maß für Bandbreite. Sie werden nur für die
-Zuordnung IP → Gerät und als Kontext ("Gerät fragte gerade icloud.com an")
-verwendet. FTL schreibt standardmäßig einmal pro Minute in die Datenbank,
-daher sind DNS-Daten bis zu ~60 s verzögert.
+IMPORTANT: DNS queries are NOT a measure of bandwidth. They are only used to
+map IP → device and as context ("device just queried icloud.com").
+By default FTL writes to the database once per minute,
+so DNS data is delayed by up to ~60 s.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
-# Pi-hole Status-Codes, die eine Blockierung bedeuten (v5 und v6)
+# Pi-hole status codes that mean a block (v5 and v6)
 BLOCKED_STATUS = {1, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 18}
 
 
@@ -53,14 +53,14 @@ class PiholeReader:
 
     def check(self) -> tuple[bool, str]:
         if not self.available():
-            return False, f"{self.db_path} nicht gefunden"
+            return False, f"{self.db_path} not found"
         try:
             with self._conn() as c:
                 c.execute("SELECT 1 FROM network LIMIT 1").fetchall()
                 self.version = "v6" if os.path.exists("/etc/pihole/pihole.toml") else "v5"
             return True, f"FTL-Datenbank lesbar ({self.version})"
         except sqlite3.Error as e:
-            return False, f"FTL-Datenbank nicht lesbar: {e} (Benutzer in Gruppe 'pihole'?)"
+            return False, f"FTL database not readable: {e} (user in group 'pihole'?)"
 
     def hosts(self) -> list[PiholeHost]:
         out: list[PiholeHost] = []
@@ -77,14 +77,14 @@ class PiholeReader:
             return out
         for r in rows:
             mac = (r["mac"] or "").lower()
-            if not mac or mac.startswith("ip-") or ":" not in mac:  # Pi-hole nutzt "ip-..." für MAC-lose Clients
+            if not mac or mac.startswith("ip-") or ":" not in mac:  # Pi-hole uses "ip-..." for clients without a MAC
                 mac = None
             out.append(PiholeHost(mac=mac, ip=r["ip"], name=r["name"] or None,
                                   vendor=r["vendor"] or None, last_query=r["lastq"] or None))
         return out
 
     def poll_queries(self, max_rows: int = 50000) -> list[tuple]:
-        """Liest neue DNS-Anfragen und liefert dns_queries-Zeilen (ts, client, n, blocked, top_json)."""
+        """Reads new DNS queries and returns dns_queries rows (ts, client, n, blocked, top_json)."""
         try:
             with self._conn() as c:
                 if self._last_id is None:

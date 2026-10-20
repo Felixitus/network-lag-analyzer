@@ -1,4 +1,4 @@
-"""Migration einer bestehenden Datenbank auf das kompakte Format."""
+"""Migration of an existing database to the compact format."""
 import os
 import sqlite3
 
@@ -6,8 +6,8 @@ from backend.database import migrations, repository as repo
 from backend.database.models import SCHEMA_VERSION
 from backend.database.repository import Database
 
-# Das Schema, wie es Version 2 hatte – bewusst als Kopie, damit der Test auch dann
-# noch eine echte alte Datenbank baut, wenn models.py weiterentwickelt wird.
+# The schema as version 2 had it - deliberately as a copy, so that the test still
+# builds a real old database when models.py evolves.
 SCHEMA_V2 = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at REAL NOT NULL);
@@ -61,7 +61,7 @@ def make_v2(path, seconds=600):
     c.execute("INSERT INTO meta VALUES('schema_version', '2')")
     c.execute("INSERT INTO devices(mac, hostname, custom_name, first_seen, last_seen, active) "
               "VALUES(?,?,?,?,?,1)", (MAC_A, "ps5", "PS5 Wohnzimmer", T0, T0))
-    # MAC_B steht absichtlich NICHT in devices – nur im Traffic. Darf nicht verloren gehen.
+    # MAC_B is deliberately NOT in devices - only in the traffic. It must not get lost.
     for i in range(seconds):
         c.execute("INSERT INTO measurements(res, ts, rtt_avg, rtt_min, rtt_max, gw_rtt, jitter, loss_pct, "
                   "probes, lost, down_bps, up_bps, traffic_src, retrans, tcp_segs, retrans_down, retrans_up, "
@@ -78,15 +78,15 @@ def make_v2(path, seconds=600):
 
 
 def test_migration_converts_and_keeps_every_value(tmp_path):
-    p = str(tmp_path / "alt.sqlite3")
+    p = str(tmp_path / "old.sqlite3")
     make_v2(p)
-    vorher = os.path.getsize(p)
+    size_before = os.path.getsize(p)
 
     db = Database(p)
     db.init_sync()
     assert db.migration["from"] == 2 and db.migration["steps"], db.migration
 
-    # Messwerte kommen unverändert zurück (jetzt aus Ganzzahlen decodiert)
+    # Measurements come back unchanged (now decoded from integers)
     row = db.read_sync(lambda c: repo.decode_row(
         c.execute("SELECT * FROM measurements WHERE res=1 ORDER BY ts").fetchone()))
     assert row["rtt_avg"] == 18.34 and row["gw_rtt"] == 1.23 and row["loss_pct"] == 2.9
@@ -100,31 +100,31 @@ def test_migration_converts_and_keeps_every_value(tmp_path):
     bb = db.read_sync(lambda c: repo.read_bufferbloat(c, T0 - 1, T0 + 1))
     assert bb[0]["idle_ms"] == 18.0 and bb[0]["down_worst_ms"] == 190.0
 
-    # Der Gerätename überlebt, und das nur im Traffic bekannte Gerät bekommt einen Eintrag
+    # The device name survives, and the device known only from traffic gets an entry
     devs = db.read_sync(lambda c: {r["mac"]: dict(r) for r in c.execute("SELECT * FROM devices")})
     assert devs[MAC_A]["custom_name"] == "PS5 Wohnzimmer"
-    assert MAC_B in devs, "Gerät nur aus device_traffic wurde nicht angelegt"
+    assert MAC_B in devs, "device only from device_traffic was not created"
     assert all(d["id"] for d in devs.values())
 
-    # Traffic ist vollständig und hängt an der richtigen MAC
+    # Traffic is complete and hangs on the right MAC
     n, s = db.read_sync(lambda c: c.execute(
         "SELECT COUNT(*), SUM(rx_bytes) FROM device_traffic t JOIN devices d ON d.id=t.dev "
         "WHERE d.mac=?", (MAC_A,)).fetchone())
     assert n == 600 and s == 600 * 4000
 
-    assert os.path.getsize(p) < vorher, "kompakteres Format muss kleiner sein"
+    assert os.path.getsize(p) < size_before, "the more compact format must be smaller"
     db.close()
 
 
 def test_migration_is_idempotent_and_backs_up(tmp_path):
-    p = str(tmp_path / "alt.sqlite3")
+    p = str(tmp_path / "old.sqlite3")
     make_v2(p, seconds=60)
     db = Database(p)
     db.init_sync()
-    assert os.path.exists(p + migrations.BACKUP_SUFFIX), "Sicherungskopie fehlt"
+    assert os.path.exists(p + migrations.BACKUP_SUFFIX), "backup copy missing"
     db.close()
 
-    db2 = Database(p)                       # zweiter Start: nichts mehr zu tun
+    db2 = Database(p)                       # second start: nothing left to do
     db2.init_sync()
     assert db2.migration["steps"] == []
     assert db2.read_sync(lambda c: migrations.current_version(c)) == SCHEMA_VERSION
@@ -132,20 +132,20 @@ def test_migration_is_idempotent_and_backs_up(tmp_path):
 
 
 def test_fresh_database_needs_no_migration(tmp_path):
-    db = Database(str(tmp_path / "neu.sqlite3"))
+    db = Database(str(tmp_path / "new.sqlite3"))
     db.init_sync()
     assert db.migration == {"from": 0, "to": SCHEMA_VERSION, "steps": [], "backup": None, "seconds": 0.0}
-    assert not os.path.exists(str(tmp_path / "neu.sqlite3") + migrations.BACKUP_SUFFIX)
+    assert not os.path.exists(str(tmp_path / "new.sqlite3") + migrations.BACKUP_SUFFIX)
     db.close()
 
 
 def test_compact_format_is_much_smaller(tmp_path):
-    """Der Umbau soll sich lohnen – sonst wäre er den Aufwand nicht wert."""
+    """The rebuild should pay off - otherwise it would not be worth the effort."""
     p = str(tmp_path / "gross.sqlite3")
     make_v2(p, seconds=3000)
-    vorher = os.path.getsize(p)
+    size_before = os.path.getsize(p)
     db = Database(p)
     db.init_sync()
     db.close()
-    nachher = os.path.getsize(p)
-    assert nachher < vorher * 0.6, f"nur {100 - nachher / vorher * 100:.0f} % gespart"
+    size_after = os.path.getsize(p)
+    assert size_after < size_before * 0.6, f"only {100 - size_after / size_before * 100:.0f} % saved"

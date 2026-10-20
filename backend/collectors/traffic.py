@@ -1,17 +1,17 @@
-"""Capture-Prozess: liest Pakete (FRITZ!Box-Stream oder AF_PACKET) und liefert Sekunden-Aggregate.
+"""Capture process: reads packets (FRITZ!Box stream or AF_PACKET) and delivers per-second aggregates.
 
-Läuft als eigener Prozess (multiprocessing), damit Paketparsing weder den GIL des
-Hauptprozesses belegt (präzise ICMP-Zeitstempel) noch die Web-API ausbremst.
+Runs as a separate process (multiprocessing) so that packet parsing neither holds the
+main process GIL (precise ICMP timestamps) nor slows down the web API.
 
-Nachrichten an den Hauptprozess (out_q):
-    ("bin", sec, devices, glob)          Sekunden-Aggregat (auch leer = gemessen, 0)
-    ("flows", [flow_tuple, ...])         abgeschlossene Flows
-    ("active_flows", ts, [dict, ...])    aktuell aktivste Flows (alle 5 s)
-    ("macip", {mac: ip})                 gelernte IPv4-Zuordnungen
-    ("udp_candidates", ts, [dict, ...])  bidirektionale UDP-Flows (Game-Erkennung)
-    ("status", {...})                    Zustand, Raten, Fehler
-    ("pcap", {...})                      Deep-Capture-Datei angelegt/aktualisiert/gelöscht
-Steuerung (ctrl_q):
+Messages to the main process (out_q):
+    ("bin", sec, devices, glob)          per-second aggregate (empty too = measured, 0)
+    ("flows", [flow_tuple, ...])         finished flows
+    ("active_flows", ts, [dict, ...])    currently most active flows (every 5 s)
+    ("macip", {mac: ip})                 learned IPv4 mappings
+    ("udp_candidates", ts, [dict, ...])  bidirectional UDP flows (game detection)
+    ("status", {...})                    state, rates, errors
+    ("pcap", {...})                      deep capture file created/updated/deleted
+Control (ctrl_q):
     ("level", n) ("gaming_mac", mac) ("router_macs", [..]) ("deep", bool)
     ("protect", t0, t1, incident_id) ("stop",)
 """
@@ -39,24 +39,24 @@ PACKET_MR_PROMISC = 1
 
 
 class PcapRing:
-    """Ringpuffer aus pcap-Dateien (nur Header dank snaplen).
+    """Ring buffer of pcap files (headers only thanks to snaplen).
 
-    Zwei Budgets, beide hart:
+    Two budgets, both hard:
 
-    * **Ring** – höchstens `max_files` laufende Dateien à `file_size`.
-    * **Geschützte Dateien** – alles, was zu einem Incident gehört. Sie liegen
-      außerhalb des Rings, damit sie nicht überschrieben werden, bekommen aber
-      ein eigenes Budget aus `max_total`. Ist es voll, fällt die älteste
-      geschützte Datei weg.
+    * **Ring** - at most `max_files` running files of `file_size` each.
+    * **Protected files** - everything belonging to an incident. They live
+      outside the ring so they are not overwritten, but get their own
+      budget from `max_total`. When it is full, the oldest protected
+      file is dropped.
 
-    Das Gesamtbudget ist der entscheidende Punkt: Ohne es wächst das Verzeichnis
-    mit der Zahl der Incidents, nicht mit der Konfiguration – aus „5 × 50 MB"
-    wurden so in der Praxis zweistellige Gigabyte.
+    The total budget is the crucial point: without it the directory grows
+    with the number of incidents, not with the configuration - in practice
+    "5 × 50 MB" turned into tens of gigabytes.
 
-    Beim Start wird das Verzeichnis eingelesen und alles Vorhandene übernommen.
-    Sonst wären nach jedem Neustart des Capture-Prozesses die Dateien des
-    vorherigen Laufs herrenlos: in keinem Ring, nirgends geschützt, und damit
-    für immer auf der Platte.
+    On start the directory is scanned and everything present is adopted.
+    Otherwise, after every restart of the capture process, the files of the
+    previous run would be orphaned: in no ring, protected nowhere, and therefore
+    on disk forever.
     """
 
     def __init__(self, directory: str, max_files: int, file_size: int, emit,
@@ -67,12 +67,12 @@ class PcapRing:
         self.max_files = max(1, max_files)
         self.file_size = file_size
         self.emit = emit
-        # Budget nur für die geschützten Dateien: Gesamtgrenze minus dem, was der
-        # laufende Ring im schlimmsten Fall belegt.
+        # Budget for the protected files only: total limit minus what the
+        # running ring occupies in the worst case.
         ring_reserved = self.max_files * file_size
         self.max_total = max_total
         self.protected_budget = max(0, max_total - ring_reserved) if max_total else 0
-        self.files: deque[dict] = deque()      # ungeschützt, älteste zuerst
+        self.files: deque[dict] = deque()      # unprotected, oldest first
         self.protected: list[dict] = []
         self.cur: dict | None = None
         self.fh = None
@@ -80,9 +80,9 @@ class PcapRing:
         self.deleted_bytes = 0
         self._adopt(set(protected_paths or ()))
 
-    # ----------------------------------------------------------------- Bestand
+    # ----------------------------------------------------------------- existing files
     def _adopt(self, protected_paths: set[str]) -> None:
-        """Dateien aus einem früheren Lauf übernehmen, statt sie liegen zu lassen."""
+        """Adopt files from an earlier run instead of leaving them lying around."""
         found = []
         for p in sorted(self.dir.glob("nla-*.pcap")):
             try:
@@ -94,11 +94,11 @@ class PcapRing:
         found.sort(key=lambda f: f["ts_start"])
         for f in found:
             (self.protected if f["protected"] else self.files).append(f)
-            # Jede übernommene Datei auch im Hauptprozess bekannt machen: Sonst bliebe
-            # sie für die Datenbank unsichtbar und niemand wüsste, dass es sie gibt.
+            # Announce every adopted file to the main process as well: otherwise it would
+            # stay invisible to the database and nobody would know it exists.
             self.emit(("pcap", {"op": "new", **f}))
         if found:
-            log.info("PCAP-Verzeichnis übernommen: %d Dateien, %.0f MB (%d geschützt)",
+            log.info("PCAP directory adopted: %d files, %.0f MB (%d protected)",
                      len(found), sum(f["size"] for f in found) / 1e6, len(self.protected))
             self.emit(("pcap", {"op": "adopted", "files": len(found),
                                 "bytes": sum(f["size"] for f in found)}))
@@ -116,7 +116,7 @@ class PcapRing:
                 "max_total": self.max_total, "protected_budget": self.protected_budget,
                 "deleted_bytes": self.deleted_bytes}
 
-    # ----------------------------------------------------------------- Schreiben
+    # ----------------------------------------------------------------- writing
     def write(self, ts: float, data: bytes, orig_len: int, linktype: int) -> None:
         if self.fh is None or self.cur is None or self.cur["size"] >= self.file_size or linktype != self.linktype:
             self._rotate(ts, linktype)
@@ -147,7 +147,7 @@ class PcapRing:
         self.emit(("pcap", {"op": "delete", "path": f["path"]}))
 
     def _enforce_budget(self) -> None:
-        """Beide Grenzen durchsetzen. Die gerade beschriebene Datei bleibt immer."""
+        """Enforce both limits. The file currently being written always stays."""
         while len(self.files) > self.max_files:
             old = self.files.popleft()
             if old is self.cur:                               # pragma: no cover - Ring zu klein
@@ -156,11 +156,11 @@ class PcapRing:
             self._delete(old)
         if not self.max_total:
             return
-        # Geschützte Dateien: älteste zuerst opfern, bis das Budget wieder passt
+        # Protected files: sacrifice the oldest first until the budget fits again
         self.protected.sort(key=lambda f: f["ts_start"])
         while self.protected and self.protected_bytes() > self.protected_budget:
             self._delete(self.protected.pop(0))
-        # Notnagel: Selbst ohne geschützte Dateien darf das Gesamtbudget nicht reißen
+        # Last resort: even without protected files the total budget must not be exceeded
         while self.total_bytes() > self.max_total and len(self.files) > 1:
             old = self.files.popleft()
             if old is self.cur:                               # pragma: no cover
@@ -191,18 +191,18 @@ class PcapRing:
                 if f is not self.cur:
                     self.files.remove(f)
                     self.protected.append(f)
-        # Die laufende Datei wird sofort abgeschlossen und aus dem Ring genommen.
-        # `cur` danach leeren: Sonst versucht ein zweiter protect()-Aufruf ohne Paket
-        # dazwischen, dieselbe Datei erneut aus dem Ring zu entfernen – das warf einen
-        # ValueError, der den Capture-Prozess beendete (der dann neu startete und
-        # seine Dateien herrenlos zurückließ).
+        # The running file is closed immediately and taken out of the ring.
+        # Clear `cur` afterwards: otherwise a second protect() call without a packet
+        # in between tries to remove the same file from the ring again - that raised a
+        # ValueError which ended the capture process (which then restarted and
+        # left its files orphaned).
         if self.cur is not None and self.cur["protected"]:
             if self.cur in self.files:
                 self.files.remove(self.cur)
                 self.protected.append(self.cur)
             self._close_current()
             self.cur = None
-        # Auch geschützte Dateien zählen bereits gegen ihr Budget
+        # Protected files already count against their budget too
         self._enforce_budget()
         kept = [p for p in paths if os.path.exists(p)]
         self.emit(("pcap", {"op": "protect", "paths": kept, "incident_id": incident_id,
@@ -251,7 +251,7 @@ class CaptureWorker:
         self.stream_bps = 0.0
         self._last_data = time.time()
 
-    # --------------------------------------------------------------- Ausgabe
+    # --------------------------------------------------------------- output
     def emit(self, msg: tuple) -> None:
         try:
             self.out_q.put_nowait(msg)
@@ -259,13 +259,13 @@ class CaptureWorker:
         except queue.Full:
             pass
         if msg[0] == "bin":
-            # Sekunden-Bins sind die eigentlichen Messwerte: kurz warten statt verwerfen
+            # Per-second bins are the actual measurements: wait briefly instead of dropping
             try:
                 self.out_q.put(msg, timeout=0.5)
                 return
             except queue.Full:
                 pass
-        self.dropped += 1   # Hauptprozess überlastet → Rest verwerfen, nie blockieren
+        self.dropped += 1   # main process overloaded → drop the rest, never block
 
     def _on_packet(self, ts: float, data: bytes, orig_len: int, linktype: int) -> None:
         self._last_pkt_ts = ts
@@ -275,7 +275,7 @@ class CaptureWorker:
             self.ring.write(ts + self.analyzer.clock_offset, data, orig_len, linktype)
 
     def _update_clock(self) -> None:
-        """Offset zwischen Router-Uhr und Pi-Uhr: Minimum (Ankunft − Paketzeit) über 10 s."""
+        """Offset between router clock and Pi clock: minimum (arrival − packet time) over 10 s."""
         if self._last_pkt_ts is None:
             return
         now = time.time()
@@ -296,7 +296,7 @@ class CaptureWorker:
         self._handle_ctrl()
         self._check_linktype()
         upto = int(now - 1.0)
-        # Nur Sekunden ausgeben, die der Datenstrom tatsächlich abgedeckt hat
+        # Only emit seconds that the data stream actually covered
         if self._last_pkt_ts is not None:
             covered = int(self._last_pkt_ts + self.analyzer.clock_offset) - 1
             upto = min(upto, covered)
@@ -335,12 +335,12 @@ class CaptureWorker:
             self.emit_status()
 
     def _check_linktype(self) -> None:
-        """Nur Ethernet lässt sich Geräten zuordnen – anderes Interface klar melden."""
+        """Only Ethernet can be mapped to devices - report other interfaces clearly."""
         lt = self.parser.linktype
         if lt is None or lt == LINKTYPE_ETHERNET:
             return
-        msg = (f"Interface liefert Linktype {lt} ({LINKTYPE_NAMES.get(lt, 'unbekannt')}) statt Ethernet – "
-               "Traffic pro Gerät nicht möglich. Bitte das LAN-Interface wählen (meist '1-lan').")
+        msg = (f"Interface delivers link type {lt} ({LINKTYPE_NAMES.get(lt, 'unknown')}) instead of Ethernet - "
+               "traffic per device not possible. Please select the LAN interface (usually '1-lan').")
         if self.error != msg:
             self.error = msg
             log.warning(msg)
@@ -401,7 +401,7 @@ class CaptureWorker:
             self.ring.close()
             self.ring = None
 
-    # --------------------------------------------------------------- Quellen
+    # --------------------------------------------------------------- sources
     def run(self) -> None:
         if self.deep_enabled:
             self._set_deep(True)
@@ -425,17 +425,17 @@ class CaptureWorker:
                     self.emit_status()
                     return
                 backoff = 5.0
-            except Exception as e:  # noqa: BLE001 - jeder Fehler → Neuverbindung
+            except Exception as e:  # noqa: BLE001 - any error → reconnect
                 self.state = "error"
                 self.error = f"{type(e).__name__}: {e}"
-                log.warning("Capture-Fehler: %s", self.error)
+                log.warning("Capture error: %s", self.error)
                 self.emit_status()
                 t_end = time.time() + backoff
                 while self.running and time.time() < t_end:
                     self._handle_ctrl()
                     time.sleep(0.5)
                 backoff = min(backoff * 2, 120)
-            # Parser für neuen Stream zurücksetzen (neuer pcap-Header)
+            # Reset parser for the new stream (new pcap header)
             self.parser = PcapStreamParser(self._on_packet)
             self._last_pkt_ts = None
             self._offsets.clear()
@@ -454,8 +454,8 @@ class CaptureWorker:
             with httpx.Client(timeout=timeout) as http:
                 with http.stream("GET", url) as resp:
                     if resp.status_code != 200:
-                        raise RuntimeError(f"FRITZ!Box-Mitschnitt: HTTP {resp.status_code} "
-                                           "(Recht 'FRITZ!Box Einstellungen' und Interface prüfen)")
+                        raise RuntimeError(f"FRITZ!Box capture: HTTP {resp.status_code} "
+                                           "(check the 'FRITZ!Box Settings' permission and the interface)")
                     self.state = "running"
                     self.emit_status()
                     for chunk in resp.iter_raw(65536):
@@ -468,7 +468,7 @@ class CaptureWorker:
                         if not self.running or time.time() < self.paused_until:
                             break
                     else:
-                        raise RuntimeError("Mitschnitt-Stream von der FRITZ!Box beendet")
+                        raise RuntimeError("Capture stream from the FRITZ!Box ended")
         finally:
             client.stop_capture(fb["capture_interface"], fb["snaplen"])
             client.logout()
@@ -504,15 +504,15 @@ class CaptureWorker:
 
 
 def run_capture_process(cfg: dict, out_q, ctrl_q) -> None:
-    """Einstiegspunkt des Capture-Prozesses."""
+    """Entry point of the capture process."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     try:
-        os.nice(5)  # Pi-hole und ICMP-Messung haben Vorrang
+        os.nice(5)  # Pi-hole and ICMP measurement take precedence
     except OSError:
         pass
     import signal
-    signal.signal(signal.SIGINT, signal.SIG_IGN)  # Beenden nur über ctrl_q / SIGTERM
+    signal.signal(signal.SIGINT, signal.SIG_IGN)  # stop only via ctrl_q / SIGTERM
     w = CaptureWorker(cfg, out_q, ctrl_q)
     signal.signal(signal.SIGTERM, lambda *_: setattr(w, "running", False))
     w.run()

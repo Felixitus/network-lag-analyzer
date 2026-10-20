@@ -1,9 +1,9 @@
-"""Simulierte Netzwerkdaten – NUR für Tests und den expliziten Dev-Modus (`dev_mode: true`).
+"""Simulated network data - ONLY for tests and the explicit dev mode (`dev_mode: true`).
 
-Im produktiven Betrieb wird dieses Modul nie importiert. Im Dev-Modus zeigt die
-Weboberfläche dauerhaft das Banner "DEMO-MODUS".
+This module is never imported in production. In dev mode the web UI
+permanently shows the "DEMO MODE" banner.
 
-Szenarien (auch in tests/test_scenarios.py verwendet):
+Scenarios (also used in tests/test_scenarios.py):
   normal, upload_saturation, download_saturation, isp_loss, local_gateway,
   single_target, dns_outage, game_server
 """
@@ -14,15 +14,15 @@ import random
 import time
 from dataclasses import dataclass
 
-GW_TID, T1, T2, T3 = 1, 2, 3, 4          # Ziel-IDs im Testaufbau
+GW_TID, T1, T2, T3 = 1, 2, 3, 4          # target IDs in the test setup
 MAC_PC = "02:00:00:00:00:20"
 MAC_IPHONE = "02:00:00:00:00:42"
 MAC_TV = "02:00:00:00:00:51"
 MAC_LAPTOP = "02:00:00:00:00:33"
-# Adressen aus den für Dokumentation reservierten Bereichen (RFC 5737 TEST-NET-1
-# 192.0.2.0/24, RFC 2606 für Namen) und lokal verwaltete MACs (02:...). So sind
-# Demo-Geräte auf den ersten Blick von echten zu unterscheiden und kollidieren
-# nie mit einem realen Heimnetz.
+# Addresses from the ranges reserved for documentation (RFC 5737 TEST-NET-1
+# 192.0.2.0/24, RFC 2606 for names) and locally administered MACs (02:...). This way
+# demo devices can be told apart from real ones at first glance and never collide
+# with a real home network.
 DEMO_GATEWAY = "192.0.2.1"
 DEMO_DNS_UPSTREAM = "192.0.2.53"
 DEMO_GAME_SERVER = "203.0.113.77"        # RFC 5737 TEST-NET-3
@@ -41,7 +41,7 @@ SCENARIOS = ["upload_saturation", "download_saturation", "isp_loss", "local_gate
 @dataclass
 class Second:
     probes: dict          # tid → [rtt | None, ...]
-    devices: dict         # mac → [rx, tx, rxp, txp, udp, lan, retrans]  (Bytes)
+    devices: dict         # mac → [rx, tx, rxp, txp, udp, lan, retrans]  (bytes)
     glob: dict
     dns: list             # [(server, ms, status)]
 
@@ -54,7 +54,7 @@ def _dev(rx_bps: float, tx_bps: float, udp_frac: float = 0.0, retrans: int = 0) 
 
 def make_second(scenario: str, k: int, rng: random.Random, probes_per_target: int = 1,
                 onset: int = 5, gaming: bool = False) -> Second:
-    """Erzeugt eine Sekunde Messdaten. k = Sekunde relativ zum Szenario-Beginn."""
+    """Generates one second of measurements. k = second relative to the scenario start."""
     active = scenario != "normal" and k >= onset
     base = {T1: 14.0, T2: 17.0, T3: 21.0}
 
@@ -123,7 +123,7 @@ def make_second(scenario: str, k: int, rng: random.Random, probes_per_target: in
 
 
 def feed_second(hub, ts: int, s: Second, spread: bool = True, tid_map: dict | None = None) -> None:
-    """Speist eine simulierte Sekunde in den MetricsHub ein."""
+    """Feeds one simulated second into the MetricsHub."""
     for tid, samples in s.probes.items():
         if tid_map is not None:
             if tid not in tid_map:
@@ -138,7 +138,7 @@ def feed_second(hub, ts: int, s: Second, spread: bool = True, tid_map: dict | No
 
 
 class LiveSimulator:
-    """Dev-Modus: speist in Echtzeit simulierte Daten ein (Normalbetrieb + zyklische Störungen)."""
+    """Dev mode: feeds simulated data in real time (normal operation + cyclic disruptions)."""
 
     def __init__(self, core):
         self.core = core
@@ -167,7 +167,7 @@ class LiveSimulator:
         now = time.time()
         for mac, (ip, name) in DEMO_DEVICES.items():
             core.devices.observe(mac, ip=ip, hostname=name, source="simulated", seen=now)
-        # 5 Minuten Vorlauf, damit Baselines und Charts sofort gefüllt sind
+        # 5 minutes of lead time so that baselines and charts are filled immediately
         start = int(now) - 300
         for i in range(300):
             feed_second(core.hub, start + i, make_second("normal", 0, self.rng), tid_map=self.tid_map)

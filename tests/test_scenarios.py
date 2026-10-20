@@ -1,13 +1,13 @@
-"""Simulierte End-to-End-Szenarien: Rohdaten → Sekunden → Events → Incident → Ursache."""
+"""Simulated end-to-end scenarios: raw data → seconds → events → incident → cause."""
 import pytest
 
 from backend import simulation as sim
 
 
 def main_incident(p):
-    """Der Incident, der den Szenario-Zeitraum abdeckt."""
+    """The incident covering the scenario time span."""
     cands = [i for i in p.incidents if i.ts_start >= p.scenario_start - 2 and i.category]
-    assert cands, f"kein Incident erzeugt; Events: {[e.type for e in p.events]}"
+    assert cands, f"no incident created; events: {[e.type for e in p.events]}"
     return max(cands, key=lambda i: (i.ts_end or i.ts_start) - i.ts_start)
 
 
@@ -19,8 +19,8 @@ def test_scenario_1_upload_saturation(pipeline):
     assert a["device"]["mac"] == sim.MAC_IPHONE
     assert a["device"]["name"] == "iPhone (Demo)"
     assert inc.confidence == "high"
-    assert any("Router-Latenz blieb stabil" in e for e in a["evidence"])
-    assert any("vor" in e or "gleichzeitig" in e or "zeitgleich" in e for e in a["evidence"])
+    assert any("Router latency stayed stable" in e for e in a["evidence"])
+    assert any("the latency increase" in e for e in a["evidence"])
     types = {e.type for e in p.events}
     assert {"PING_SPIKE", "HIGH_UPLOAD"} <= types
 
@@ -52,7 +52,7 @@ def test_scenario_5_single_target(pipeline):
     p = pipeline().run("single_target")
     inc = main_incident(p)
     assert inc.category == "target"
-    assert "Referenz 2" in inc.cause or "192.0.2.102" in inc.cause
+    assert "Reference 2" in inc.cause or "192.0.2.102" in inc.cause
 
 
 def test_scenario_6_dns_outage(pipeline):
@@ -70,12 +70,12 @@ def test_normal_operation_creates_no_incident(pipeline):
 
 
 def test_upload_saturation_without_per_device_traffic_names_no_device(pipeline):
-    """Ohne Traffic-Daten darf kein Gerät benannt und keine Sättigung behauptet werden."""
+    """Without traffic data no device may be named and no saturation claimed."""
     p = pipeline(cap=(None, None)).run("upload_saturation", traffic=False)
     inc = main_incident(p)
     assert inc.analysis["device"] is None
     assert inc.category != "upload"
-    assert any("nicht verfügbar" in n for n in inc.analysis["notes"])
+    assert any("not available" in n for n in inc.analysis["notes"])
 
 
 def test_game_server_problem_during_gaming(pipeline):
@@ -86,8 +86,8 @@ def test_game_server_problem_during_gaming(pipeline):
 
 
 def test_game_gap_without_session_is_not_an_event(pipeline):
-    """Ohne laufende Gaming Session dürfen UDP-Sendepausen keine Game-Events/Incidents erzeugen."""
-    p = pipeline().run("game_server", gaming=True, ppt=1)     # gaming=True: Game-Flow-Daten vorhanden
+    """Without a running gaming session, UDP send pauses must not create game events/incidents."""
+    p = pipeline().run("game_server", gaming=True, ppt=1)     # gaming=True: game flow data present
     assert "GAME_FLOW_GAP" not in {e.type for e in p.events}
     assert not [i for i in p.incidents if i.category == "game_server"]
 

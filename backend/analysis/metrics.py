@@ -1,12 +1,12 @@
-"""Sekunden-Assembler und Kennzahlen.
+"""Per-second assembler and metrics.
 
-Alle Rohdaten (ICMP-Probes, DNS-Probes, Traffic-Bins, TR-064-Raten) werden nach
-Sekunde gebündelt. Eine Sekunde T wird erst finalisiert, wenn alle Probes, die in
-T gesendet wurden, beantwortet oder abgelaufen sind (T + 1 + Timeout). Danach ist
-die Zeile unveränderlich und wird an Event-Engine, Datenbank und Live-Stream
-verteilt.
+All raw data (ICMP probes, DNS probes, traffic bins, TR-064 rates) is bundled per
+second. A second T is only finalized once all probes sent in T have been
+answered or have timed out (T + 1 + timeout). After that the row is
+immutable and is distributed to the event engine, database and live
+stream.
 
-Keine Fake-Daten: Fehlt eine Quelle, bleibt der Wert None.
+No fake data: if a source is missing, the value stays None.
 """
 from __future__ import annotations
 
@@ -23,17 +23,17 @@ RING_SECONDS = 3600
 JITTER_WINDOW = 10.0
 LOSS_WINDOWS = (5, 10, 30, 60, 300)
 
-# Indizes im Geräte-Bin (identisch zum Capture-Prozess)
+# Indices in the device bin (identical to the capture process)
 RX, TX, RXP, TXP, UDP, LAN, RETR = range(7)
 
 
-# ---------------------------------------------------------------- reine Funktionen
+# ---------------------------------------------------------------- pure functions
 def jitter_ms(rtts: Iterable[float | None]) -> float | None:
-    """Mittlere absolute Differenz aufeinanderfolgender erfolgreicher RTTs.
+    """Mean absolute difference of consecutive successful RTTs.
 
-    Entspricht der Idee der RFC-3550-Interarrival-Jitter-Schätzung, jedoch
-    ungeglättet über ein festes Fenster, damit Spitzen sichtbar bleiben.
-    Verlorene Probes (None) werden übersprungen. Mindestens 2 Werte nötig.
+    Follows the idea of the RFC 3550 interarrival jitter estimate, but
+    unsmoothed over a fixed window so that spikes stay visible.
+    Lost probes (None) are skipped. At least 2 values required.
     """
     vals = [r for r in rtts if r is not None]
     if len(vals) < 2:
@@ -67,7 +67,7 @@ class _SecondAcc:
 
 
 class MetricsHub:
-    """Sammelt Rohdaten, finalisiert Sekunden und hält einen 1-h-Ringpuffer."""
+    """Collects raw data, finalizes seconds and keeps a 1 h ring buffer."""
 
     def __init__(self, timeout: float = 1.5, ring_seconds: int = RING_SECONDS):
         self.timeout = timeout
@@ -84,21 +84,21 @@ class MetricsHub:
         self.capture_active_until: float = 0.0
         self.late_traffic = 0
         self.last_bin_sec: int | None = None
-        # Ziel-Zustände: erkennt Ziele, die überhaupt nicht (mehr) auf ICMP antworten
+        # Target states: detects targets that do not answer ICMP at all (any more)
         self._tstate: dict[int, dict] = {}
-        self.unreachable_after = 30          # Sekunden ohne jede Antwort
-        # So lange darf auf verspätete Traffic-Bins gewartet werden (gepufferter Router-Stream)
+        self.unreachable_after = 30          # seconds without any reply
+        # How long to wait for late traffic bins (buffered router stream)
         self.traffic_grace: float = 6.0
         self.dns_primary: str | None = None
 
     def reset_pending(self) -> None:
-        """Angefangene, noch nicht abgeschlossene Sekunden verwerfen.
+        """Discard started, not yet completed seconds.
 
-        Nötig nach einem Sprung der Systemuhr: Die halbfertigen Sekunden gehören
-        zur alten Zeitrechnung und würden sonst unter falschem Zeitstempel landen.
-        Der Ringpuffer bleibt erhalten – was einmal fertig gemessen wurde, stimmt.
-        `last_finalized` wird zurückgesetzt, damit die Zeitrechnung neu einrastet
-        (wichtig bei einem Sprung rückwärts, sonst stünde die Auswertung still).
+        Needed after a jump of the system clock: the half-finished seconds belong
+        to the old time base and would otherwise end up under a wrong timestamp.
+        The ring buffer is kept - what was completely measured is correct.
+        `last_finalized` is reset so that the time base locks in again
+        (important for a backwards jump, otherwise evaluation would stall).
         """
         self._acc.clear()
         self._traffic.clear()
@@ -108,10 +108,10 @@ class MetricsHub:
         self.last_finalized = 0
 
     def drop_range(self, start: float | None, end: float) -> int:
-        """Sekunden aus dem Ringpuffer entfernen, die gerade gelöscht wurden.
+        """Remove seconds from the ring buffer that were just deleted.
 
-        Sonst zeigten die Live-Charts noch Werte, die es in der Datenbank nicht
-        mehr gibt – und beim nächsten Neuladen wären sie plötzlich weg.
+        Otherwise the live charts would still show values that no longer exist in
+        the database - and on the next reload they would suddenly be gone.
         """
         keep = [r for r in self.ring if not (r["ts"] < end and (start is None or r["ts"] >= start))]
         removed = len(self.ring) - len(keep)
@@ -120,7 +120,7 @@ class MetricsHub:
             self.ring.extend(keep)
         return removed
 
-    # --------------------------------------------------------------- Ziele
+    # --------------------------------------------------------------- targets
     def set_target(self, t: TargetInfo) -> None:
         self.targets[t.target_id] = t
 
@@ -128,23 +128,23 @@ class MetricsHub:
         self.targets.pop(target_id, None)
         self._tstate.pop(target_id, None)
 
-    # --------------------------------------------------------------- Eingänge
+    # --------------------------------------------------------------- inputs
     def add_probe(self, target_id: int, send_ts: float, rtt_ms: float | None) -> None:
         sec = int(send_ts)
         if sec <= self.last_finalized:
-            return  # zu spät (sollte wegen Timeout-Wartezeit nicht vorkommen)
+            return  # too late (should not happen because of the timeout wait)
         self._acc[sec].samples[target_id].append(rtt_ms)
 
     def add_dns(self, server: str, ts: float, ms: float | None, status: str,
                 kind: str = "cached") -> None:
-        """kind: "cached" misst den Resolver selbst, "uncached" den ganzen Weg zum Upstream."""
+        """kind: "cached" measures the resolver itself, "uncached" the whole path to the upstream."""
         sec = int(ts)
         if sec <= self.last_finalized:
             sec = self.last_finalized + 1
         self._acc[sec].dns.append((server, ms, status, kind))
 
     def add_traffic_bin(self, sec: int, devices: dict[str, list[int]], glob: dict) -> None:
-        """Ein Sekunden-Bin des Capture-Prozesses (auch leere Bins = 'gemessen, 0')."""
+        """A per-second bin from the capture process (empty bins too = 'measured, 0')."""
         self.capture_active_until = max(self.capture_active_until, sec + 10)
         self.last_bin_sec = sec if self.last_bin_sec is None else max(self.last_bin_sec, sec)
         if sec <= self.last_finalized:
@@ -154,7 +154,7 @@ class MetricsHub:
         cur = self._traffic.get(sec)
         if cur is None:
             self._traffic[sec] = {"devices": devices, "glob": dict(glob)}
-        else:  # zusammenführen (sollte selten passieren)
+        else:  # merge (should rarely happen)
             for mac, v in devices.items():
                 if mac in cur["devices"]:
                     cur["devices"][mac] = [a + b for a, b in zip(cur["devices"][mac], v)]
@@ -167,19 +167,19 @@ class MetricsHub:
                     cur["glob"][k] = v
 
     def add_wan_rate(self, ts: float, down_bps: float, up_bps: float) -> None:
-        """TR-064-Gesamtrate. Gilt rückwirkend für die Sekunden seit der letzten Abfrage."""
+        """TR-064 total rate. Applies retroactively to the seconds since the last query."""
         start = int(self._last_tr064[0]) + 1 if self._last_tr064 else int(ts) - 1
         start = max(start, int(ts) - 10, self.last_finalized + 1)
         for s in range(start, int(ts) + 1):
             self._tr064[s] = (down_bps, up_bps)
         self._last_tr064 = (ts, down_bps, up_bps)
 
-    # --------------------------------------------------------------- Finalisierung
+    # --------------------------------------------------------------- finalization
     def finalize_due(self, now: float | None = None) -> list[dict]:
         now = time.time() if now is None else now
         horizon = int(now - 1 - self.timeout - 0.2)
-        # Die FRITZ!Box liefert den Mitschnitt gepuffert (Schübe von mehreren Sekunden).
-        # Deshalb kurz auf die Traffic-Bins warten, statt Zeilen ohne Traffic zu finalisieren.
+        # The FRITZ!Box delivers the capture buffered (bursts of several seconds).
+        # So wait briefly for the traffic bins instead of finalizing rows without traffic.
         if self.last_bin_sec is not None and self.capture_active(now):
             horizon = min(horizon, max(self.last_bin_sec, int(now - self.traffic_grace)))
         if self.last_finalized == 0:
@@ -188,13 +188,13 @@ class MetricsHub:
                 return []
             self.last_finalized = candidates[0] - 1
         elif horizon - self.last_finalized > 600:
-            # Lücke (z. B. nach Suspend/Uhrsprung): nicht beliebig viele leere Sekunden erzeugen
+            # Gap (e.g. after suspend/clock jump): do not create arbitrarily many empty seconds
             self.last_finalized = horizon - 600
         rows = []
         for sec in range(self.last_finalized + 1, horizon + 1):
             rows.append(self._finalize_second(sec))
             self.last_finalized = sec
-        # Aufräumen
+        # Clean up
         for d in (self._acc, self._traffic, self._tr064):
             for k in [k for k in d if k <= self.last_finalized]:
                 del d[k]
@@ -203,8 +203,8 @@ class MetricsHub:
             for cb in self.subscribers:
                 try:
                     cb(row)
-                except Exception:  # pragma: no cover - Subscriber-Fehler dürfen nicht blockieren
-                    log.exception("Subscriber-Fehler")
+                except Exception:  # pragma: no cover - subscriber errors must not block
+                    log.exception("Subscriber error")
         return rows
 
     def _finalize_second(self, sec: int) -> dict:
@@ -233,8 +233,8 @@ class MetricsHub:
             for s in samples:
                 hist.append((sec, s))
             if t.kind == "internet":
-                # Ein Ziel, das dauerhaft überhaupt nicht antwortet (ICMP geblockt, Server weg),
-                # darf nicht als Paketverlust der eigenen Leitung zählen.
+                # A target that permanently does not answer at all (ICMP blocked, server gone)
+                # must not count as packet loss of your own line.
                 if self._target_health(tid, bool(ok), n_lost, sec):
                     per_target[tid]["unreachable"] = True
                     continue
@@ -250,7 +250,7 @@ class MetricsHub:
             elif t.kind == "game":
                 game_vals.extend(ok)
 
-        # Jitter: pro Internetziel über JITTER_WINDOW, Median über Ziele
+        # Jitter: per internet target over JITTER_WINDOW, median across targets
         jit_vals = []
         for tid, t in self.targets.items():
             if t.kind != "internet":
@@ -293,8 +293,8 @@ class MetricsHub:
 
         if acc.dns:
             row["dns"] = acc.dns
-            # dns_ms ist bewusst die Antwortzeit des eigenen Resolvers auf einen
-            # gecachten Namen – das ist die Zahl, die "reagiert Pi-hole noch?" beantwortet.
+            # dns_ms is deliberately the response time of your own resolver for a
+            # cached name - that is the number that answers "is Pi-hole still responding?".
             primary = [ms for (srv, ms, st, k) in acc.dns
                        if srv == self.dns_primary and ms is not None and k == "cached"]
             anyms = [ms for (_s, ms, _st, k) in acc.dns if ms is not None and k == "cached"]
@@ -302,14 +302,14 @@ class MetricsHub:
             row["dns_fail"] = sum(1 for (_s, ms, st, _k) in acc.dns if ms is None or st == "servfail")
         return row
 
-    # ------------------------------------------------------------ Ziel-Erreichbarkeit
+    # ------------------------------------------------------------ target reachability
     def _target_health(self, tid: int, ok: bool, n_lost: int, sec: int) -> bool:
-        """Pflegt den Zustand eines Internetziels und sagt, ob es aktuell auszuschließen ist.
+        """Maintains the state of an internet target and says whether to exclude it right now.
 
-        Ein Ziel gilt als "antwortet nicht", wenn es `unreachable_after` Sekunden am Stück
-        keine einzige Antwort geliefert hat, WÄHREND mindestens ein anderes Internetziel
-        antwortet. Fallen alle Ziele gleichzeitig aus, ist das ein echter Ausfall und wird
-        ganz normal als Paketverlust bzw. CONNECTION_DROP gewertet.
+        A target counts as "not answering" if it has not delivered a single reply for
+        `unreachable_after` seconds in a row WHILE at least one other internet target
+        answers. If all targets fail at once, that is a real outage and is counted
+        normally as packet loss or CONNECTION_DROP.
         """
         st = self._tstate.setdefault(tid, {"consec_lost": 0, "last_ok": None, "unreachable": False,
                                            "since": None})
@@ -319,21 +319,21 @@ class MetricsHub:
         st["consec_lost"] += max(1, n_lost)
         if st["unreachable"]:
             return True
-        # "Aktuell" heißt hier wirklich aktuell: Bei einem Totalausfall antwortet niemand mehr,
-        # dann darf kein Ziel ausgenommen werden (sonst verschwände der echte Ausfall).
+        # "Currently" really means currently here: in a total outage nobody answers any more,
+        # then no target may be excluded (otherwise the real outage would vanish).
         others_ok = any(s["last_ok"] is not None and sec - s["last_ok"] <= 5
                         for k, s in self._tstate.items() if k != tid)
         if st["consec_lost"] >= self.unreachable_after and others_ok:
             st["unreachable"] = True
             st["since"] = sec - st["consec_lost"] + 1
             t = self.targets.get(tid)
-            log.warning("Ziel %s antwortet seit %s s nicht auf ICMP – wird aus der Verlustberechnung "
+            log.warning("Target %s has not answered ICMP for %s s - excluded from the loss calculation "
                         "ausgenommen", t.address if t else tid, st["consec_lost"])
             return True
         return False
 
     def target_health(self, window: int = 120) -> list[dict]:
-        """Zustand und Verlustquote je Ziel (für Status, Oberfläche und Fehlersuche)."""
+        """State and loss rate per target (for status, UI and troubleshooting)."""
         rows = list(self.ring)[-window:]
         out = []
         for tid, t in self.targets.items():
@@ -352,7 +352,7 @@ class MetricsHub:
         return out
 
     def _patch_late_traffic(self, sec: int, devices: dict, glob: dict) -> None:
-        """Bin kam nach dem Finalisieren: Zeile im Ringpuffer nachtragen und Abonnenten informieren."""
+        """Bin arrived after finalizing: patch the row in the ring buffer and notify subscribers."""
         for row in reversed(self.ring):
             if row["ts"] == sec:
                 if row["traffic_src"] in (None, "tr064"):
@@ -362,12 +362,12 @@ class MetricsHub:
                         try:
                             cb(row)
                         except Exception:  # pragma: no cover
-                            log.exception("Patch-Subscriber-Fehler")
+                            log.exception("Patch subscriber error")
                 break
             if row["ts"] < sec:
                 break
 
-    # --------------------------------------------------------------- Abfragen
+    # --------------------------------------------------------------- queries
     def window(self, seconds: int, end: int | None = None) -> list[dict]:
         end = self.last_finalized if end is None else end
         start = end - seconds + 1
@@ -397,7 +397,7 @@ class MetricsHub:
 
 
 def _apply_traffic(row: dict, devices: dict, glob: dict) -> None:
-    """Überträgt ein Capture-Bin in eine Sekunden-Zeile (auch beim Nachtragen verspäteter Bins)."""
+    """Transfers a capture bin into a per-second row (also when patching late bins)."""
     tcp = glob.get("tcp_analysis", True)
     row.update({
         "down_bps": glob.get("wan_rx", 0) * 8.0,

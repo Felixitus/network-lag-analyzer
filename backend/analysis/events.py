@@ -1,13 +1,13 @@
 """Event Detection Engine.
 
-Jede finalisierte Sekunde (siehe metrics.MetricsHub) wird durch alle Detektoren
-geschickt. Jeder Detektor hat
-* eine Startbedingung, die `start_n` Sekunden in Folge erfüllt sein muss,
-* eine Endbedingung (Hysterese): `end_n` Sekunden in Folge nicht erfüllt.
+Every finalized second (see metrics.MetricsHub) is passed through all detectors.
+Each detector has
+* a start condition that must hold for `start_n` seconds in a row,
+* an end condition (hysteresis): `end_n` seconds in a row not met.
 
-Baselines sind gleitende Mediane der letzten 5 Minuten, wobei Sekunden mit
-aktivem Latenz-Event ausgeschlossen werden (damit ein langer Spike die Baseline
-nicht "hochzieht").
+Baselines are rolling medians of the last 5 minutes, excluding seconds with an
+active latency event (so that a long spike does not "pull up" the
+baseline).
 """
 from __future__ import annotations
 
@@ -31,16 +31,16 @@ GATEWAY_LATENCY = "GATEWAY_LATENCY"
 INTERNET_LATENCY = "INTERNET_LATENCY"
 GAME_FLOW_GAP = "GAME_FLOW_GAP"
 
-# Events, die einen Incident ("Lag") auslösen. HIGH_UPLOAD/HIGH_DOWNLOAD sind nur Kontext.
+# Events that trigger an incident ("lag"). HIGH_UPLOAD/HIGH_DOWNLOAD are context only.
 INCIDENT_TYPES = {PING_SPIKE, PACKET_LOSS, HIGH_JITTER, CONNECTION_DROP, GATEWAY_LATENCY,
                   INTERNET_LATENCY, TCP_RETRANSMISSION_SPIKE, GAME_FLOW_GAP, DNS_FAILURE}
 
 EVENT_LABELS = {
-    PING_SPIKE: "Ping-Spike", PACKET_LOSS: "Packet Loss", HIGH_JITTER: "Hoher Jitter",
-    HIGH_UPLOAD: "Hoher Upload", HIGH_DOWNLOAD: "Hoher Download",
-    TCP_RETRANSMISSION_SPIKE: "TCP-Retransmissions", CONNECTION_DROP: "Verbindungsabbruch",
-    DNS_FAILURE: "DNS-Ausfall", GATEWAY_LATENCY: "Router-Latenz", INTERNET_LATENCY: "Internet-Latenz",
-    GAME_FLOW_GAP: "Game-Paketlücke",
+    PING_SPIKE: "Ping spike", PACKET_LOSS: "Packet loss", HIGH_JITTER: "High jitter",
+    HIGH_UPLOAD: "High upload", HIGH_DOWNLOAD: "High download",
+    TCP_RETRANSMISSION_SPIKE: "TCP retransmissions", CONNECTION_DROP: "Connection drop",
+    DNS_FAILURE: "DNS failure", GATEWAY_LATENCY: "Router latency", INTERNET_LATENCY: "Internet latency",
+    GAME_FLOW_GAP: "Game packet gap",
 }
 
 
@@ -87,7 +87,7 @@ class RollingMedian:
 
 
 class EventEngine:
-    """Erkennt Events aus Sekunden-Zeilen. Rückrufe: on_start(ev), on_end(ev)."""
+    """Detects events from per-second rows. Callbacks: on_start(ev), on_end(ev)."""
 
     def __init__(self, thresholds, capacity_fn: Callable[[], tuple[float | None, float | None]],
                  next_id: Callable[[], int], top_device_fn: Callable[[dict, str], str | None] | None = None,
@@ -96,8 +96,8 @@ class EventEngine:
         self.capacity_fn = capacity_fn
         self.next_id = next_id
         self.top_device_fn = top_device_fn or (lambda row, direction: None)
-        # Game-Flow-Lücken sind nur während einer Gaming Session aussagekräftig; sonst
-        # erzeugt jeder UDP-Dienst mit Sendepausen (z. B. Sync-Dienste) Fehlalarme.
+        # Game flow gaps are only meaningful during a gaming session; otherwise
+        # every UDP service with send pauses (e.g. sync services) causes false alarms.
         self.gaming_active_fn = gaming_active_fn or (lambda: False)
         self.on_start: list[Callable[[Event], None]] = []
         self.on_end: list[Callable[[Event], None]] = []
@@ -112,7 +112,7 @@ class EventEngine:
         self._drop_run = 0
         self.last_ts = 0
 
-    # ------------------------------------------------------------------ Öffentlich
+    # ------------------------------------------------------------------ public
     def open_events(self) -> list[Event]:
         return [s.active for s in self.state.values() if s.active is not None]
 
@@ -128,7 +128,7 @@ class EventEngine:
         if row.get("tcp_segs") is not None:
             self._retr5.append((row.get("tcp_segs") or 0, row.get("retrans") or 0))
 
-        # ---------------- PING_SPIKE: kurzfristig stark erhöhte Internet-RTT
+        # ---------------- PING_SPIKE: short-term sharply increased internet RTT
         spike = False
         if rtt is not None:
             ref = base if base is not None else rtt
@@ -138,14 +138,14 @@ class EventEngine:
                    severity="critical" if rtt is not None and rtt >= t.ping_critical else "warning",
                    details={"rtt_max": row.get("rtt_max")})
 
-        # ---------------- INTERNET_LATENCY: 10-s-Median dauerhaft über Warnschwelle
+        # ---------------- INTERNET_LATENCY: 10 s median persistently above the warning threshold
         vals = [v for v in self._rtt10 if v is not None]
         med10 = statistics.median(vals) if len(vals) >= 5 else None
         sustained = med10 is not None and med10 >= t.ping_warning and \
             (base is None or med10 - base >= t.spike_min_delta)
         self._step(INTERNET_LATENCY, sustained, ts, value=med10, baseline=base, start_n=3, end_n=5)
 
-        # ---------------- GATEWAY_LATENCY: Router antwortet langsam oder gar nicht
+        # ---------------- GATEWAY_LATENCY: router answers slowly or not at all
         gw = row.get("gw_rtt")
         gw_probes, gw_lost = row.get("gw_probes") or 0, row.get("gw_lost") or 0
         gw_bad = (gw is not None and gw >= max(t.gateway_warning, (gwb or 0) * 5)) or \
@@ -153,7 +153,7 @@ class EventEngine:
         self._step(GATEWAY_LATENCY, gw_bad, ts, value=gw, baseline=gwb, start_n=2, end_n=3,
                    details={"lost": gw_lost, "probes": gw_probes})
 
-        # ---------------- PACKET_LOSS: Verlust im 10-s-Fenster
+        # ---------------- PACKET_LOSS: loss in the 10 s window
         p10 = sum(p for p, _ in self._loss10)
         l10 = sum(l for _, l in self._loss10)
         pct10 = 100.0 * l10 / p10 if p10 else 0.0
@@ -169,13 +169,13 @@ class EventEngine:
         self._step(HIGH_JITTER, jit is not None and jit >= t.jitter_warning, ts, value=jit,
                    start_n=2, end_n=3)
 
-        # ---------------- CONNECTION_DROP: alle Internetziele N s ohne Antwort
+        # ---------------- CONNECTION_DROP: all internet targets without reply for N s
         probes, lost = row.get("probes") or 0, row.get("lost") or 0
         all_lost = probes > 0 and lost == probes
         self._step(CONNECTION_DROP, all_lost, ts, value=None, start_n=t.connection_drop_seconds, end_n=1,
                    severity="critical", details={"gateway_reachable": gw is not None})
 
-        # ---------------- HIGH_UPLOAD / HIGH_DOWNLOAD (nur mit bekannter Kapazität)
+        # ---------------- HIGH_UPLOAD / HIGH_DOWNLOAD (only with known capacity)
         cap_down, cap_up = self.capacity_fn()
         up, down = row.get("up_bps"), row.get("down_bps")
         hu = up is not None and cap_up and up >= cap_up * t.high_upload_pct / 100
@@ -187,7 +187,7 @@ class EventEngine:
                    mac=self.top_device_fn(row, "down") if hd else None,
                    details={"capacity_bps": cap_down, "util_pct": round(100 * down / cap_down, 1) if hd else None})
 
-        # ---------------- TCP_RETRANSMISSION_SPIKE (5-s-Fenster)
+        # ---------------- TCP_RETRANSMISSION_SPIKE (5 s window)
         segs = sum(s for s, _ in self._retr5)
         retr = sum(r for _, r in self._retr5)
         rpct = 100.0 * retr / segs if segs else 0.0
@@ -195,18 +195,18 @@ class EventEngine:
                    ts, value=round(rpct, 2), start_n=1, end_n=5,
                    details={"retrans_down": row.get("retrans_down"), "retrans_up": row.get("retrans_up")})
 
-        # ---------------- GAME_FLOW_GAP: Lücke im Downstream des Game-Flows
-        # Nur während einer Gaming Session und nur bei einem plausiblen Spiel-Paketstrom
-        # (mindestens 10 Pakete/s) – sonst wäre jede UDP-Sendepause eine "Game-Paketlücke".
+        # ---------------- GAME_FLOW_GAP: gap in the downstream of the game flow
+        # Only during a gaming session and only for a plausible game packet stream
+        # (at least 10 packets/s) - otherwise every UDP send pause would be a "game packet gap".
         gap = row.get("game_gap_ms")
         game_flow = self.gaming_active_fn() and (row.get("game_pps") or 0) >= 10
         self._step(GAME_FLOW_GAP, game_flow and gap is not None and gap >= t.game_gap_ms,
                    ts, value=gap, start_n=1, end_n=2, details={"game_pps": row.get("game_pps")})
 
-        # ---------------- DNS_FAILURE: 2 aufeinanderfolgende Fehlschläge je Server UND Art
-        # Gecacht und ungecacht werden getrennt gezählt. Sonst würde ein kaputter
-        # Upstream verdeckt: Die gecachte Probe antwortet weiter aus dem Cache und
-        # würde den Zähler jedes zweite Mal zurücksetzen.
+        # ---------------- DNS_FAILURE: 2 consecutive failures per server AND kind
+        # Cached and uncached are counted separately. Otherwise a broken upstream
+        # would be masked: the cached probe keeps answering from the cache and
+        # would reset the counter every other time.
         for server, ms, status, kind in row.get("dns") or []:
             fail_key = (server, kind)
             key = f"{DNS_FAILURE}:{server}:{kind}"
@@ -218,7 +218,7 @@ class EventEngine:
             self._step(key, self._dns_fail[fail_key] >= 2, ts, value=None, start_n=1, end_n=1,
                        target=label, event_type=DNS_FAILURE, details={"status": status, "kind": kind})
 
-        # Baselines nur mit "ruhigen" Sekunden füttern
+        # Feed baselines only with "quiet" seconds
         if not spike and not sustained:
             self.rtt_base.add(rtt)
         if not gw_bad:
@@ -229,7 +229,7 @@ class EventEngine:
             if st.active:
                 self._end(st, ts)
 
-    # ------------------------------------------------------------------ Interna
+    # ------------------------------------------------------------------ internals
     def _step(self, key: str, cond: bool, ts: float, value: float | None, start_n: int, end_n: int,
               baseline: float | None = None, severity: str = "warning", details: dict | None = None,
               target: str | None = None, mac: str | None = None, event_type: str | None = None) -> None:

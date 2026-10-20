@@ -1,11 +1,11 @@
-"""Inkrementeller Parser für libpcap- und pcapng-Datenströme (z. B. FRITZ!Box-Mitschnitt).
+"""Incremental parser for libpcap and pcapng data streams (e.g. FRITZ!Box capture).
 
-Der Parser puffert nur unvollständige Records; es werden keine Pakete kopiert,
-die nicht verarbeitet werden. Unterstützt:
-* pcap klassisch (Little/Big Endian, Mikro-/Nanosekunden)
-* pcap "modified" (Magic 0xa1b2cd34) – von FRITZ!Box-Mitschnitten verwendet:
-  identischer Dateikopf, aber 24 statt 16 Byte je Record-Header
-  (zusätzlich ifindex, protocol, pkt_type, padding)
+The parser only buffers incomplete records; no packets are copied that are not
+processed. Supported:
+* classic pcap (little/big endian, micro-/nanoseconds)
+* "modified" pcap (magic 0xa1b2cd34) - used by FRITZ!Box captures:
+  identical file header, but 24 instead of 16 bytes per record header
+  (additionally ifindex, protocol, pkt_type, padding)
 * pcapng (SHB, IDB, EPB, SPB)
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Callable
 
 PacketCallback = Callable[[float, bytes, int, int], None]  # ts, data, orig_len, linktype
 
-# Magic (Bytes im Datenstrom) → (Endianness, Zeitauflösung, Länge des Record-Headers)
+# Magic (bytes in the stream) → (endianness, time resolution, record header length)
 PCAP_MAGICS = {
     b"\xd4\xc3\xb2\xa1": ("<", 1e-6, 16),
     b"\xa1\xb2\xc3\xd4": (">", 1e-6, 16),
@@ -26,7 +26,7 @@ PCAP_MAGICS = {
 }
 PCAPNG_SHB = b"\x0a\x0d\x0d\x0a"
 
-# Linktypes, die der Analyzer auswerten kann
+# Link types the analyzer can evaluate
 LINKTYPE_ETHERNET = 1
 LINKTYPE_NAMES = {0: "NULL", 1: "Ethernet", 101: "Raw IP", 113: "Linux cooked (SLL)", 276: "Linux cooked v2",
                   105: "IEEE 802.11", 51: "PPPoE", 9: "PPP", 12: "Raw IP"}
@@ -46,13 +46,13 @@ class PcapStreamParser:
         self.global_header: bytes | None = None
         self._endian = "<"
         self._tsres = 1e-6
-        self._rec_hdr = 16                              # 24 beim "modified"-Format
+        self._rec_hdr = 16                              # 24 for the "modified" format
         self._ng_ifaces: list[tuple[int, float]] = []   # (linktype, tsres)
         self.packets = 0
         self.bytes_in = 0
 
     def feed(self, chunk: bytes) -> int:
-        """Verarbeitet einen Datenblock, gibt die Anzahl erkannter Pakete zurück."""
+        """Processes a data block, returns the number of packets recognized."""
         self.bytes_in += len(chunk)
         self._buf += chunk
         before = self.packets
@@ -72,7 +72,7 @@ class PcapStreamParser:
                 self.format = "pcapng"
             else:
                 raise PcapFormatError(
-                    f"Unbekanntes Mitschnitt-Format (Magic {head.hex()}). Unterstützt: pcap, "
+                    f"Unknown capture format (magic {head.hex()}). Supported: pcap, "
                     "pcap-modified (a1b2cd34), pcapng")
         if self.format == "pcapng":
             self._parse_pcapng()
@@ -90,14 +90,14 @@ class PcapStreamParser:
         lt = self.linktype or 1
         cb = self.on_packet
         unpack = struct.unpack_from
-        hdr = self._rec_hdr          # 16 (klassisch) oder 24 ("modified": + ifindex/protocol/pkt_type/pad)
+        hdr = self._rec_hdr          # 16 (classic) or 24 ("modified": + ifindex/protocol/pkt_type/pad)
         mv = memoryview(buf)
         count = 0
         try:
             while n - pos >= hdr:
                 sec, frac, incl, orig = unpack(fmt, buf, pos)
                 if incl > self.max_caplen:
-                    raise PcapFormatError(f"Ungültige Record-Länge {incl}")
+                    raise PcapFormatError(f"Invalid record length {incl}")
                 end = pos + hdr + incl
                 if end > n:
                     break
@@ -125,7 +125,7 @@ class PcapStreamParser:
                 self._ng_ifaces = []
             blen = struct.unpack_from(self._endian + "I", buf, pos + 4)[0]
             if blen < 12 or blen > self.max_caplen + 64:
-                raise PcapFormatError(f"Ungültige pcapng-Blocklänge {blen}")
+                raise PcapFormatError(f"Invalid pcapng block length {blen}")
             if n - pos < blen:
                 break
             body = pos + 8
@@ -142,7 +142,7 @@ class PcapStreamParser:
                 d0 = body + 20
                 self.on_packet(ts, bytes(buf[d0:d0 + cap]), orig, lt)
                 self.packets += 1
-            elif btype == 0x00000003:  # SPB (ohne Zeitstempel)
+            elif btype == 0x00000003:  # SPB (no timestamp)
                 orig = struct.unpack_from(self._endian + "I", buf, body)[0]
                 lt, _ = self._ng_ifaces[0] if self._ng_ifaces else (1, 1e-6)
                 cap = min(orig, blen - 16)

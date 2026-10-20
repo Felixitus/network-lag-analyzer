@@ -1,22 +1,22 @@
-"""SQLite-Schema.
+"""SQLite schema.
 
-Zeitstempel sind Unix-Sekunden (REAL bzw. INTEGER für Sekunden-Buckets).
-Spalte `res` = Auflösung in Sekunden (1, 10, 60) für aggregierte Tabellen.
-Nicht messbare Werte werden als NULL gespeichert – niemals als 0.
+Timestamps are Unix seconds (REAL, or INTEGER for per-second buckets).
+Column `res` = resolution in seconds (1, 10, 60) for aggregated tables.
+Values that cannot be measured are stored as NULL - never as 0.
 
-**Speicherformat (ab Version 3).** Messwerte liegen als INTEGER in festen
-Einheiten statt als REAL, weil SQLite für jedes REAL acht Bytes belegt,
-für kleine INTEGER aber nur zwei bis vier. Das halbiert die Messtabellen.
-Die Umrechnung passiert ausschließlich in `repository.py`
-(`encode_measurement` / `decode_measurement`); im übrigen Code bleiben es
-Millisekunden und Prozent als Fließkommazahlen.
+**Storage format (from version 3).** Measurements are stored as INTEGER in fixed
+units instead of REAL, because SQLite uses eight bytes for every REAL,
+but only two to four for small INTEGERs. That halves the measurement tables.
+Conversion happens exclusively in `repository.py`
+(`encode_measurement` / `decode_measurement`); the rest of the code keeps
+milliseconds and percent as floats.
 
-    Zeiten (ms)    → 1/100 ms   (18,34 ms  → 1834)
-    Anteile (%)    → 1/100 %    (2,90 %    → 290)
-    Raten (bit/s)  → bit/s als ganze Zahl
+    times (ms)     → 1/100 ms   (18.34 ms  → 1834)
+    shares (%)     → 1/100 %    (2.90 %    → 290)
+    rates (bit/s)  → bit/s as an integer
 
-Geändert wurde das nicht aus Ordnungsliebe: Auf einem Raspberry Pi landet
-jeder gesparte Schreibvorgang direkt in der Lebensdauer der SD-Karte.
+This was not changed for tidiness: on a Raspberry Pi every write saved
+goes straight into the lifetime of the SD card.
 """
 
 SCHEMA_VERSION = 3
@@ -42,20 +42,20 @@ CREATE TABLE IF NOT EXISTS targets (
     kind    TEXT NOT NULL                -- gateway | internet | game
 );
 
--- Einzelne ICMP-Probes (nur Rohdaten-Retention, standardmäßig 24 h)
+-- Individual ICMP probes (raw data retention only, 24 h by default)
 CREATE TABLE IF NOT EXISTS ping_samples (
     ts        REAL NOT NULL,
     target_id INTEGER NOT NULL,
-    rtt_ms    REAL,                      -- NULL = verloren
+    rtt_ms    REAL,                      -- NULL = lost
     lost      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_ping_samples_ts ON ping_samples(ts);
 
--- Netzwerkzustand pro Zeit-Bucket. Einheiten siehe Modulkopf.
+-- Network state per time bucket. Units see module header.
 CREATE TABLE IF NOT EXISTS measurements (
     res        INTEGER NOT NULL,
     ts         INTEGER NOT NULL,
-    rtt_avg    INTEGER,                  -- Internet-RTT (Median der Ziele), 1/100 ms
+    rtt_avg    INTEGER,                  -- internet RTT (median of the targets), 1/100 ms
     rtt_min    INTEGER,
     rtt_max    INTEGER,
     gw_rtt     INTEGER,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS measurements (
     dns_ms     INTEGER,
     dns_fail   INTEGER,
     game_rtt   INTEGER,
-    game_pps   INTEGER,                  -- 1/100 Pakete/s
+    game_pps   INTEGER,                  -- 1/100 packets/s
     game_gap_ms INTEGER,
     PRIMARY KEY (res, ts)
 ) WITHOUT ROWID;
@@ -89,8 +89,8 @@ CREATE TABLE IF NOT EXISTS target_measurements (
     PRIMARY KEY (res, target_id, ts)
 ) WITHOUT ROWID;
 
--- id statt MAC ist der Schlüssel für device_traffic: eine kleine Ganzzahl je Zeile
--- statt 17 Zeichen Text spart dort über die Hälfte des Platzes.
+-- id instead of MAC is the key for device_traffic: a small integer per row
+-- instead of 17 characters of text saves more than half the space there.
 CREATE TABLE IF NOT EXISTS devices (
     id          INTEGER PRIMARY KEY,
     mac         TEXT NOT NULL UNIQUE,    -- aa:bb:cc:dd:ee:ff
@@ -98,18 +98,18 @@ CREATE TABLE IF NOT EXISTS devices (
     hostname    TEXT,
     custom_name TEXT,
     vendor      TEXT,
-    sources     TEXT,                    -- JSON-Liste der Datenquellen
-    interface   TEXT,                    -- LAN/WLAN laut FRITZ!Box
+    sources     TEXT,                    -- JSON list of data sources
+    interface   TEXT,                    -- LAN/Wi-Fi according to the FRITZ!Box
     first_seen  REAL NOT NULL,
     last_seen   REAL NOT NULL,
     active      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_devices_ip ON devices(ip);
 
--- WAN-Traffic pro Gerät (rx = Download zum Gerät, tx = Upload vom Gerät).
--- Bewusst nur die beiden Byte-Zähler: Pakete, UDP- und LAN-Anteil wurden zwar
--- gespeichert, aber von keiner Auswertung und keiner Ansicht gelesen.
--- Live (im Ringpuffer) stehen sie weiterhin vollständig zur Verfügung.
+-- WAN traffic per device (rx = download to the device, tx = upload from the device).
+-- Deliberately only the two byte counters: packets, UDP and LAN share used to be
+-- stored, but were read by no evaluation and no view.
+-- Live (in the ring buffer) they are still fully available.
 CREATE TABLE IF NOT EXISTS device_traffic (
     res       INTEGER NOT NULL,
     ts        INTEGER NOT NULL,
@@ -119,12 +119,12 @@ CREATE TABLE IF NOT EXISTS device_traffic (
     PRIMARY KEY (res, ts, dev)
 ) WITHOUT ROWID;
 
--- Tages-Zusammenfassung: winzig (rund 200 Byte je Tag) und deshalb von der
--- Retention ausgenommen. Damit bleibt "ist es seit dem Umbau besser geworden?"
--- über Jahre beantwortbar, auch wenn die Detaildaten längst gelöscht sind.
+-- Daily summary: tiny (about 200 bytes per day) and therefore exempt from
+-- retention. This keeps "has it gotten better since the change?" answerable
+-- for years, even when the detail data is long gone.
 CREATE TABLE IF NOT EXISTS daily_stats (
-    day         TEXT PRIMARY KEY,        -- YYYY-MM-DD, lokale Zeit
-    seconds     INTEGER NOT NULL,        -- Sekunden mit Messwerten
+    day         TEXT PRIMARY KEY,        -- YYYY-MM-DD, local time
+    seconds     INTEGER NOT NULL,        -- seconds with measurements
     rtt_p50     INTEGER, rtt_p95 INTEGER, rtt_max INTEGER,   -- 1/100 ms
     gw_p50      INTEGER,
     jitter_p50  INTEGER, jitter_p95 INTEGER,
@@ -132,22 +132,22 @@ CREATE TABLE IF NOT EXISTS daily_stats (
     probes      INTEGER, lost INTEGER,
     down_peak   INTEGER, up_peak INTEGER,                    -- bit/s
     down_bytes  INTEGER, up_bytes INTEGER,
-    bloat_up    INTEGER, bloat_down INTEGER,                 -- 1/100 ms Aufschlag unter Last
+    bloat_up    INTEGER, bloat_down INTEGER,                 -- 1/100 ms increase under load
     outage_secs INTEGER,
-    incidents   TEXT                     -- JSON {kategorie: anzahl}
+    incidents   TEXT                     -- JSON {category: count}
 ) WITHOUT ROWID;
 
--- Latenz unter Last (Bufferbloat) je 10-Minuten-Fenster.
--- Wird laufend berechnet, weil die 1-s-Werte nur einen Tag aufbewahrt werden;
--- so bleibt der Langzeitverlauf über Wochen sichtbar.
+-- Latency under load (bufferbloat) per 10-minute window.
+-- Computed continuously because 1 s values are only kept for one day;
+-- this keeps the long-term history visible over weeks.
 CREATE TABLE IF NOT EXISTS bufferbloat (
-    ts            INTEGER PRIMARY KEY,   -- Beginn des Fensters
-    idle_ms       REAL NOT NULL,         -- Median-RTT bei ruhiger Leitung
+    ts            INTEGER PRIMARY KEY,   -- start of the window
+    idle_ms       REAL NOT NULL,         -- median RTT on a quiet line
     idle_secs     INTEGER NOT NULL,
-    up_ms         REAL,                  -- Median-RTT unter Upload-Last
+    up_ms         REAL,                  -- median RTT under upload load
     up_worst_ms   REAL,
     up_secs       INTEGER NOT NULL DEFAULT 0,
-    down_ms       REAL,                  -- Median-RTT unter Download-Last
+    down_ms       REAL,                  -- median RTT under download load
     down_worst_ms REAL,
     down_secs     INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS events (
     type        TEXT NOT NULL,
     severity    TEXT NOT NULL,           -- info | warning | critical
     ts_start    REAL NOT NULL,
-    ts_end      REAL,                    -- NULL = noch offen
+    ts_end      REAL,                    -- NULL = still open
     peak        REAL,
     baseline    REAL,
     target      TEXT,
@@ -200,15 +200,15 @@ CREATE TABLE IF NOT EXISTS incidents (
     cause        TEXT,
     category     TEXT,
     confidence   TEXT,
-    analysis     TEXT,                   -- JSON: Evidenz, Top Talker, Kennzahlen
+    analysis     TEXT,                   -- JSON: evidence, top talkers, metrics
     session_id   INTEGER,
     pcap_protected INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_incidents_time ON incidents(ts_start);
 
--- DNS-Aktivität pro Client und Minute (aus Pi-hole). KEIN Traffic-Maß!
+-- DNS activity per client and minute (from Pi-hole). NOT a traffic measure!
 CREATE TABLE IF NOT EXISTS dns_queries (
-    ts          INTEGER NOT NULL,        -- Minuten-Bucket
+    ts          INTEGER NOT NULL,        -- minute bucket
     client_ip   TEXT NOT NULL,
     queries     INTEGER NOT NULL,
     blocked     INTEGER NOT NULL,

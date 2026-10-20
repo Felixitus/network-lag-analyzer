@@ -1,4 +1,4 @@
-"""pcap/pcapng-Stream-Parser und Paketanalyse (Traffic pro Gerät, Retransmissions, Game-Flow)."""
+"""pcap/pcapng stream parser and packet analysis (traffic per device, retransmissions, game flow)."""
 import random
 import socket
 import struct
@@ -45,8 +45,8 @@ def test_upload_download_attribution_by_mac():
     a.process(t, lan, olen_lan)
     b = a.bins[int(t)]
     d = b["dev"][CLIENT]
-    assert d[1] == olen_up and d[0] == olen_down       # tx = Upload, rx = Download
-    assert d[5] == olen_lan                            # LAN-intern separat
+    assert d[1] == olen_up and d[0] == olen_down       # tx = upload, rx = download
+    assert d[5] == olen_lan                            # LAN-internal separately
     assert b["g"]["wan_tx"] == olen_up and b["g"]["wan_rx"] == olen_down
     assert a.macip[CLIENT] == "192.168.178.42"
 
@@ -85,7 +85,7 @@ def test_seq_wraparound():
 def test_game_flow_gap_measured_in_bin():
     a = analyzer(gaming_mac=GAMER)
     base = 100.0
-    times = [base + i * 0.016 for i in range(30)] + [base + 0.9]   # 0.9 - 0.464 ≈ 436 ms Lücke
+    times = [base + i * 0.016 for i in range(30)] + [base + 0.9]   # 0.9 - 0.464 ≈ 436 ms gap
     for ts in times:
         pkt, olen = eth_ipv4(ROUTER, GAMER, "20.33.44.55", "192.168.178.20", 17, udp(3074, 50000, 60), 60)
         a.process(ts, pkt, olen)
@@ -140,14 +140,14 @@ def test_pcap_stream_parser_handles_arbitrary_chunking():
 
 
 def modified_record(ts, data, orig_len, ifindex=2, proto=0x0800, pkt_type=0):
-    """Record im 'modified'-Format (Magic a1b2cd34): 24 Byte Header statt 16."""
+    """Record in the 'modified' format (magic a1b2cd34): 24 byte header instead of 16."""
     sec = int(ts)
     usec = int((ts - sec) * 1e6)
     return struct.pack("<IIIIiHBB", sec, usec, len(data), orig_len, ifindex, proto, pkt_type, 0) + data
 
 
 def test_modified_pcap_format_of_fritzbox():
-    """FRITZ!Box-Mitschnitte kommen mit Magic a1b2cd34 und 24-Byte-Recordheadern."""
+    """FRITZ!Box captures come with magic a1b2cd34 and 24-byte record headers."""
     recs = _records(120)
     head = struct.pack("<IHHiIII", 0xA1B2CD34, 2, 4, 0, 0, 128, 1)
     blob = head + b"".join(modified_record(t, d, o) for t, d, o in recs)
@@ -161,13 +161,13 @@ def test_modified_pcap_format_of_fritzbox():
         i += n
     assert p.format == "pcap-modified" and p.linktype == 1
     assert len(got) == 120
-    # Die Paketdaten dürfen NICHT um die 8 Zusatzbytes verschoben sein
+    # The packet data must NOT be shifted by the 8 extra bytes
     assert got[0][1] == recs[0][1] and got[77][1] == recs[77][1]
     assert got[3][0] == round(recs[3][0], 4) and got[3][2] == recs[3][2]
 
 
 def test_modified_pcap_feeds_analyzer_correctly():
-    """Ende-zu-Ende: modifiziertes Format → Analyzer ordnet Bytes dem richtigen Gerät zu."""
+    """End to end: modified format → analyzer assigns bytes to the right device."""
     a = analyzer()
     p = PcapStreamParser(lambda ts, d, o, lt: a.process(ts, d, o, lt))
     up, olen = eth_ipv4(CLIENT, ROUTER, "192.168.178.42", "17.1.2.3", 6, tcp(50000, 443, 1000), 1400)
@@ -183,13 +183,13 @@ def test_unknown_magic_names_supported_formats():
     p = PcapStreamParser(lambda *a: None)
     try:
         p.feed(b"\x00\x11\x22\x33" + b"\x00" * 40)
-        assert False, "Fehler erwartet"
+        assert False, "error expected"
     except PcapFormatError as e:
         assert "a1b2cd34" in str(e) and "pcapng" in str(e)
 
 
 def test_pcap_ring_writes_standard_format(tmp_path):
-    """Aus dem 'modified'-Strom geschriebene PCAP-Dateien müssen Standard-pcap sein (Wireshark)."""
+    """PCAP files written from the 'modified' stream must be standard pcap (Wireshark)."""
     from backend.collectors.traffic import PcapRing
     ring = PcapRing(str(tmp_path / "pcap"), max_files=3, file_size=10_000_000, emit=lambda m: None)
     pkt, olen = eth_ipv4(CLIENT, ROUTER, "192.168.178.42", "17.1.2.3", 6, tcp(50000, 443, 1000), 1400)
@@ -200,7 +200,7 @@ def test_pcap_ring_writes_standard_format(tmp_path):
     blob = b"".join(f.read_bytes() for f in sorted(data))
     got = []
     PcapStreamParser(lambda ts, d, o, lt: got.append((ts, o))).feed(blob)
-    assert blob[:4] == b"\xd4\xc3\xb2\xa1"      # Standard-Magic, nicht das modifizierte
+    assert blob[:4] == b"\xd4\xc3\xb2\xa1"      # standard magic, not the modified one
     assert len(got) == 5 and got[0][1] == olen
 
 

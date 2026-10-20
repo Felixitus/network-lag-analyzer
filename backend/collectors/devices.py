@@ -1,7 +1,7 @@
-"""Geräteverzeichnis: führt FRITZ!Box-Hostliste, Pi-hole, ARP und Capture-Beobachtungen zusammen.
+"""Device registry: merges FRITZ!Box host list, Pi-hole, ARP and capture observations.
 
-Primärschlüssel ist die MAC-Adresse. Benutzerdefinierte Namen werden dauerhaft in
-der Tabelle `devices` gespeichert und nie von automatischen Quellen überschrieben.
+The primary key is the MAC address. User-defined names are stored permanently in
+the `devices` table and are never overwritten by automatic sources.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ ACTIVE_SECONDS = 300
 
 
 def is_randomized_mac(mac: str) -> bool:
-    """Lokal administrierte MAC (z. B. iOS/Android 'Private WLAN-Adresse')."""
+    """Locally administered MAC (e.g. iOS/Android 'Private Wi-Fi Address')."""
     try:
         return bool(int(mac.split(":")[0], 16) & 0x02)
     except (ValueError, IndexError):
@@ -26,7 +26,7 @@ def is_randomized_mac(mac: str) -> bool:
 @dataclass
 class Device:
     mac: str
-    id: int = 0                      # devices.id, Schlüssel in device_traffic
+    id: int = 0                      # devices.id, key in device_traffic
     ip: str | None = None
     hostname: str | None = None
     custom_name: str | None = None
@@ -64,21 +64,21 @@ class Device:
 
 
 class DeviceRegistry:
-    """Geräteliste im Arbeitsspeicher.
+    """In-memory device list.
 
-    Jedes Gerät bekommt hier – nicht erst in der Datenbank – eine numerische `id`.
-    Grund: `device_traffic` wird im selben Moment geschrieben, in dem ein Gerät
-    zum ersten Mal Traffic erzeugt; auf eine vom Writer-Thread vergebene ID zu
-    warten würde die Sekunde verzögern. Die ID wird beim Upsert ausdrücklich
-    mitgeschrieben, ein Konflikt auf der MAC behält die bestehende ID.
+    Every device gets its numeric `id` here - not only in the database.
+    Reason: `device_traffic` is written at the very moment a device produces
+    traffic for the first time; waiting for an ID assigned by the writer thread
+    would delay the second. The ID is written explicitly on upsert,
+    a conflict on the MAC keeps the existing ID.
     """
 
     def __init__(self) -> None:
         self.by_mac: dict[str, Device] = {}
-        self.ip_names: dict[str, str] = {}   # IP → Hostname für Clients ohne bekannte MAC
+        self.ip_names: dict[str, str] = {}   # IP → hostname for clients without a known MAC
         self._next_id = 1
 
-    # ----------------------------------------------------------------- Laden/Speichern
+    # ----------------------------------------------------------------- load/save
     def load(self, conn: sqlite3.Connection) -> None:
         for r in conn.execute("SELECT * FROM devices"):
             d = Device(id=r["id"], mac=r["mac"], ip=r["ip"], hostname=r["hostname"],
@@ -105,7 +105,7 @@ class DeviceRegistry:
         "last_seen=MAX(excluded.last_seen, devices.last_seen), active=excluded.active"
     )
 
-    # ----------------------------------------------------------------- Quellen
+    # ----------------------------------------------------------------- sources
     def _get(self, mac: str) -> Device:
         d = self.by_mac.get(mac)
         if d is None:
@@ -115,7 +115,7 @@ class DeviceRegistry:
         return d
 
     def id_for(self, mac: str) -> int:
-        """Numerische ID für `device_traffic`; legt das Gerät bei Bedarf an."""
+        """Numeric ID for `device_traffic`; creates the device if needed."""
         return self._get(mac).id
 
     def mac_for_id(self, dev_id: int) -> str | None:

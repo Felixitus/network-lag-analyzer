@@ -1,6 +1,6 @@
-"""DNS-Prober: misst Antwortzeit und Ausfälle von Pi-hole (lokal) und einem Upstream-Resolver.
+"""DNS prober: measures response time and failures of Pi-hole (local) and an upstream resolver.
 
-Eine DNS-Störung ist kein Lag im Spiel, erklärt aber "Internet geht nicht"-Momente.
+A DNS outage is not in-game lag, but it explains "the internet is down" moments.
 """
 from __future__ import annotations
 
@@ -77,25 +77,25 @@ def random_label(n: int = 10) -> str:
     return "".join(random.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(n))
 
 
-# Antworten, die bedeuten "der Weg hat funktioniert". nxdomain ist bei der ungecachten
-# Probe der Normalfall und ausdrücklich ein Erfolg: Der Name existiert nicht, die
-# Auflösung ist aber komplett durchgelaufen.
+# Answers that mean "the path worked". nxdomain is the normal case for the uncached
+# probe and explicitly a success: the name does not exist, but resolution
+# went all the way through.
 OK_STATUS = frozenset({"ok", "nodata", "nxdomain"})
 
 
 class DnsProber:
-    """Misst DNS in zwei Varianten, weil sie verschiedene Dinge aussagen.
+    """Measures DNS in two variants, because they tell different things.
 
-    * **gecacht** (`query_name`, z. B. example.com): Pi-hole antwortet aus dem
-      eigenen Cache. Das misst, ob der Resolver überhaupt noch reagiert – und
-      sonst nichts. Ein Wert von 0,3 ms heißt nicht, dass Namensauflösung geht.
-    * **ungecacht** (zufälliger Name unter `uncached_suffix`, Standard
-      `.invalid`): Der Name kann nicht im Cache liegen, also läuft die Anfrage
-      wirklich bis zum Upstream. Die Antwort ist NXDOMAIN – das zählt als Erfolg.
-      `.invalid` ist nach RFC 2606 für genau solche Zwecke reserviert; es wird
-      keine fremde Zone belastet.
+    * **cached** (`query_name`, e.g. example.com): Pi-hole answers from its
+      own cache. This measures whether the resolver still responds at all - and
+      nothing else. A value of 0.3 ms does not mean name resolution works.
+    * **uncached** (random name under `uncached_suffix`, default
+      `.invalid`): the name cannot be in the cache, so the query really goes
+      all the way to the upstream. The answer is NXDOMAIN - that counts as success.
+      `.invalid` is reserved for exactly this purpose by RFC 2606; no foreign
+      zone is burdened.
 
-    Die Varianten wechseln sich ab, damit die Abfragerate gleich bleibt.
+    The variants alternate so that the query rate stays constant.
     """
 
     def __init__(self, servers: list[str], name: str, interval: float, timeout: float,
@@ -116,7 +116,7 @@ class DnsProber:
         self._uncached_turn = False
 
     def next_query(self) -> tuple[str, str]:
-        """(Abzufragender Name, Art). Wechselt zwischen gecacht und ungecacht."""
+        """(name to query, kind). Alternates between cached and uncached."""
         if self.uncached_suffix and self._uncached_turn:
             return f"{random_label()}.{self.uncached_suffix}", "uncached"
         return self.name, "cached"

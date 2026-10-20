@@ -1,4 +1,4 @@
-"""FastAPI-Anwendung: REST-API unter /api, Frontend als statische Dateien."""
+"""FastAPI application: REST API under /api, frontend as static files."""
 from __future__ import annotations
 
 import os
@@ -36,7 +36,7 @@ def create_app(core) -> FastAPI:
         return FileResponse(os.path.join(FRONTEND_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
 
     class NoCacheStatic(StaticFiles):
-        """Frontend-Dateien nie cachen – sonst läuft nach einem Update altes JS im Browser."""
+        """Never cache frontend files - otherwise stale JS keeps running in the browser after an update."""
 
         def file_response(self, *args, **kwargs) -> Response:   # type: ignore[override]
             resp = super().file_response(*args, **kwargs)

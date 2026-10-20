@@ -1,21 +1,21 @@
-"""Schema-Migrationen.
+"""Schema migrations.
 
-Bis Version 2 wurde das Schema nur mit `CREATE TABLE IF NOT EXISTS` angelegt.
-Das reicht für neue Tabellen, aber nicht für geänderte Spalten: Eine bestehende
-Installation hätte die Änderung stillschweigend nicht bekommen und der Code
-wäre darüber gestolpert. Deshalb gibt es ab Version 3 echte, nummerierte
-Schritte.
+Up to version 2 the schema was only created with `CREATE TABLE IF NOT EXISTS`.
+That is enough for new tables, but not for changed columns: an existing
+installation would silently not have received the change and the code
+would have tripped over it. That is why there are real, numbered steps
+from version 3 on.
 
-Ablauf beim Start:
+Sequence on start:
 
-1. `schema_version` aus `meta` lesen (fehlt sie, ist es eine neue Datenbank).
-2. Alle Schritte mit höherer Nummer der Reihe nach anwenden, jeder in einer
-   eigenen Transaktion.
-3. Danach das aktuelle Schema anlegen (neue Tabellen) und die Version schreiben.
+1. Read `schema_version` from `meta` (if missing, it is a new database).
+2. Apply all steps with a higher number in order, each in its
+   own transaction.
+3. Then create the current schema (new tables) and write the version.
 
-Vor dem ersten Schritt wird eine Sicherungskopie angelegt – aber nur, wenn
-dafür genug Platz frei ist. Ist er es nicht, wird das protokolliert und
-weitergemacht, statt den Dienst nicht starten zu lassen.
+Before the first step a backup copy is made - but only if there is
+enough free space for it. If there is not, this is logged and the
+migration continues, instead of keeping the service from starting.
 """
 from __future__ import annotations
 
@@ -32,13 +32,13 @@ BACKUP_SUFFIX = ".pre-migration.bak"
 
 
 def current_version(conn: sqlite3.Connection) -> int:
-    """0 = leere Datenbank, sonst die gespeicherte Version."""
+    """0 = empty database, otherwise the stored version."""
     try:
         r = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
     except sqlite3.OperationalError:
-        return 0                      # Tabelle meta gibt es noch nicht
+        return 0                      # table meta does not exist yet
     if r is None:
-        # meta existiert, aber ohne Eintrag: entweder wirklich leer oder eine sehr alte DB
+        # meta exists, but without an entry: either really empty or a very old DB
         n = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
         return 0 if n <= 1 else 1
     try:
@@ -55,18 +55,18 @@ def _columns(conn: sqlite3.Connection, table: str) -> list[str]:
     return [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
 
 
-# ===================================================================== Schritte
+# ===================================================================== steps
 def _v3_compact_storage(conn: sqlite3.Connection) -> None:
-    """Version 3: kompaktere Speicherung.
+    """Version 3: more compact storage.
 
-    * `measurements` / `target_measurements`: REAL → INTEGER in festen Einheiten
-      (1/100 ms bzw. 1/100 %). SQLite kann den Spaltentyp nicht ändern, deshalb
-      wird die Tabelle neu aufgebaut und dabei umgerechnet.
-    * `devices` bekommt eine numerische `id`.
-    * `device_traffic` wird auf (res, ts, dev, rx_bytes, tx_bytes) verkleinert;
-      die nie gelesenen Paket-/UDP-/LAN-Spalten entfallen.
+    * `measurements` / `target_measurements`: REAL → INTEGER in fixed units
+      (1/100 ms or 1/100 %). SQLite cannot change the column type, so the
+      table is rebuilt and converted along the way.
+    * `devices` gets a numeric `id`.
+    * `device_traffic` is reduced to (res, ts, dev, rx_bytes, tx_bytes);
+      the never-read packet/UDP/LAN columns are dropped.
     """
-    # ---- devices: id ergänzen -------------------------------------------------
+    # ---- devices: add id --------------------------------------------------------
     if _table_exists(conn, "devices") and "id" not in _columns(conn, "devices"):
         conn.execute("ALTER TABLE devices RENAME TO devices_old")
         conn.execute("""
@@ -82,7 +82,7 @@ def _v3_compact_storage(conn: sqlite3.Connection) -> None:
         conn.execute("DROP TABLE devices_old")
         conn.execute("CREATE INDEX IF NOT EXISTS ix_devices_ip ON devices(ip)")
 
-    # ---- device_traffic: MAC → id, überflüssige Spalten weg -------------------
+    # ---- device_traffic: MAC → id, drop unneeded columns ----------------------
     if _table_exists(conn, "device_traffic") and "mac" in _columns(conn, "device_traffic"):
         conn.execute("ALTER TABLE device_traffic RENAME TO device_traffic_old")
         conn.execute("""
@@ -90,8 +90,8 @@ def _v3_compact_storage(conn: sqlite3.Connection) -> None:
                 res INTEGER NOT NULL, ts INTEGER NOT NULL, dev INTEGER NOT NULL,
                 rx_bytes INTEGER NOT NULL, tx_bytes INTEGER NOT NULL,
                 PRIMARY KEY (res, ts, dev)) WITHOUT ROWID""")
-        # Geräte, die nur im Traffic vorkommen (z. B. inzwischen gelöschte), zuerst anlegen,
-        # damit keine Messwerte verloren gehen.
+        # Create devices that only occur in the traffic (e.g. deleted since) first,
+        # so that no measurements are lost.
         conn.execute("""
             INSERT OR IGNORE INTO devices(mac, first_seen, last_seen, sources, active)
             SELECT DISTINCT o.mac, 0, 0, '["capture"]', 0 FROM device_traffic_old o
@@ -162,22 +162,22 @@ def _is_real(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return False
 
 
-# (Version, Beschreibung, Funktion) – aufsteigend sortiert.
+# (version, description, function) - sorted ascending.
 STEPS: list[tuple[int, str, object]] = [
-    (3, "Kompaktere Speicherung (INTEGER-Einheiten, device_id, schlankes device_traffic)",
+    (3, "More compact storage (INTEGER units, device_id, slim device_traffic)",
      _v3_compact_storage),
 ]
 
 
-# ===================================================================== Ablauf
+# ===================================================================== flow
 def backup(path: str) -> str | None:
-    """Sicherungskopie neben der Datenbank. None, wenn zu wenig Platz frei ist."""
+    """Backup copy next to the database. None if there is too little free space."""
     if path == ":memory:" or not os.path.exists(path):
         return None
     size = os.path.getsize(path)
     free = shutil.disk_usage(Path(path).parent).free
     if free < size * 3:
-        log.warning("Keine Sicherungskopie vor der Migration: nur %.0f MB frei, %.0f MB nötig",
+        log.warning("No backup copy before the migration: only %.0f MB free, %.0f MB needed",
                     free / 1e6, size * 3 / 1e6)
         return None
     dst = path + BACKUP_SUFFIX
@@ -187,21 +187,21 @@ def backup(path: str) -> str | None:
             src.backup(out)
     finally:
         src.close()
-    log.info("Sicherungskopie vor der Migration: %s (%.0f MB)", dst, size / 1e6)
+    log.info("Backup copy before the migration: %s (%.0f MB)", dst, size / 1e6)
     return dst
 
 
 def migrate(conn: sqlite3.Connection, path: str, target: int) -> dict:
-    """Wendet alle fälligen Schritte an. Liefert einen Bericht für das Protokoll."""
+    """Applies all due steps. Returns a report for the log."""
     have = current_version(conn)
     todo = [s for s in STEPS if have < s[0] <= target]
     report = {"from": have, "to": target, "steps": [], "backup": None, "seconds": 0.0}
     if have == 0 or not todo:
-        return report                      # neue Datenbank oder nichts zu tun
+        return report                      # new database or nothing to do
     report["backup"] = backup(path)
     t0 = time.perf_counter()
     for version, desc, fn in todo:
-        log.info("Migration auf Version %s: %s", version, desc)
+        log.info("Migrating to version %s: %s", version, desc)
         conn.execute("BEGIN IMMEDIATE")
         try:
             fn(conn)
@@ -209,17 +209,17 @@ def migrate(conn: sqlite3.Connection, path: str, target: int) -> dict:
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
-            log.exception("Migration auf Version %s fehlgeschlagen", version)
+            log.exception("Migration to version %s failed", version)
             raise
         report["steps"].append({"version": version, "description": desc})
     report["seconds"] = round(time.perf_counter() - t0, 2)
-    # Nach einem Tabellenumbau liegen viele Seiten frei – die Datei darf schrumpfen.
-    # Der Checkpoint danach ist nötig, weil im WAL-Modus sonst erst das Write-Ahead-Log
-    # schrumpft und die eigentliche Datei ihre alte Größe behält.
+    # After a table rebuild many pages are free - the file may shrink.
+    # The checkpoint afterwards is needed because in WAL mode otherwise only the
+    # write-ahead log shrinks and the actual file keeps its old size.
     try:
         conn.execute("VACUUM")
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    except sqlite3.OperationalError:       # pragma: no cover - z. B. zu wenig Platz
-        log.warning("VACUUM nach der Migration nicht möglich")
+    except sqlite3.OperationalError:       # pragma: no cover - e.g. not enough space
+        log.warning("VACUUM after the migration not possible")
     log.info("Migration abgeschlossen: %s → %s in %.1f s", have, target, report["seconds"])
     return report

@@ -1,4 +1,4 @@
-"""API-Integrationstest im Dev-Modus (simulierte Daten, echte Pipeline, echte SQLite-DB)."""
+"""API integration test in dev mode (simulated data, real pipeline, real SQLite DB)."""
 import os
 import time
 
@@ -56,8 +56,8 @@ def test_devices_and_rename(client):
     devs = client.get("/api/devices").json()["devices"]
     assert any(d["name"] == "iPhone (Demo)" for d in devs)
     mac = next(d["mac"] for d in devs if d["name"] == "iPhone (Demo)")
-    r = client.patch(f"/api/devices/{mac}", json={"custom_name": "Mein iPhone"}, headers=csrf(client))
-    assert r.status_code == 200 and r.json()["name"] == "Mein iPhone"
+    r = client.patch(f"/api/devices/{mac}", json={"custom_name": "My iPhone"}, headers=csrf(client))
+    assert r.status_code == 200 and r.json()["name"] == "My iPhone"
     bad = client.patch(f"/api/devices/{mac}", json={"custom_name": "<script>"}, headers=csrf(client))
     assert bad.status_code == 422
 
@@ -89,8 +89,8 @@ def test_bufferbloat_endpoint(client):
     assert d["source"] == "live" and d["window_seconds"] == 600
     assert d["capacity"]["down_bps"] and d["summary"]["capacity_known"] is True
     assert set(d["history"]) == {"up", "down"}
-    # Längere Zeiträume greifen auf die gespeicherten Fenster zurück – im frischen
-    # Testlauf gibt es noch keine, das muss ehrlich gemeldet werden statt geraten.
+    # Longer spans fall back to the stored windows - in a fresh test run there
+    # are none yet, and that must be reported honestly instead of guessed.
     long = client.get("/api/bufferbloat?range=30d").json()
     assert long["source"] == "windows"
     assert long["summary"]["up"] is None and long["summary"]["down"] is None
@@ -99,7 +99,7 @@ def test_bufferbloat_endpoint(client):
 
 
 def test_bufferbloat_window_is_persisted_and_shows_up_in_the_long_range(client):
-    """Der Wartungslauf schreibt 10-Minuten-Fenster, damit der Verlauf Wochen übersteht."""
+    """The maintenance run writes 10-minute windows so that the history survives for weeks."""
     import asyncio
 
     from backend.analysis import bufferbloat as bb
@@ -111,7 +111,7 @@ def test_bufferbloat_window_is_persisted_and_shows_up_in_the_long_range(client):
     core.hub.ring.clear()
     for i in range(30):                                  # ruhig
         core.hub.ring.append({"ts": ts + i, "rtt_avg": 20.0, "down_bps": 1e6, "up_bps": 0.1e6})
-    for i in range(30, 60):                              # Download am Anschlag
+    for i in range(30, 60):                              # download maxed out
         core.hub.ring.append({"ts": ts + i, "rtt_avg": 150.0, "down_bps": cd * 0.95, "up_bps": 0.2e6})
     core._last_bloat = 0
     asyncio.get_event_loop_policy().new_event_loop().run_until_complete(core._bufferbloat_window())
@@ -131,7 +131,7 @@ def test_database_overview_and_delete_by_date(client):
     assert d["size"]["used"] > 0 and d["limit_mb"] == 1024
     names = {t["table"] for t in d["tables"]}
     assert {"measurements", "device_traffic", "ping_samples"} <= names
-    assert "daily_stats" not in names, "geschützte Tabellen dürfen nicht zum Löschen angeboten werden"
+    assert "daily_stats" not in names, "protected tables must not be offered for deletion"
     assert "daily_stats" in d["protected"]
     assert d["oldest"] is not None
 
@@ -140,24 +140,24 @@ def test_database_overview_and_delete_by_date(client):
                       headers=csrf(client)).json()
     assert pre["total"] > 0
 
-    # Ohne Bestätigung wird nicht gelöscht
+    # Without confirmation nothing is deleted
     assert client.post("/api/database/delete", json={"start": None, "end": cut},
                        headers=csrf(client)).status_code == 400
 
-    r = client.post("/api/database/delete", json={"start": None, "end": cut, "confirm": "LOESCHEN"},
+    r = client.post("/api/database/delete", json={"start": None, "end": cut, "confirm": "DELETE"},
                     headers=csrf(client))
     assert r.status_code == 200
     assert r.json()["total"] == pre["total"]
     assert client.post("/api/database/preview", json={"start": None, "end": cut},
                        headers=csrf(client)).json()["total"] == 0
 
-    # Geräte und Einstellungen überleben
+    # Devices and settings survive
     assert client.get("/api/devices").json()["devices"]
 
 
 def test_database_delete_refuses_protected_tables(client):
     r = client.post("/api/database/delete",
-                    json={"start": None, "end": time.time(), "tables": ["devices"], "confirm": "LOESCHEN"},
+                    json={"start": None, "end": time.time(), "tables": ["devices"], "confirm": "DELETE"},
                     headers=csrf(client))
     assert r.status_code == 422
 
@@ -165,7 +165,7 @@ def test_database_delete_refuses_protected_tables(client):
 def test_database_future_end_is_clamped_to_now(client):
     r = client.post("/api/database/delete",
                     json={"start": None, "end": time.time() + 86400, "tables": ["ping_samples"],
-                          "confirm": "LOESCHEN"}, headers=csrf(client))
+                          "confirm": "DELETE"}, headers=csrf(client))
     assert r.status_code == 200 and r.json()["end"] <= time.time() + 1
 
 
@@ -177,20 +177,20 @@ def test_database_vacuum_and_daily(client):
 
 
 def test_history_custom_span_and_gaps(client):
-    """Zoom per Ziehen: freier Zeitraum, passende Auflösung, ehrliche Lücken."""
+    """Zoom by dragging: free time span, matching resolution, honest gaps."""
     now = int(time.time())
     r = client.get(f"/api/history?start={now - 120}&end={now}").json()
     assert r["range"] == "custom" and r["res"] == 1
     assert r["end"] - r["start"] == 120
     assert len(r["series"]["covered"]) == len(r["series"]["ts"])
-    assert any(r["series"]["covered"]), "im Dev-Modus muss gemessen worden sein"
+    assert any(r["series"]["covered"]), "in dev mode something must have been measured"
 
-    # Ein Zeitraum, der weit vor dem Start liegt, hat gar keine Daten – und sagt das
-    alt = client.get(f"/api/history?start={now - 20000}&end={now - 19000}").json()
-    assert not any(alt["series"]["covered"])
-    assert all(v is None for v in alt["series"]["rtt_avg"])
+    # A time span far before the start has no data at all - and says so
+    old_span = client.get(f"/api/history?start={now - 20000}&end={now - 19000}").json()
+    assert not any(old_span["series"]["covered"])
+    assert all(v is None for v in old_span["series"]["rtt_avg"])
 
-    # Große Spannen bekommen eine gröbere Auflösung
+    # Large spans get a coarser resolution
     assert client.get(f"/api/history?start={now - 20000}&end={now}").json()["res"] == 10
     assert client.get(f"/api/history?start={now - 200000}&end={now}").json()["res"] == 60
     dev = client.get(f"/api/history/devices?start={now - 120}&end={now}").json()
@@ -198,7 +198,7 @@ def test_history_custom_span_and_gaps(client):
 
 
 def test_pcap_usage_is_visible_and_cleanable(client):
-    """Herrenlose Mitschnitte (z. B. nach Abstürzen des Capture-Prozesses) müssen weggehen."""
+    """Orphaned captures (e.g. after crashes of the capture process) must go away."""
     import os
     core = client.app.state.core
     d = os.path.join(core.cfg.data_dir, "pcap")

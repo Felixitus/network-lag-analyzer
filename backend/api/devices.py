@@ -1,4 +1,4 @@
-"""Geräteliste, Umbenennen, DNS-Aktivität je Gerät (Pi-hole)."""
+"""Device list, renaming, DNS activity per device (Pi-hole)."""
 from __future__ import annotations
 
 import json
@@ -28,7 +28,7 @@ class DevicePatch(BaseModel):
             return None
         v = v.strip()
         if v and not re.fullmatch(r"[\w\-\.\s()äöüÄÖÜß'+#&/]{1,64}", v):
-            raise ValueError("Name enthält unzulässige Zeichen")
+            raise ValueError("Name contains invalid characters")
         return v or None
 
 
@@ -37,7 +37,7 @@ async def devices(request: Request):
     core = core_of(request)
     items = core.devices.all()
     now = core.hub.last_finalized
-    # aktuelle Raten (letzte 10 s) anhängen
+    # attach current rates (last 10 s)
     rates: dict[str, list[float]] = {}
     rows = core.hub.window(10, now) if now else []
     for r in rows:
@@ -60,14 +60,14 @@ async def patch_device(request: Request, mac: str, body: DevicePatch):
     core = core_of(request)
     m = normalize_mac(mac)
     if not m or m not in core.devices.by_mac:
-        raise HTTPException(404, "Gerät nicht gefunden")
+        raise HTTPException(404, "Device not found")
     dev = core.devices.by_mac[m]
     if "custom_name" in body.model_fields_set:
         core.devices.rename(m, body.custom_name)
         await core.db.write(lambda c: c.execute("UPDATE devices SET custom_name=? WHERE mac=?", (body.custom_name, m)))
     if body.gaming_pc is not None:
         if body.gaming_pc and not dev.ip:
-            raise HTTPException(400, "Gerät hat keine bekannte IPv4-Adresse")
+            raise HTTPException(400, "Device has no known IPv4 address")
         await core.update_settings({"gaming_pc": {"ip": dev.ip if body.gaming_pc else None,
                                                   "name": dev.display_name}})
     return dev.to_dict()
@@ -75,12 +75,12 @@ async def patch_device(request: Request, mac: str, body: DevicePatch):
 
 @router.get("/devices/{mac}/dns")
 async def device_dns(request: Request, mac: str, minutes: int = Query(60, ge=1, le=1440)):
-    """DNS-Aktivität laut Pi-hole. Hinweis: KEIN Maß für Bandbreite."""
+    """DNS activity according to Pi-hole. Note: NOT a measure of bandwidth."""
     core = core_of(request)
     m = normalize_mac(mac)
     dev = core.devices.by_mac.get(m or "")
     if dev is None or not dev.ip:
-        raise HTTPException(404, "Gerät nicht gefunden oder ohne IP")
+        raise HTTPException(404, "Device not found or has no IP")
     since = int(time.time()) - minutes * 60
 
     def q(c):
@@ -95,4 +95,4 @@ async def device_dns(request: Request, mac: str, minutes: int = Query(60, ge=1, 
         r.pop("top_domains")
     return {"ip": dev.ip, "available": bool(core.pihole_status.get("ok")), "minutes": rows,
             "top_domains": sorted(top.items(), key=lambda kv: -kv[1])[:20],
-            "note": "DNS-Anfragen zeigen Aktivität, aber nicht die genutzte Bandbreite."}
+            "note": "DNS queries show activity, but not the bandwidth used."}

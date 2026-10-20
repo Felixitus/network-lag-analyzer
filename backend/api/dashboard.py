@@ -1,4 +1,4 @@
-"""Dashboard-API: Status, Live-Stream (SSE), Verlauf, Geräte-Traffic, Heatmap, Top Talker."""
+"""Dashboard API: status, live stream (SSE), history, per-device traffic, heatmap, top talkers."""
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +14,7 @@ from ..database import repository as repo
 
 router = APIRouter(prefix="/api")
 
-RANGES: dict[str, tuple[int, int]] = {   # Name → (Sekunden, Auflösung)
+RANGES: dict[str, tuple[int, int]] = {   # name → (seconds, resolution)
     "live": (300, 1), "5m": (300, 1), "15m": (900, 1), "1h": (3600, 1),
     "6h": (21600, 10), "24h": (86400, 60), "7d": (604800, 60),
 }
@@ -35,8 +35,8 @@ def _grid(range_name: str, end: int | None = None) -> tuple[int, int, int]:
     return start, end, res
 
 
-# Auflösung für einen frei gewählten Zeitraum (Zoom per Ziehen in der Timeline).
-# Dieselben Stufen wie bei den festen Bereichen – die 1-s-Werte gibt es nur einen Tag.
+# Resolution for a freely chosen span (zoom by dragging in the timeline).
+# Same steps as for the fixed ranges - 1 s values only exist for one day.
 def _grid_span(start: float, end: float) -> tuple[int, int, int]:
     start, end = int(start), int(end)
     if end - start < 10:
@@ -57,7 +57,7 @@ async def status(request: Request):
 
 @router.get("/stream")
 async def stream(request: Request):
-    """Server-Sent Events: 'tick' jede Sekunde, 'event'/'incident'/'gaming' bei Änderungen."""
+    """Server-Sent Events: 'tick' every second, 'event'/'incident'/'gaming' on changes."""
     core = core_of(request)
     q = core.broadcaster.subscribe()
 
@@ -94,7 +94,7 @@ def _history_from_db(c, start: int, end: int, res: int) -> dict[int, dict]:
     q = (f"SELECT ts, {', '.join(SERIES)}, retrans, tcp_segs, traffic_src FROM measurements "
          "WHERE res=? AND ts BETWEEN ? AND ? ORDER BY ts")
     for r in c.execute(q, (res, start, end)):
-        d = {k: repo.dec(r[k], k) for k in SERIES}       # gespeicherte Ganzzahlen → ms/%
+        d = {k: repo.dec(r[k], k) for k in SERIES}       # stored integers → ms/%
         d["retrans_pct"] = round(100 * r["retrans"] / r["tcp_segs"], 2) if r["tcp_segs"] else None
         d["traffic_src"] = r["traffic_src"]
         out[r["ts"]] = d
@@ -104,7 +104,7 @@ def _history_from_db(c, start: int, end: int, res: int) -> dict[int, dict]:
 @router.get("/history")
 async def history(request: Request, range: RangeName = "15m", end: int | None = None,
                   start: int | None = None):
-    """Zeitreihen. Mit `start` UND `end` wird ein frei gewählter Zeitraum geliefert."""
+    """Time series. With `start` AND `end` a freely chosen span is returned."""
     core = core_of(request)
     if start is not None and end is not None:
         start, end, res = _grid_span(start, end)
@@ -121,8 +121,8 @@ async def history(request: Request, range: RangeName = "15m", end: int | None = 
     cols: dict[str, list] = {"ts": ts}
     for k in (*SERIES, "retrans_pct"):
         cols[k] = [data.get(t, {}).get(k) for t in ts]
-    # Welche Sekunden sind überhaupt gemessen? Ohne diese Angabe sähe eine Lücke
-    # in der Anzeige wie eine Null aus – und das wäre eine erfundene Messung.
+    # Which seconds were measured at all? Without this, a gap would look like
+    # a zero in the display - and that would be a made-up measurement.
     cols["covered"] = [t in data for t in ts]
     srcs = {d.get("traffic_src") for d in data.values() if d.get("traffic_src")}
     events = await core.db.read(lambda c: [dict(r) for r in c.execute(
@@ -173,7 +173,7 @@ def _device_series_db(c, start: int, end: int, res: int) -> dict[str, dict[int, 
 @router.get("/history/devices")
 async def history_devices(request: Request, range: RangeName = "15m", end: int | None = None,
                           start: int | None = None, top: int = Query(8, ge=1, le=30)):
-    """Traffic pro Gerät (bit/s) auf demselben Zeitraster wie /history."""
+    """Traffic per device (bit/s) on the same time grid as /history."""
     core = core_of(request)
     if start is not None and end is not None:
         start, end, res = _grid_span(start, end)
@@ -192,17 +192,17 @@ async def history_devices(request: Request, range: RangeName = "15m", end: int |
     for mac in macs:
         s = data[mac]
         lbl = core.devices.label(mac)
-        # 0 nur dort, wo der Mitschnitt lief; sonst None (= nicht gemessen, keine Fake-Null)
+        # 0 only where the capture was running; otherwise None (= not measured, no fake zero)
         devices.append({**lbl, "down": [s[t][0] if t in s else (0 if t in covered else None) for t in ts],
                         "up": [s[t][1] if t in s else (0 if t in covered else None) for t in ts],
                         "total_bytes": totals[mac] * res / 8})
     available = core.capture_status.get("state") == "running" or bool(data)
     return {"range": range, "res": res, "ts": ts, "devices": devices, "available": available,
-            "reason": None if available else (core.capture_status.get("error") or "Keine Traffic-Quelle aktiv")}
+            "reason": None if available else (core.capture_status.get("error") or "No traffic source active")}
 
 
 async def _covered(core, start: int, end: int, res: int) -> set[int]:
-    """Zeitpunkte, zu denen Traffic pro Gerät tatsächlich gemessen wurde."""
+    """Points in time at which per-device traffic was actually measured."""
     if res == 1 and _ring_covers(core, start):
         return {r["ts"] for r in core.hub.range(start, end) if (r.get("traffic_src") or "").startswith("capture")}
     return await core.db.read(lambda c: {r[0] for r in c.execute(
@@ -235,7 +235,7 @@ async def heatmap(request: Request, range: RangeName = "1h", cols: int = Query(1
 @router.get("/top-talkers")
 async def top_talkers(request: Request, seconds: int = Query(10, ge=1, le=3600), start: float | None = None,
                       end: float | None = None, n: int = Query(10, ge=1, le=50)):
-    """Aktuell (letzte N s) oder historisch (start/end) aktivste Geräte."""
+    """Most active devices, current (last N s) or historical (start/end)."""
     core = core_of(request)
     if start is None or end is None:
         end = core.hub.last_finalized
@@ -275,7 +275,7 @@ async def top_talkers(request: Request, seconds: int = Query(10, ge=1, le=3600),
     return {"start": t0, "end": t1, "devices": items[:n],
             "available": core.hub.capture_active() or bool(items),
             "reason": None if (core.hub.capture_active() or items) else
-            (core.capture_status.get("error") or "Traffic pro Gerät nicht verfügbar")}
+            (core.capture_status.get("error") or "Per-device traffic not available")}
 
 
 BLOAT_RANGES: dict[str, int] = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000}
@@ -284,11 +284,11 @@ BloatRange = Literal["1h", "6h", "24h", "7d", "30d"]
 
 @router.get("/bufferbloat")
 async def bufferbloat_api(request: Request, range: BloatRange = "24h"):
-    """Latenz unter Last, getrennt nach Richtung.
+    """Latency under load, split by direction.
 
-    Kurze Zeiträume werden direkt aus den 1-s-Werten berechnet (`source: live`),
-    längere aus den gespeicherten 10-Minuten-Fenstern (`source: windows`), weil
-    die 1-s-Werte nur einen Tag aufbewahrt werden.
+    Short spans are computed directly from the 1 s values (`source: live`),
+    longer ones from the stored 10-minute windows (`source: windows`), because
+    1 s values are only kept for one day.
     """
     core = core_of(request)
     secs = BLOAT_RANGES[range]
@@ -300,16 +300,16 @@ async def bufferbloat_api(request: Request, range: BloatRange = "24h"):
 
     live_rows = [r for r in ring if r["ts"] >= start] if secs <= 3600 else []
     if live_rows:
-        # Der Ring umfasst eine Stunde – für kurze Zeiträume ist die Rechnung über
-        # die Einzelsekunden genauer als der Median gespeicherter Fenster.
+        # The ring covers one hour - for short spans computing over the individual
+        # seconds is more accurate than the median of stored windows.
         summary = bb.measure(live_rows, cd, cu, idle_rows=ring)
         source = "live"
     else:
         summary = bb.aggregate(buckets) if (cd and cu) else bb.measure([], cd, cu)
         source = "windows"
         if summary["up"] is None and summary["down"] is None and ring and cd and cu:
-            # Noch keine gespeicherten Fenster (frisch gestartet) – dann wenigstens die
-            # letzte Stunde aus dem Ring zeigen, statt eine leere Karte.
+            # No stored windows yet (freshly started) - then at least show the last
+            # hour from the ring instead of an empty card.
             live = bb.measure(ring, cd, cu)
             if live["up"] or live["down"]:
                 summary, source, live_rows = live, "live", ring

@@ -35,7 +35,7 @@ async def stop(request: Request):
     core = core_of(request)
     res = await core.stop_gaming()
     if res is None:
-        raise HTTPException(409, "Keine Gaming Session aktiv")
+        raise HTTPException(409, "No gaming session active")
     return res
 
 
@@ -63,7 +63,7 @@ async def session(request: Request, sid: int):
     await core.db.flush()
     r = await core.db.read(lambda c: c.execute("SELECT * FROM gaming_sessions WHERE id=?", (sid,)).fetchone())
     if r is None:
-        raise HTTPException(404, "Session nicht gefunden")
+        raise HTTPException(404, "Session not found")
     d = dict(r)
     d["summary"] = json.loads(d["summary"]) if d["summary"] else None
     d["incidents"] = await core.db.read(lambda c: [dict(x) for x in c.execute(

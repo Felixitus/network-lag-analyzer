@@ -1,14 +1,14 @@
-"""Gaming Mode: Session-Verwaltung, automatische Erkennung, Game-Server-Erkennung.
+"""Gaming Mode: session management, automatic detection, game server detection.
 
-Während einer Session:
-* ICMP-Messintervall wird erhöht (4 Probes/s statt 1/s),
-* der Capture-Prozess protokolliert den Game-Flow des Gaming-PCs sekundengenau
-  (Pakete/s, Lücken im Downstream = "Server schickt nichts"),
-* der Game-Server wird am stärksten bidirektionalen UDP-Flow erkannt und – falls er
-  auf ICMP antwortet – zusätzlich angepingt.
+During a session:
+* the ICMP measuring interval is increased (4 probes/s instead of 1/s),
+* the capture process logs the game flow of the gaming PC to the second
+  (packets/s, gaps in the downstream = "server sends nothing"),
+* the game server is detected as the strongest bidirectional UDP flow and - if it
+  answers ICMP - pinged additionally.
 
-Automatische Erkennung: bidirektionaler UDP-Flow des Gaming-PCs mit mindestens
-`min_pps` Paketen/s je Richtung über `min_seconds` Sekunden.
+Automatic detection: bidirectional UDP flow of the gaming PC with at least
+`min_pps` packets/s per direction over `min_seconds` seconds.
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ class GamingSession:
 
 
 class GamingDetector:
-    """Zustandsmaschine für automatischen Start/Stopp."""
+    """State machine for automatic start/stop."""
 
     def __init__(self, min_pps: float, min_seconds: int, stop_after_idle: int):
         self.min_pps = min_pps
@@ -53,7 +53,7 @@ class GamingDetector:
         self.last_game_traffic: float = 0.0
 
     def feed(self, now: float, gaming_mac: str | None, candidates: list[dict]) -> tuple[bool, dict | None]:
-        """Gibt (Game-Traffic erkannt seit min_seconds, bester Kandidat) zurück."""
+        """Returns (game traffic detected for min_seconds, best candidate)."""
         best = None
         if gaming_mac:
             mine = [c for c in candidates if c["mac"] == gaming_mac and not is_private(c["remote_ip"])
@@ -74,7 +74,7 @@ class GamingDetector:
 
 
 def pick_server(session: GamingSession, cand: dict | None) -> bool:
-    """Aktualisiert den Game-Server der Session. True, wenn sich der Server geändert hat."""
+    """Updates the game server of the session. True if the server changed."""
     if not cand:
         return False
     key = (cand["remote_ip"], cand["remote_port"])
@@ -82,7 +82,7 @@ def pick_server(session: GamingSession, cand: dict | None) -> bool:
     session.server_candidates[key] = c + cand["pps_up"] + cand["pps_down"]
     best_key = max(session.server_candidates, key=session.server_candidates.get)
     if (session.server_ip, session.server_port) != best_key:
-        # Wechsel nur, wenn der neue Kandidat klar dominiert (Serverwechsel zwischen Runden)
+        # Switch only if the new candidate clearly dominates (server change between rounds)
         cur = session.server_candidates.get((session.server_ip, session.server_port), 0)
         if session.server_ip is None or session.server_candidates[best_key] > cur * 1.5:
             session.server_ip, session.server_port = best_key
@@ -92,7 +92,7 @@ def pick_server(session: GamingSession, cand: dict | None) -> bool:
 
 
 def summarize_session(rows: list[dict], events: list[dict], incidents: list[dict]) -> dict:
-    """Zusammenfassung nach Ende der Session (siehe Anforderung 11)."""
+    """Summary after the session ends (see requirement 11)."""
     rtt = [r["rtt_avg"] for r in rows if r.get("rtt_avg") is not None]
     rmax = [r["rtt_max"] for r in rows if r.get("rtt_max") is not None]
     jit = [r["jitter"] for r in rows if r.get("jitter") is not None]

@@ -1,13 +1,13 @@
-"""Load Guard: schützt Pi-hole und die Messgenauigkeit vor Überlast durch die Paketanalyse.
+"""Load Guard: protects Pi-hole and measurement accuracy from overload caused by packet analysis.
 
-Stufen:
-  0  normal                         volle Analyse
-  1  CPU > cpu_high (10 s) oder
-     Capture-Rückstand > lag_high   keine Flow-/Retransmission-Analyse
-  2  CPU > cpu_critical (5 s) oder
-     RAM knapp oder Rückstand > lag_critical   Sampling 1:4 (hochgerechnet, markiert)
-  3  Stufe 2 seit 60 s              Mitschnitt 5 min pausieren
-Rückstufung erst nach 60 s unterhalb der Schwellen (Hysterese).
+Levels:
+  0  normal                         full analysis
+  1  CPU > cpu_high (10 s) or
+     capture backlog > lag_high     no flow/retransmission analysis
+  2  CPU > cpu_critical (5 s) or
+     RAM low or backlog > lag_critical   sampling 1:4 (extrapolated, flagged)
+  3  level 2 for 60 s               pause capture for 5 min
+Stepping down only after 60 s below the thresholds (hysteresis).
 """
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ class LoadGuard:
         return sum(vals) / len(vals) if vals else 0.0
 
     def evaluate(self) -> int:
-        """Berechnet die gewünschte Stufe (einmal pro Sekunde nach sample() aufrufen)."""
+        """Computes the desired level (call once per second after sample())."""
         c = self.cfg
         now = time.time()
         mem_low = (self.last.get("mem_available_mb") or 1e9) < c.mem_min_available_mb
@@ -106,7 +106,7 @@ class LoadGuard:
         else:
             self._calm_since = None
         if self.level == 3:
-            # Pause wird im Capture-Prozess umgesetzt; danach neu bewerten
+            # The pause is applied in the capture process; re-evaluate afterwards
             self._lvl2_since = None
         self.last["level"] = self.level
         return self.level

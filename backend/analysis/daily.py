@@ -1,13 +1,13 @@
-"""Tages-Zusammenfassung für den Langzeitvergleich.
+"""Daily summary for long-term comparison.
 
-Die Detaildaten verschwinden nach Tagen bis Wochen – die Frage „ist es seit dem
-Umbau besser geworden?" stellt sich aber erst Monate später. Deshalb wird je Tag
-eine Handvoll Kennzahlen festgehalten: rund 200 Byte, die von der Retention
-ausgenommen sind.
+The detail data disappears after days to weeks - but the question "has it gotten
+better since the change?" only comes up months later. So a handful of metrics
+is kept per day: about 200 bytes, exempt from
+retention.
 
-Grundlage ist die jeweils feinste noch vorhandene Auflösung des Tages. Welche das
-war, steht in `seconds` (Zahl der Messpunkte) – so lässt sich später erkennen,
-wie belastbar eine Zeile ist. Geschätzt wird nichts: Fehlt ein Wert, bleibt er NULL.
+The basis is the finest resolution of the day that still exists. Which one that
+was is stored in `seconds` (number of data points) - so you can later tell
+how reliable a row is. Nothing is estimated: if a value is missing, it stays NULL.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ DAY = 86400
 
 
 def day_bounds(day: str) -> tuple[int, int]:
-    """Lokale Tagesgrenzen als Unix-Sekunden [Beginn, Ende)."""
+    """Local day boundaries as Unix seconds [start, end)."""
     d = datetime.strptime(day, "%Y-%m-%d")
     start = int(d.timestamp())
     return start, int((d + timedelta(days=1)).timestamp())
@@ -33,7 +33,7 @@ def yesterday(now: float | None = None) -> str:
 
 
 def _pick_resolution(conn: sqlite3.Connection, t0: int, t1: int) -> int | None:
-    """Feinste Auflösung, die den Tag noch abdeckt."""
+    """Finest resolution that still covers the day."""
     for res in (1, 10, 60):
         n = conn.execute("SELECT COUNT(*) FROM measurements WHERE res=? AND ts >= ? AND ts < ?",
                          (res, t0, t1)).fetchone()[0]
@@ -43,7 +43,7 @@ def _pick_resolution(conn: sqlite3.Connection, t0: int, t1: int) -> int | None:
 
 
 def _percentile(conn: sqlite3.Connection, col: str, res: int, t0: int, t1: int, p: float) -> int | None:
-    """p-Quantil einer Spalte, direkt in SQL über die sortierten Werte."""
+    """p-quantile of a column, directly in SQL over the sorted values."""
     n = conn.execute(f"SELECT COUNT(*) FROM measurements WHERE res=? AND ts>=? AND ts<? AND {col} IS NOT NULL",
                      (res, t0, t1)).fetchone()[0]
     if not n:
@@ -55,7 +55,7 @@ def _percentile(conn: sqlite3.Connection, col: str, res: int, t0: int, t1: int, 
 
 
 def compute(conn: sqlite3.Connection, day: str) -> tuple | None:
-    """Eine Zeile für `daily_stats`. None, wenn an dem Tag nichts gemessen wurde."""
+    """One row for `daily_stats`. None if nothing was measured on that day."""
     t0, t1 = day_bounds(day)
     res = _pick_resolution(conn, t0, t1)
     if res is None:
@@ -73,7 +73,7 @@ def compute(conn: sqlite3.Connection, day: str) -> tuple | None:
     cats: dict[str, int] = {}
     for r in conn.execute("SELECT category, COUNT(*) n FROM incidents WHERE ts_start >= ? AND ts_start < ? "
                           "GROUP BY category", (t0, t1)):
-        cats[r["category"] or "unbekannt"] = r["n"]
+        cats[r["category"] or "unknown"] = r["n"]
     rnd = lambda v: None if v is None else int(round(v))      # noqa: E731
     return (
         day, agg["n"] * res,
@@ -99,7 +99,7 @@ _MS = ("rtt_p50", "rtt_p95", "rtt_max", "gw_p50", "jitter_p50", "jitter_p95", "b
 
 
 def write_missing(conn: sqlite3.Connection, now: float | None = None, max_days: int = 40) -> list[str]:
-    """Fehlende Tage nachtragen (abgeschlossene Tage, rückwärts bis max_days)."""
+    """Backfill missing days (completed days, backwards up to max_days)."""
     now = now or time.time()
     have = {r[0] for r in conn.execute("SELECT day FROM daily_stats")}
     today = date.fromtimestamp(now)
@@ -117,7 +117,7 @@ def write_missing(conn: sqlite3.Connection, now: float | None = None, max_days: 
 
 
 def read(conn: sqlite3.Connection, days: int = 90) -> list[dict]:
-    """Tageszeilen in Millisekunden/Prozent, jüngster Tag zuletzt."""
+    """Daily rows in milliseconds/percent, most recent day last."""
     start = (date.today() - timedelta(days=days)).isoformat()
     out = []
     for r in conn.execute("SELECT * FROM daily_stats WHERE day >= ? ORDER BY day", (start,)):

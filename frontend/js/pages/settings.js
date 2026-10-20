@@ -231,7 +231,7 @@ function databaseCard() {
       if (del.textContent !== 'Wirklich löschen?') { del.textContent = 'Wirklich löschen?'; return; }
       del.disabled = true; del.textContent = 'Löscht …';
       try {
-        const r = await api('api/database/delete', { method: 'POST', body: { ...pending, confirm: 'LOESCHEN' } });
+        const r = await api('api/database/delete', { method: 'POST', body: { ...pending, confirm: 'DELETE' } });
         toast(`${r.total.toLocaleString('de-DE')} Zeilen gelöscht, ${fmtBytes(r.freed_bytes)} freigegeben`, 6000);
         pending = null;
         load();

@@ -13,20 +13,20 @@ from backend.analysis.root_cause import Window  # noqa: E402
 from backend.config import Thresholds  # noqa: E402
 from backend import simulation as sim  # noqa: E402
 
-# Adressen aus dem Dokumentationsbereich RFC 5737 – Testdaten sollen nie wie
-# echte Ziele aussehen und nie versehentlich angesprochen werden.
+# Addresses from the RFC 5737 documentation range - test data must never look like
+# real targets and must never be contacted by accident.
 TARGETS = {
     sim.GW_TID: {"address": "192.0.2.1", "name": "Router", "kind": "gateway"},
-    sim.T1: {"address": "192.0.2.101", "name": "Referenz 1", "kind": "internet"},
-    sim.T2: {"address": "192.0.2.102", "name": "Referenz 2", "kind": "internet"},
-    sim.T3: {"address": "192.0.2.103", "name": "Referenz 3", "kind": "internet"},
+    sim.T1: {"address": "192.0.2.101", "name": "Reference 1", "kind": "internet"},
+    sim.T2: {"address": "192.0.2.102", "name": "Reference 2", "kind": "internet"},
+    sim.T3: {"address": "192.0.2.103", "name": "Reference 3", "kind": "internet"},
 }
 NAMES = {mac: name for mac, (ip, name) in sim.DEMO_DEVICES.items()}
 IPS = {mac: ip for mac, (ip, name) in sim.DEMO_DEVICES.items()}
 
 
 class Pipeline:
-    """Hub + Event Engine + Correlator wie im Produktivbetrieb, aber ohne Netzwerk/DB."""
+    """Hub + event engine + correlator as in production, but without network/DB."""
 
     def __init__(self, cap=(sim.CAP_DOWN, sim.CAP_UP), gaming=None):
         self.hub = MetricsHub(timeout=1.5)

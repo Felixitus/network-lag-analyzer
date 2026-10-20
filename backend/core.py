@@ -1,4 +1,4 @@
-"""Orchestrierung aller Komponenten (läuft im Hauptprozess, asyncio)."""
+"""Orchestration of all components (runs in the main process, asyncio)."""
 from __future__ import annotations
 
 import asyncio
@@ -32,13 +32,13 @@ from .util.loadguard import LoadGuard
 
 log = logging.getLogger("nla.core")
 
-# Ab dieser Abweichung zwischen Wanduhr und monotoner Uhr gilt die Systemzeit als gesprungen
-# (NTP nach dem Boot, Sommerzeit auf Systemen ohne UTC-Uhr, Handstellung).
+# From this deviation between wall clock and monotonic clock on, the system time counts as jumped
+# (NTP after boot, DST on systems without a UTC clock, manual setting).
 CLOCK_JUMP_S = 2.0
 
 
 class Broadcaster:
-    """Verteilt Live-Daten an alle SSE-Clients (je Client eine begrenzte Queue)."""
+    """Distributes live data to all SSE clients (one bounded queue per client)."""
 
     def __init__(self) -> None:
         self.clients: set[asyncio.Queue] = set()
@@ -59,7 +59,7 @@ class Broadcaster:
             try:
                 q.put_nowait(msg)
             except asyncio.QueueFull:
-                pass  # langsamer Client verliert Frames, blockiert aber nichts
+                pass  # a slow client loses frames, but blocks nothing
 
 
 class Core:
@@ -103,21 +103,21 @@ class Core:
         self._game_probe_stats = [0, 0]
         self._cap_delays: deque[float] = deque(maxlen=60)
         self.capture_delay: float | None = None
-        # Anzeige läuft sofort; die Auswertung wartet auf die (verspäteten) Traffic-Daten
+        # Display runs immediately; the evaluation waits for the (delayed) traffic data
         self._analysis_q: deque[dict] = deque()
         self.analysis_delay: float = 4.0
         self.display_grace_max: float = 3.0
         self._ids = {"event": 0, "incident": 0, "session": 0}
         self._last_agg = {10: 0, 60: 0}
         self._last_bloat = 0
-        self.db_guard: dict | None = None      # Zustand der Größengrenze, für /api/status
-        self.clock_jumps: list[dict] = []      # erkannte Sprünge der Systemuhr
+        self.db_guard: dict | None = None      # state of the size limit, for /api/status
+        self.clock_jumps: list[dict] = []      # detected jumps of the system clock
         self.loop: asyncio.AbstractEventLoop | None = None
         self.simulator = None
         self.setup_done = False
         self.version = __version__
 
-    # ================================================================== Start/Stopp
+    # ================================================================== start/stop
     async def start(self) -> None:
         self.loop = asyncio.get_running_loop()
         await self.db.init()
@@ -125,8 +125,8 @@ class Core:
         if overrides:
             try:
                 self.cfg = build_config(self.yaml_data, overrides)
-            except Exception as e:  # ungültige Overrides dürfen den Start nicht verhindern
-                log.error("Gespeicherte Einstellungen ungültig, werden ignoriert: %s", e)
+            except Exception as e:  # invalid overrides must not prevent startup
+                log.error("Stored settings invalid, ignoring them: %s", e)
         self.setup_done = await self.db.read(lambda c: repo.get_setting(c, "setup_done", False))
         await self.db.read(self._load_state)
         self._init_network()
@@ -157,7 +157,7 @@ class Core:
             asyncio.create_task(self._system_loop(), name="system"),
             asyncio.create_task(self._devices_loop(), name="devices"),
         ]
-        log.info("Network Lag Analyzer %s gestartet (dev_mode=%s, Daten: %s)",
+        log.info("Network Lag Analyzer %s started (dev_mode=%s, data: %s)",
                  self.version, self.cfg.dev_mode, self.cfg.data_dir)
 
     async def stop(self) -> None:
@@ -183,7 +183,7 @@ class Core:
             self.recent_incidents.append(_incident_row(r))
         for r in c.execute("SELECT * FROM events ORDER BY id DESC LIMIT 500").fetchall()[::-1]:
             self.recent_events.append(_event_row(r))
-        # offene Events/Sessions vom letzten Lauf schließen
+        # close open events/sessions from the last run
         for res in (10, 60):
             r = c.execute("SELECT MAX(ts) FROM measurements WHERE res=?", (res,)).fetchone()
             self._last_agg[res] = (r[0] + res) if r[0] else 0
@@ -202,7 +202,7 @@ class Core:
         self.gateway_mac = netinfo.arp_table().get(self.gateway or "")
         if self.cfg.dev_mode and not self.gateway:
             from .simulation import DEMO_GATEWAY
-            self.gateway = DEMO_GATEWAY      # nur Demo-Daten (RFC-5737-Bereich)
+            self.gateway = DEMO_GATEWAY      # demo data only (RFC 5737 range)
 
     async def _setup_targets(self) -> None:
         wanted: list[tuple[str, str | None, str]] = []
@@ -278,7 +278,7 @@ class Core:
         src = self.capture_source()
         if src == "none":
             self.capture_status = {"state": "disabled", "source": "none",
-                                   "error": "Keine Traffic-Quelle konfiguriert (FRITZ!Box-Zugang, Port-Mirroring oder Pi als Gateway)"}
+                                   "error": "No traffic source configured (FRITZ!Box access, port mirroring or Pi as gateway)"}
             return
         cfg = self.cfg
         host = self.gateway if cfg.fritzbox.host == "auto" else cfg.fritzbox.host
@@ -291,8 +291,8 @@ class Core:
             "source": src, "data_dir": cfg.data_dir, "capture": cfg.capture.model_dump(),
             "fritzbox": {**cfg.fritzbox.model_dump(), "host": host},
             "deep_capture": cfg.deep_capture.model_dump(), "local_networks": self.local_nets,
-            # Damit der neue Prozess die Dateien des alten übernimmt, statt sie
-            # herrenlos liegen zu lassen (das war die Hauptquelle des Wildwuchses).
+            # So that the new process adopts the old one's files instead of leaving them
+            # orphaned (that was the main source of the sprawl).
             "protected_pcaps": self._protected_pcap_paths(),
             "router_macs": router_macs, "gaming_mac": self._gaming_mac(),
             "ignore_pair": [self.pi_ip, _resolve_v4(host)] if (src == "fritzbox" and self.pi_ip and _resolve_v4(host)) else None,
@@ -313,7 +313,7 @@ class Core:
         if self.capture_proc is None:
             return
         proc = self.capture_proc
-        self.capture_proc = None          # verhindert Auto-Neustart beim gewollten Stopp
+        self.capture_proc = None          # prevents auto restart on an intended stop
         self._stopping_proc = proc
         try:
             self.capture_ctrl.put_nowait(("stop",))
@@ -348,11 +348,11 @@ class Core:
             self.loop.call_soon_threadsafe(self._capture_died)
 
     def _capture_died(self) -> None:
-        """Capture-Prozess unerwartet beendet → Status melden und nach 30 s neu starten."""
+        """Capture process ended unexpectedly → report status and restart after 30 s."""
         self.capture_status = {**self.capture_status, "state": "stopped",
-                               "error": (self.capture_status.get("error") or "Capture-Prozess beendet") +
-                               " – Neustart in 30 s"}
-        log.error("Capture-Prozess beendet (exitcode %s), Neustart in 30 s",
+                               "error": (self.capture_status.get("error") or "Capture process ended") +
+                               " - restarting in 30 s"}
+        log.error("Capture process ended (exit code %s), restarting in 30 s",
                   self.capture_proc.exitcode if self.capture_proc else None)
         self.capture_proc = None
 
@@ -388,22 +388,22 @@ class Core:
             self._pcap_msg(msg[1])
 
     def _note_capture_delay(self, sec: int) -> None:
-        """Wie lange braucht ein Sekunden-Bin bis hierher? (FRITZ!Box puffert den Stream in Schüben.)
+        """How long does a per-second bin take to get here? (The FRITZ!Box buffers the stream in bursts.)
 
-        Daraus wird die Wartezeit abgeleitet, die der MetricsHub den Traffic-Daten einräumt –
-        sonst würden Sekunden ohne Traffic finalisiert und das Dashboard flackert.
+        This determines the wait time the MetricsHub grants the traffic data -
+        otherwise seconds would be finalized without traffic and the dashboard would flicker.
         """
         delay = time.time() - (sec + 1)
         self._cap_delays.append(delay)
         if len(self._cap_delays) >= 5:
             worst = sorted(self._cap_delays)[int(len(self._cap_delays) * 0.9)]
-            # Anzeige: höchstens kurz warten, damit Ping/Loss live bleiben
+            # Display: wait only briefly so that ping/loss stay live
             grace = min(self.display_grace_max, max(1.0, round(worst + 0.5, 1)))
-            # Auswertung: so lange warten, bis die Traffic-Daten wirklich da sind
+            # Evaluation: wait until the traffic data has really arrived
             analysis = min(25.0, max(4.0, round(worst + 3.0, 1)))
             if abs(analysis - self.analysis_delay) >= 1.0:
-                log.info("Router puffert den Mitschnitt ~%.1f s → Auswertung wartet %.1f s "
-                         "(Anzeige %.1f s)", worst, analysis, grace)
+                log.info("Router buffers the capture ~%.1f s → evaluation waits %.1f s "
+                         "(display %.1f s)", worst, analysis, grace)
             self.hub.traffic_grace = grace
             self.analysis_delay = analysis
             self.capture_delay = round(worst, 2)
@@ -415,12 +415,12 @@ class Core:
                             "ON CONFLICT(path) DO UPDATE SET ts_end=excluded.ts_end, size=excluded.size",
                             (m["path"], m["ts_start"], m["ts_end"], m["size"], int(m.get("protected", False))))
         elif op == "delete":
-            # Ohne Einschränkung auf protected=0: Der Ring meldet "delete" nur, wenn die
-            # Datei tatsächlich weg ist – auch wenn sie wegen des Budgets geopfert wurde.
-            # Sonst bliebe eine Datenbankzeile ohne Datei stehen.
+            # Without restricting to protected=0: the ring only reports "delete" when the
+            # file is really gone - even if it was sacrificed because of the budget.
+            # Otherwise a database row without a file would remain.
             self.db.enqueue("DELETE FROM pcap_files WHERE path=?", (m["path"],))
         elif op == "adopted":
-            log.info("PCAP: %d vorhandene Dateien übernommen (%.0f MB)",
+            log.info("PCAP: adopted %d existing files (%.0f MB)",
                      m.get("files", 0), (m.get("bytes") or 0) / 1e6)
         elif op == "protect":
             for p in m.get("paths", []):
@@ -431,8 +431,8 @@ class Core:
     def _on_probe(self, target_id: int, send_ts: float, rtt: float | None) -> None:
         self.hub.add_probe(target_id, send_ts, rtt)
         if self.cfg.retention.ping_samples:
-            # Einzelne Probes sind Rohdaten: rund 14 MB je Tag, die keine Auswertung liest.
-            # Standardmäßig aus; nur für die Fehlersuche einschalten.
+            # Individual probes are raw data: about 14 MB per day that no evaluation reads.
+            # Off by default; only enable for troubleshooting.
             self.db.enqueue(repo.INSERT_PING, (round(send_ts, 3), target_id, rtt, 0 if rtt is not None else 1))
         if target_id == self._game_target_id:
             self._game_probe_stats[0] += 1
@@ -441,7 +441,7 @@ class Core:
                 if self.gaming:
                     self.gaming.server_icmp = "ok"
             elif self._game_probe_stats[0] >= ICMP_GIVE_UP_PROBES and self._game_probe_stats[1] == 0:
-                # Server antwortet nicht auf ICMP → kein Verlust, sondern "nicht messbar"
+                # Server does not answer ICMP → not a loss, but "not measurable"
                 if self.gaming:
                     self.gaming.server_icmp = "blocked"
                 self._remove_game_target()
@@ -460,9 +460,9 @@ class Core:
                 if now - last_cap > 600:
                     self.link_capacity = await asyncio.to_thread(fb.link_capacity)
                     last_cap = now
-                # TR-064 liefert die WAN-Gesamtrate sofort. Der Mitschnitt kommt bei
-                # manchen FRITZ!Boxen mehrere Sekunden verzögert – bis dahin füllt TR-064
-                # die Lücke; die exakten Werte je Gerät werden später nachgetragen.
+                # TR-064 delivers the total WAN rate immediately. On some FRITZ!Boxes the
+                # capture arrives several seconds late - until then TR-064 fills the
+                # gap; the exact per-device values are patched in later.
                 down, up = await asyncio.to_thread(fb.wan_rates)
                 self.hub.add_wan_rate(time.time(), down, up)
                 if now - last_hosts > self.cfg.fritzbox.hostlist_interval:
@@ -477,7 +477,7 @@ class Core:
                 await asyncio.sleep(10)
             await asyncio.sleep(self.cfg.fritzbox.poll_interval)
 
-    # ------------------------------------------------------------------ Geräte / Pi-hole
+    # ------------------------------------------------------------------ devices / Pi-hole
     async def _devices_loop(self) -> None:
         last_ph_hosts = last_arp = 0.0
         while True:
@@ -514,15 +514,15 @@ class Core:
         if rows:
             self.db.enqueue_many(DeviceRegistry.UPSERT, rows)
 
-    # ================================================================== Sekunden-Pipeline
+    # ================================================================== per-second pipeline
     async def _finalize_loop(self) -> None:
-        """Sekunden abschließen – und dabei Sprünge der Systemuhr abfangen.
+        """Finalize seconds - and catch jumps of the system clock along the way.
 
-        Alle Zeitreihen hängen an der Wanduhr. Stellt NTP die Uhr nach dem Boot
-        oder nach längerer Offline-Zeit um mehrere Sekunden, entstünden sonst
-        Lücken oder doppelte Zeitstempel, und die Timeline würde still verbiegen.
-        Ein Sprung wird deshalb erkannt, protokolliert und der angefangene Teil
-        verworfen – lieber eine ehrliche Lücke als falsche Messwerte.
+        All time series hang on the wall clock. If NTP moves the clock by several
+        seconds after boot or after a longer offline period, there would otherwise be
+        gaps or duplicate timestamps, and the timeline would bend silently.
+        So a jump is detected, logged and the started part is
+        discarded - an honest gap is better than wrong measurements.
         """
         last_wall, last_mono = time.time(), time.monotonic()
         while True:
@@ -530,19 +530,19 @@ class Core:
             now_wall, now_mono = time.time(), time.monotonic()
             drift = (now_wall - last_wall) - (now_mono - last_mono)
             if abs(drift) > CLOCK_JUMP_S:
-                log.warning("Sprung der Systemuhr um %+.1f s erkannt – laufende Sekunden werden verworfen", drift)
+                log.warning("System clock jumped by %+.1f s - discarding running seconds", drift)
                 self.clock_jumps.append({"at": now_wall, "drift": round(drift, 2)})
                 del self.clock_jumps[:-10]
                 try:
                     self.hub.reset_pending()
                 except Exception:  # pragma: no cover
-                    log.exception("Zurücksetzen nach Zeitsprung fehlgeschlagen")
+                    log.exception("Reset after clock jump failed")
             last_wall, last_mono = now_wall, now_mono
             try:
                 self.hub.finalize_due()
                 self._drain_analysis()
             except Exception:  # pragma: no cover
-                log.exception("Finalisierung fehlgeschlagen")
+                log.exception("Finalization failed")
 
     def _on_second(self, row: dict) -> None:
         ts = row["ts"]
@@ -563,25 +563,25 @@ class Core:
         self._drain_analysis()
 
     def _on_second_patched(self, row: dict) -> None:
-        """Verspätet eingetroffene Traffic-Daten: Datenbank korrigieren und Oberfläche nachziehen."""
+        """Late traffic data: correct the database and update the UI."""
         ts = row["ts"]
         self.db.enqueue(repo.INSERT_MEASUREMENT, repo.measurement_params(1, row))
         devrows = [(1, ts, self.devices.id_for(mac), v[0], v[1]) for mac, v in row["devices"].items()
                    if v[0] or v[1]]
         if devrows:
             self.db.enqueue_many(repo.INSERT_DEVICE_TRAFFIC, devrows)
-        if self.hub.last_finalized - ts <= 30:      # nur für die aktuell sichtbaren Sekunden
+        if self.hub.last_finalized - ts <= 30:      # only for the currently visible seconds
             self.broadcaster.publish("tick_patch", self.live_frame(row))
         self._drain_analysis()
 
     def _drain_analysis(self, now: float | None = None) -> None:
-        """Event-Engine und Incident-Korrelation bekommen eine Zeile erst, wenn die
-        Traffic-Daten vorliegen (oder feststeht, dass keine mehr kommen)."""
+        """The event engine and incident correlation only get a row once the
+        traffic data is there (or it is certain that none will come)."""
         now = time.time() if now is None else now
         while self._analysis_q:
             row = self._analysis_q[0]
-            # "Vollständig" heißt: Mitschnittdaten liegen vor. TR-064 liefert nur Summen
-            # ohne Geräte-Zuordnung und reicht für die Ursachenanalyse nicht aus.
+            # "Complete" means: capture data is there. TR-064 only delivers totals
+            # without per-device assignment and is not enough for the root cause analysis.
             complete = (row.get("traffic_src") or "").startswith("capture") or not self.hub.capture_active(now)
             if not complete and now - row["ts"] < self.analysis_delay:
                 break
@@ -590,10 +590,10 @@ class Core:
                 self.events.process(row)
                 self.correlator.tick(row["ts"])
             except Exception:  # pragma: no cover
-                log.exception("Auswertung der Sekunde %s fehlgeschlagen", row["ts"])
+                log.exception("Evaluation of second %s failed", row["ts"])
 
     def analysis_lag(self) -> float:
-        """Wie weit hängt die Auswertung hinter der Messung (Sekunden)?"""
+        """How far does the evaluation lag behind the measurement (seconds)?"""
         return round(time.time() - self._analysis_q[0]["ts"], 1) if self._analysis_q else 0.0
 
     def live_frame(self, row: dict) -> dict:
@@ -673,7 +673,7 @@ class Core:
         self.db.enqueue(self.INCIDENT_SQL, self._incident_params(inc, protected))
         for e in events:
             if e.incident_id is None:
-                e.incident_id = inc.id          # Kontext-Events (z. B. HIGH_UPLOAD) verknüpfen
+                e.incident_id = inc.id          # link context events (e.g. HIGH_UPLOAD)
             if e.incident_id == inc.id:
                 self.db.enqueue(self.EVENT_SQL, self._event_params(e))
                 self._remember_event(e)
@@ -681,11 +681,11 @@ class Core:
         self.broadcaster.publish("incident", inc.to_dict() | {"state": "closed"})
 
     def _protect_pcap_for(self, inc: Incident, events: list[Event]) -> bool:
-        """Mitschnitt zu einem automatisch erkannten Incident festhalten – oder eben nicht.
+        """Keep the capture for an automatically detected incident - or not.
 
-        Jeder Incident hielt bisher 50-MB-Dateien fest, 90 Tage lang. Bei einem Dutzend
-        Incidents am Tag summiert sich das auf zweistellige Gigabyte, obwohl in den
-        Einstellungen „5 × 50 MB" steht. `protect_auto` begrenzt, wofür es sich lohnt.
+        Every incident used to keep 50 MB files, for 90 days. With a dozen
+        incidents a day that adds up to tens of gigabytes, although the
+        settings say "5 × 50 MB". `protect_auto` limits what it is worth it for.
         """
         dc = self.cfg.deep_capture
         if not dc.enabled or self.capture_proc is None or dc.protect_auto == "none":
@@ -706,12 +706,12 @@ class Core:
                 return
         self.recent_incidents.append(d)
 
-    # ------------------------------------------------------------------ Fenster für Analysen
+    # ------------------------------------------------------------------ windows for analyses
     def rows_between(self, t0: float, t1: float) -> list[dict]:
         ring_start = self.hub.ring[0]["ts"] if self.hub.ring else None
         if ring_start is not None and t0 >= ring_start - 1:
             return self.hub.range(t0, t1)
-        # (teilweise) älter als der Ringpuffer → aus der Datenbank rekonstruieren, Ring ergänzt den Rest
+        # (partly) older than the ring buffer → rebuild from the database, the ring adds the rest
         db_rows = self.db.read_sync(lambda c: _rows_from_db(c, int(t0), int(t1)))
         if ring_start is None:
             return db_rows
@@ -740,14 +740,14 @@ class Core:
         return d, u
 
     async def report_lag(self, window: int = 30) -> dict:
-        """'ICH HATTE GERADE LAG' – wartet auf die Finalisierung der aktuellen Sekunde und analysiert."""
+        """'I JUST HAD LAG' - waits for the current second to be finalized and analyzes."""
         reported = time.time()
         deadline = reported + 5
         while self.hub.last_finalized < int(reported) - 0.5 and time.time() < deadline:
             await asyncio.sleep(0.25)
         end = min(int(reported), self.hub.last_finalized or int(reported))
-        # Auf die (ggf. gepufferten) Traffic-Daten des Zeitraums warten – sonst stünde
-        # fälschlich "kein Traffic pro Gerät" in der Analyse.
+        # Wait for the (possibly buffered) traffic data of the time span - otherwise the
+        # analysis would wrongly say "no traffic per device".
         traffic_deadline = reported + min(20.0, self.analysis_delay + 2)
         while time.time() < traffic_deadline and self.hub.capture_active():
             row = next((r for r in reversed(self.hub.ring) if r["ts"] == end), None)
@@ -840,7 +840,7 @@ class Core:
         if self.simulator:
             self.simulator.gaming_started(sess)
         self.broadcaster.publish("gaming", sess.to_dict())
-        log.info("Gaming Session %s gestartet (auto=%s, Gerät %s)", sess.id, auto, ip)
+        log.info("Gaming session %s started (auto=%s, device %s)", sess.id, auto, ip)
         return sess.to_dict()
 
     async def stop_gaming(self) -> dict | None:
@@ -866,14 +866,14 @@ class Core:
         self.broadcaster.publish("gaming", None)
         return out
 
-    # ================================================================== Wartung
+    # ================================================================== maintenance
     async def _flush_loop(self) -> None:
         while True:
             await asyncio.sleep(1.0)
             try:
                 await self.db.flush()
             except Exception:
-                log.exception("DB-Flush fehlgeschlagen")
+                log.exception("DB flush failed")
 
     async def _maintenance_loop(self) -> None:
         await asyncio.sleep(20)
@@ -891,22 +891,22 @@ class Core:
                     await self._check_db_size()
                     last_ret = time.time()
             except Exception:
-                log.exception("Wartung fehlgeschlagen")
+                log.exception("Maintenance failed")
             await asyncio.sleep(60)
 
     async def _write_daily(self) -> None:
-        """Abgeschlossene Tage in `daily_stats` nachtragen (rund 200 Byte je Tag)."""
+        """Backfill completed days into `daily_stats` (about 200 bytes per day)."""
         written = await self.db.write(lambda c: daily.write_missing(c, time.time()))
         if written:
-            log.info("Tages-Zusammenfassung ergänzt: %s", ", ".join(written))
+            log.info("Daily summary added: %s", ", ".join(written))
 
     async def _check_db_size(self) -> None:
-        """Notbremse gegen eine volle SD-Karte.
+        """Emergency brake against a full SD card.
 
-        Gelöscht wird schrittweise und in eigenen Transaktionen, weil erst nach
-        einem Commit sichtbar wird, wie viel Platz wirklich frei geworden ist.
-        Maßstab ist der belegte Platz (`used`), nicht die Dateigröße – sonst würde
-        weitergelöscht, obwohl längst genug frei ist.
+        Deletion happens step by step and in separate transactions, because only
+        after a commit does it become visible how much space has really been freed.
+        The measure is the space used (`used`), not the file size - otherwise it would
+        keep deleting although enough space has long been free.
         """
         limit_mb = self.cfg.retention.max_db_mb
         if not limit_mb:
@@ -918,10 +918,10 @@ class Core:
         if size["used"] <= max_bytes:
             return
 
-        log.warning("Datenbank über der Grenze: %.0f MB belegt, erlaubt %.0f MB",
+        log.warning("Database over the limit: %.0f MB used, %.0f MB allowed",
                     size["used"] / 1e6, max_bytes / 1e6)
         deleted: dict[str, int] = {}
-        target = max_bytes * 0.9        # etwas Luft, damit nicht jede Stunde gelöscht wird
+        target = max_bytes * 0.9        # some headroom so that it does not delete every hour
         done = False
         for hours in repo.SIZE_GUARD_AGES:
             cut = time.time() - hours * 3600
@@ -939,16 +939,16 @@ class Core:
         after = await self.db.read(repo.db_size)
         self.db_guard = {"limit_bytes": max_bytes, **after, "acted": True, "deleted": deleted,
                          "freed_bytes": freed["freed"], "at": time.time()}
-        log.warning("Größengrenze durchgesetzt: gelöscht %s, Datei %.0f → %.0f MB",
+        log.warning("Size limit enforced: deleted %s, file %.0f → %.0f MB",
                     deleted, freed["before"] / 1e6, freed["after"] / 1e6)
 
     async def _bufferbloat_window(self) -> None:
-        """Latenz unter Last für das letzte abgeschlossene 10-Minuten-Fenster festhalten.
+        """Record latency under load for the last completed 10-minute window.
 
-        Die 1-s-Werte werden nur einen Tag aufbewahrt; dieses Fenster ist winzig und
-        macht den Verlauf über Wochen sichtbar. Geschrieben wird nur, wenn das Fenster
-        sowohl ruhige als auch ausgelastete Sekunden enthielt – sonst gäbe es nichts
-        zu vergleichen.
+        1 s values are only kept for one day; this window is tiny and
+        makes the history visible over weeks. It is only written if the window
+        contained both quiet and saturated seconds - otherwise there would be nothing
+        to compare.
         """
         b = bufferbloat.BUCKET
         ts = (int(time.time()) - b) // b * b
@@ -979,16 +979,16 @@ class Core:
             self._last_agg[dst] = end
 
     def _protected_pcap_paths(self) -> list[str]:
-        """Geschützte Mitschnitte aus der Datenbank – wird dem Capture-Prozess mitgegeben."""
+        """Protected captures from the database - handed to the capture process."""
         try:
             return [r["path"] for r in self.db.read_sync(lambda c: repo.rows_to_dicts(
                 c.execute("SELECT path FROM pcap_files WHERE protected=1")))]
-        except Exception:  # pragma: no cover - darf den Start nie verhindern
-            log.exception("Geschützte PCAP-Pfade nicht lesbar")
+        except Exception:  # pragma: no cover - must never prevent startup
+            log.exception("Protected PCAP paths not readable")
             return []
 
     def pcap_usage(self) -> dict:
-        """Tatsächlicher Platzverbrauch des pcap-Verzeichnisses – gemessen, nicht gerechnet."""
+        """Actual space used by the pcap directory - measured, not calculated."""
         d = os.path.join(self.cfg.data_dir, "pcap")
         total = n = 0
         try:
@@ -1004,14 +1004,14 @@ class Core:
                 "limit_bytes": self.cfg.deep_capture.max_total_mb * 1_000_000, "dir": d}
 
     async def _cleanup_pcaps(self) -> None:
-        """Alte und herrenlose Mitschnitte entfernen.
+        """Remove old and orphaned captures.
 
-        Drei Fälle, von denen früher nur der erste abgedeckt war:
-        1. Geschützte Dateien, die ihre Aufbewahrungszeit überschritten haben.
-        2. Datenbankzeilen ohne Datei (nach einem Absturz oder manuellem Löschen).
-        3. **Dateien ohne Datenbankzeile** – die blieben bisher für immer liegen.
-           Genau so sammelten sich nach jedem Neustart des Capture-Prozesses
-           weitere 250 MB an, die niemand mehr löschte.
+        Three cases, of which only the first used to be covered:
+        1. Protected files that have exceeded their retention time.
+        2. Database rows without a file (after a crash or manual deletion).
+        3. **Files without a database row** - these used to stay forever.
+           That is exactly how another 250 MB piled up after every restart of the
+           capture process that nobody deleted any more.
         """
         cutoff = time.time() - self.cfg.deep_capture.protected_days * 86400
         rows = await self.db.read(lambda c: repo.rows_to_dicts(
@@ -1025,9 +1025,9 @@ class Core:
             await self.db.write(lambda c: c.execute(
                 "DELETE FROM pcap_files WHERE protected=1 AND ts_end < ?", (cutoff,)))
         if not self.cfg.deep_capture.enabled:
-            # Deep Capture ist aus: Die ungeschützten Dateien sind der Rest eines
-            # Ringpuffers, den es nicht mehr gibt – sie wandern sonst nie weg, weil
-            # niemand mehr rotiert. Incident-Mitschnitte bleiben bis protected_days.
+            # Deep Capture is off: the unprotected files are the remains of a
+            # ring buffer that no longer exists - they would never go away otherwise,
+            # because nobody rotates any more. Incident captures stay until protected_days.
             await self._drop_unprotected_pcaps()
         await self._reconcile_pcaps()
 
@@ -1043,10 +1043,10 @@ class Core:
                 pass
         if rows:
             await self.db.write(lambda c: c.execute("DELETE FROM pcap_files WHERE protected=0"))
-            log.info("Deep Capture aus: %d laufende Mitschnitte entfernt (%.0f MB)", len(rows), freed / 1e6)
+            log.info("Deep Capture off: removed %d running captures (%.0f MB)", len(rows), freed / 1e6)
 
     async def _reconcile_pcaps(self) -> None:
-        """Verzeichnis und Datenbank abgleichen; Verwaistes beidseitig entfernen."""
+        """Reconcile directory and database; remove orphans on both sides."""
         d = os.path.join(self.cfg.data_dir, "pcap")
         try:
             on_disk = {os.path.join(d, f) for f in os.listdir(d) if f.endswith(".pcap")}
@@ -1057,11 +1057,11 @@ class Core:
         if missing:
             await self.db.write(lambda c: c.executemany(
                 "DELETE FROM pcap_files WHERE path=?", [(p,) for p in missing]))
-        # Herrenlose Dateien: nur löschen, wenn gerade kein Capture-Prozess läuft, der sie
-        # noch in seinem Ring hält – sonst würde die aktuell beschriebene Datei verschwinden.
-        # Läuft der Capture-Prozess, kennt sein Ring jede Datei (er übernimmt den
-        # Bestand beim Start) – dann gibt es hier nichts zu tun. Ist Deep Capture aus
-        # oder der Prozess gestoppt, bleiben Reste sonst für immer liegen.
+        # Orphaned files: only delete if no capture process is running right now that
+        # still holds them in its ring - otherwise the file currently being written would vanish.
+        # If the capture process is running, its ring knows every file (it adopts the
+        # existing files on start) - then there is nothing to do here. If Deep Capture is off
+        # or the process is stopped, leftovers would otherwise stay forever.
         orphans = on_disk - known
         if orphans and (self.capture_proc is None or not self.cfg.deep_capture.enabled):
             freed = 0
@@ -1071,7 +1071,7 @@ class Core:
                     os.unlink(p)
                 except OSError:
                     pass
-            log.warning("%d herrenlose PCAP-Dateien entfernt (%.0f MB)", len(orphans), freed / 1e6)
+            log.warning("Removed %d orphaned PCAP files (%.0f MB)", len(orphans), freed / 1e6)
 
     async def _system_loop(self) -> None:
         while True:
@@ -1080,15 +1080,15 @@ class Core:
             lvl_before = self.loadguard.level
             lvl = self.loadguard.evaluate()
             if lvl != lvl_before:
-                log.warning("Load Guard: Stufe %s → %s (%s)", lvl_before, lvl, self.loadguard.last)
+                log.warning("Load Guard: level %s → %s (%s)", lvl_before, lvl, self.loadguard.last)
                 self.capture_command("level", lvl)
 
-    # ================================================================== Einstellungen
+    # ================================================================== settings
     async def update_settings(self, patch: dict) -> dict:
         from .config import EDITABLE_SECTIONS, RESTART_SECTIONS, deep_merge
         bad = set(patch) - EDITABLE_SECTIONS
         if bad:
-            raise ValueError(f"Nicht änderbar: {', '.join(sorted(bad))}")
+            raise ValueError(f"Not changeable: {', '.join(sorted(bad))}")
         new_password = False
         if "fritzbox" in patch:
             if patch["fritzbox"].get("password") in ("********", None):
@@ -1097,18 +1097,18 @@ class Core:
                 new_password = True
         overrides = await self.db.read(lambda c: repo.get_setting(c, "config_overrides", {}))
         merged = deep_merge(overrides, patch)
-        new_cfg = build_config(self.yaml_data, merged)   # validiert (wirft bei Fehlern)
-        # Das gespeicherte Passwort geht nur an die Adresse, für die es eingegeben wurde.
-        # Sonst könnte jedes Gerät im LAN die Adresse auf einen eigenen Server umbiegen
-        # und bekäme die Login-Antwort der FRITZ!Box zum Offline-Raten.
+        new_cfg = build_config(self.yaml_data, merged)   # validates (raises on errors)
+        # The stored password only goes to the address it was entered for.
+        # Otherwise any device on the LAN could point the address at its own server
+        # and would receive the FRITZ!Box login response for offline guessing.
         if (self.cfg.fritzbox.password and not new_password
                 and fritz_target(new_cfg) != fritz_target(self.cfg)):
-            raise ValueError("Die FRITZ!Box-Adresse ändert sich – bitte das FRITZ!Box-Passwort "
-                             "dabei neu eingeben.")
+            raise ValueError("The FRITZ!Box address is changing - please re-enter the FRITZ!Box password "
+                             "as well.")
         await self.db.write(lambda c: repo.set_setting(c, "config_overrides", merged))
         old = self.cfg
         self.cfg = new_cfg
-        # sofort wirksame Änderungen
+        # changes that take effect immediately
         self.events.t = new_cfg.thresholds
         self.loadguard.cfg = new_cfg.load_guard
         self.gaming_detector = GamingDetector(new_cfg.gaming.min_pps, new_cfg.gaming.min_seconds,
@@ -1170,9 +1170,9 @@ class Core:
         }
 
 
-# ====================================================================== Hilfen
+# ====================================================================== helpers
 def _resolve_v4(host: str | None) -> str | None:
-    """Host (IP, Name oder Name:Port) → IPv4-Adresse, sonst None."""
+    """Host (IP, name or name:port) → IPv4 address, otherwise None."""
     if not host:
         return None
     name = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
@@ -1204,11 +1204,11 @@ def _incident_row(r) -> dict:
 
 
 def _rows_from_db(c, t0: int, t1: int) -> list[dict]:
-    """Rekonstruiert 1-s-Zeilen aus der Datenbank (für Analysen außerhalb des Ringpuffers).
+    """Rebuilds 1 s rows from the database (for analyses outside the ring buffer).
 
-    Gespeichert werden je Gerät nur die beiden Byte-Zähler; Pakete, UDP- und
-    LAN-Anteil stehen nur live zur Verfügung und werden hier als 0 geführt.
-    Keine Auswertung liest sie – wäre das anders, dürfte hier keine 0 stehen.
+    Only the two byte counters are stored per device; packets, UDP and
+    LAN share are only available live and are carried as 0 here.
+    No evaluation reads them - if that changed, there must not be a 0 here.
     """
     rows = {r["ts"]: {**repo.decode_row(r), "targets": {}, "devices": {}, "dns": [],
                       "gw_probes": 0, "gw_lost": 0}

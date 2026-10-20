@@ -1,12 +1,12 @@
-"""Incident-Korrelation und "ICH HATTE GERADE LAG"-Analyse.
+"""Incident correlation and "I JUST HAD LAG" analysis.
 
-* Lag-relevante Events öffnen einen Incident. Weitere Events, die währenddessen
-  starten, werden angehängt. Der Incident schließt, wenn 5 s lang kein Lag-Event
-  mehr offen ist (max. 10 min pro Incident).
-* Nach dem Schließen wird das Fenster [Start − 30 s, Ende + 5 s] mit den Regeln aus
-  root_cause.py analysiert.
-* Ein Nutzer-Report analysiert die letzten 10 s / 30 s / 60 s / 5 min und erzeugt
-  sofort einen Incident mit einer Zeitleiste der Funde.
+* Lag-relevant events open an incident. Further events that start in the
+  meantime are attached. The incident closes when no lag event has been open
+  for 5 s (max. 10 min per incident).
+* After closing, the window [start − 30 s, end + 5 s] is analyzed with the rules
+  from root_cause.py.
+* A user report analyzes the last 10 s / 30 s / 60 s / 5 min and immediately
+  creates an incident with a timeline of the findings.
 """
 from __future__ import annotations
 
@@ -62,11 +62,11 @@ class Correlator:
         self.events: list[Event] = []
         self.session_id_fn: Callable[[], int | None] = lambda: None
 
-    # ------------------------------------------------------------------ Event-Rückrufe
+    # ------------------------------------------------------------------ event callbacks
     def event_started(self, ev: Event) -> None:
         if ev.type not in INCIDENT_TYPES:
             if self.current is not None:
-                self.events.append(ev)   # Kontext (z. B. HIGH_UPLOAD) mitnehmen
+                self.events.append(ev)   # take context along (e.g. HIGH_UPLOAD)
             return
         if self.current is None:
             self.current = Incident(id=self.next_id(), source="auto", ts_start=ev.ts_start,
@@ -86,7 +86,7 @@ class Correlator:
                 self.current.last_activity = max(self.current.last_activity, ev.ts_end or ev.ts_start)
 
     def tick(self, ts: float) -> Incident | None:
-        """Pro finalisierter Sekunde aufrufen; schließt und analysiert fällige Incidents."""
+        """Call once per finalized second; closes and analyzes due incidents."""
         inc = self.current
         if inc is None:
             return None
@@ -96,7 +96,7 @@ class Correlator:
             self._finish(inc)
             self.current = None
             if too_long and self.open_events:
-                # neuer Incident für die weiterhin offenen Events
+                # new incident for the events that are still open
                 cont = Incident(id=self.next_id(), source="auto", ts_start=ts, last_activity=ts,
                                 session_id=self.session_id_fn())
                 for e in self.open_events.values():
@@ -142,14 +142,14 @@ def _title(result: dict, events: list[Event]) -> str:
     return " + ".join(kinds[:3]) + (f" ({', '.join(parts)})" if parts else "")
 
 
-# ====================================================================== Nutzer-Report
+# ====================================================================== user report
 def find_anomalies(rows: list[dict], baseline_rows: list[dict], thresholds, device_label,
                    context: list[dict] | None = None) -> list[dict]:
-    """Findet auffällige Sekunden und Traffic-Anstiege für die Zeitleiste des Lag-Reports.
+    """Finds conspicuous seconds and traffic increases for the lag report timeline.
 
-    Etwas empfindlicher als die Event-Engine, weil der Nutzer ausdrücklich Lag
-    bemerkt hat: RTT >= Baseline + max(15 ms, Baseline), jeder Paketverlust,
-    Jitter >= halbe Warnschwelle, Router-Anomalien, Game-Paketlücken.
+    Somewhat more sensitive than the event engine, because the user explicitly
+    noticed lag: RTT >= baseline + max(15 ms, baseline), any packet loss,
+    jitter >= half the warning threshold, router anomalies, game packet gaps.
     """
     rtts = [r["rtt_avg"] for r in baseline_rows if r.get("rtt_avg") is not None]
     base = statistics.median(rtts) if rtts else None
@@ -171,10 +171,10 @@ def find_anomalies(rows: list[dict], baseline_rows: list[dict], thresholds, devi
         if (gw is not None and gw_base is not None and gw >= max(thresholds.gateway_warning, gw_base * 3 + 2)) or \
                 ((r.get("gw_probes") or 0) and r.get("gw_lost") == r.get("gw_probes")):
             out.append({"ts": ts, "kind": "gateway",
-                        "text": f"Router {gw:.0f} ms" if gw is not None else "Router antwortet nicht", "value": gw})
+                        "text": f"Router {gw:.0f} ms" if gw is not None else "Router not answering", "value": gw})
         gap = r.get("game_gap_ms")
         if gap is not None and gap >= thresholds.game_gap_ms:
-            out.append({"ts": ts, "kind": "game_gap", "text": f"Game-Server {gap:.0f} ms ohne Pakete", "value": gap})
+            out.append({"ts": ts, "kind": "game_gap", "text": f"Game server {gap:.0f} ms without packets", "value": gap})
         for server, ms, status, kind in r.get("dns") or []:
             if ms is None or status == "servfail":
                 wo = " (ungecacht)" if kind == "uncached" else ""
@@ -186,11 +186,11 @@ def find_anomalies(rows: list[dict], baseline_rows: list[dict], thresholds, devi
 
 def traffic_onsets(rows: list[dict], device_label, min_bps: float = 1e6,
                    context: list[dict] | None = None) -> list[dict]:
-    """Beginn und Verlauf starker Upload-/Download-Phasen einzelner Geräte.
+    """Start and course of heavy upload/download phases of individual devices.
 
-    Gleichmäßiger Hintergrund-Traffic wird NICHT gemeldet. Ein "beginnt" wird nur
-    behauptet, wenn vorher (im Fenster oder im Kontext davor) tatsächlich weniger
-    als 25 % der Spitze gemessen wurde.
+    Steady background traffic is NOT reported. A "starts" is only claimed
+    if less than 25 % of the peak was actually measured before (in the window
+    or in the context before it).
     """
     out = []
     series: dict[tuple[str, int], list[tuple[int, float]]] = {}
@@ -212,17 +212,17 @@ def traffic_onsets(rows: list[dict], device_label, min_bps: float = 1e6,
         start, end = high[0][0], high[-1][0]
         before = [v for ts, v in s if ts < start] + (ctx.get((mac, idx), []) if not [v for ts, v in s if ts < start] else [])
         if not before and covered_ctx:
-            before = [0.0]            # Mitschnitt lief, Gerät hatte davor keinen Traffic
+            before = [0.0]            # capture was running, device had no traffic before
         began_here = bool(before) and max(before) < peak * 0.25
         vals = sorted(v for _, v in s)
         median = vals[len(vals) // 2]
         if not began_here and peak < 2 * max(median, 1.0):
-            continue                  # gleichmäßiger Hintergrund-Traffic
+            continue                  # steady background traffic
         lbl = device_label(mac)
         name = "Upload" if idx == 1 else "Download"
         lo = min(v for _, v in high)
         out.append({"ts": start, "kind": "traffic_start" if began_here else "traffic",
-                    "text": f"{lbl['name']} {name} {'beginnt' if began_here else 'steigt'}", "mac": mac, "value": peak,
+                    "text": f"{lbl['name']} {name} {'starts' if began_here else 'rises'}", "mac": mac, "value": peak,
                     "direction": "up" if idx == 1 else "down"})
         out.append({"ts": start, "ts_end": end, "kind": "traffic_range",
                     "text": f"{lbl['name']} {name} {lo / 1e6:.0f}–{peak / 1e6:.0f} Mbit/s", "mac": mac, "value": peak,
@@ -231,7 +231,7 @@ def traffic_onsets(rows: list[dict], device_label, min_bps: float = 1e6,
 
 
 def compress_timeline(items: list[dict]) -> list[dict]:
-    """Fasst zusammenhängende gleichartige Funde (>= 3 Sekunden in Folge) zu einer Zeitspanne zusammen."""
+    """Merges contiguous findings of the same kind (>= 3 seconds in a row) into one time span."""
     net_kinds = {"ping", "loss", "jitter", "gateway", "game_gap", "dns"}
     runs: dict[tuple, list[dict]] = {}
     out: list[dict] = []
@@ -261,11 +261,11 @@ def _collapse(run: list[dict]) -> list[dict]:
     vals = [r["value"] for r in run if isinstance(r.get("value"), (int, float))]
     peak = max(vals) if vals else None
     text = {
-        "ping": f"Ping erhöht, bis {peak:.0f} ms ({n} s)" if peak is not None else f"Ping erhöht ({n} s)",
-        "loss": f"Packet Loss in {n} Sekunden ({int(sum(vals))} Probes verloren)",
-        "jitter": f"Jitter erhöht, bis {peak:.0f} ms ({n} s)" if peak is not None else f"Jitter erhöht ({n} s)",
+        "ping": f"Ping elevated, up to {peak:.0f} ms ({n} s)" if peak is not None else f"Ping elevated ({n} s)",
+        "loss": f"Packet loss in {n} seconds ({int(sum(vals))} probes lost)",
+        "jitter": f"Jitter elevated, up to {peak:.0f} ms ({n} s)" if peak is not None else f"Jitter elevated ({n} s)",
         "gateway": f"Router langsam/unerreichbar ({n} s)",
-        "game_gap": f"Game-Server-Paketlücken, bis {peak:.0f} ms ({n} s)" if peak is not None else f"Game-Paketlücken ({n} s)",
+        "game_gap": f"Game server packet gaps, up to {peak:.0f} ms ({n} s)" if peak is not None else f"Game packet gaps ({n} s)",
         "dns": f"{first['text']} ({n}×)",
     }[kind]
     return [{**first, "ts_end": run[-1]["ts"], "text": text, "value": peak}]
@@ -289,7 +289,7 @@ def window_summary(rows: list[dict]) -> dict:
 def analyze_user_report(reported_at: float, rows_fn: Callable[[float, float], list[dict]],
                         window_fn: Callable[[float, float], Window], thresholds, device_label,
                         events: list[dict], default_window: int = 30) -> dict:
-    """Analyse für den 'ICH HATTE GERADE LAG'-Button."""
+    """Analysis for the 'I JUST HAD LAG' button."""
     end = int(reported_at)
     windows = {}
     for w in REPORT_WINDOWS:
@@ -306,7 +306,7 @@ def analyze_user_report(reported_at: float, rows_fn: Callable[[float, float], li
             break
     if chosen is None:
         chosen = default_window
-    # Störung, die ins gewählte Fenster hineinreicht, bis zu ihrem Beginn zurückverfolgen (max. 5 min)
+    # Trace a disturbance that reaches into the chosen window back to its start (max. 5 min)
     long_rows = rows_fn(end - 299, end)
     all_net = sorted({x["ts"] for x in find_anomalies(long_rows, baseline_rows, thresholds, device_label)
                       if x["kind"] in NET})
@@ -330,13 +330,13 @@ def analyze_user_report(reported_at: float, rows_fn: Callable[[float, float], li
     w.events = [e for e in events if e["ts_start"] <= t1 and (e.get("ts_end") or t1) >= t0 - 10]
     result = analyze(w)
     if not net:
-        result["cause"] = "Im gemeldeten Zeitraum wurden keine Netzwerk-Auffälligkeiten gemessen"
+        result["cause"] = "No network anomalies were measured in the reported time span"
         result["category"] = "unknown"
         result["confidence"] = "low"
-        result["confidence_label"] = "zeitlich korreliert"
-        result["evidence"] = ["Ping, Jitter und Paketverlust zu Router und Internetzielen normal"]
-        result["notes"].insert(0, "Mögliche Ursachen außerhalb der Messung: Game-Server, Client/PC (FPS, CPU), "
-                                  "WLAN des Spielgeräts. Tipp: Gaming Session starten, dann wird der Game-Flow überwacht.")
+        result["confidence_label"] = "temporally correlated"
+        result["evidence"] = ["Ping, jitter and packet loss to router and internet targets normal"]
+        result["notes"].insert(0, "Possible causes outside the measurement: game server, client/PC (FPS, CPU), "
+                                  "Wi-Fi of the gaming device. Tip: start a gaming session, then the game flow is monitored.")
     result["analysis_window"] = {"start": min(t0, end - chosen + 1), "end": end, "seconds": chosen}
     result["windows"] = windows
     result["timeline"] = compress_timeline(anomalies)[:60]

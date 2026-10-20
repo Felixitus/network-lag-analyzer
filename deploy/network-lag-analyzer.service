@@ -16,7 +16,7 @@ Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
 
-# Nur ICMP-Messung und optional AF_PACKET brauchen Rechte – kein root
+# Only ICMP measurement and optional AF_PACKET need privileges - no root
 AmbientCapabilities=CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=true
@@ -28,7 +28,7 @@ CPUWeight=50
 IOWeight=50
 MemoryMax=350M
 
-# Härtung
+# Hardening
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true

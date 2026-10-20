@@ -1,4 +1,4 @@
-"""Netzwerk-Informationen des Raspberry Pi (ohne Shell-Aufrufe, nur /proc und psutil)."""
+"""Network information of the Raspberry Pi (no shell calls, only /proc and psutil)."""
 from __future__ import annotations
 
 import ipaddress
@@ -14,7 +14,7 @@ PRIVATE_V4 = [
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("100.64.0.0/10"),   # CGNAT – auf LAN-Seite nicht vorkommend, aber nicht "Internet"
+    ipaddress.ip_network("100.64.0.0/10"),   # CGNAT - does not occur on the LAN side, but is not "internet" either
 ]
 
 
@@ -89,7 +89,7 @@ def primary_ipv4(interface: str | None = None) -> str | None:
 
 
 def arp_table(path: str = "/proc/net/arp") -> dict[str, str]:
-    """IP → MAC aus der Neighbor-Tabelle des Pi (nur vollständige Einträge)."""
+    """IP → MAC from the Pi's neighbor table (complete entries only)."""
     out: dict[str, str] = {}
     try:
         lines = Path(path).read_text().splitlines()[1:]

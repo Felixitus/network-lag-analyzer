@@ -1,4 +1,4 @@
-"""Einstellungen, Setup-Wizard, Login, Systemzustand."""
+"""Settings, setup wizard, login, system state."""
 from __future__ import annotations
 
 import asyncio
@@ -43,7 +43,7 @@ async def put_settings(request: Request, patch: dict):
 
 @router.post("/settings/reset")
 async def reset_settings(request: Request):
-    """Setzt alle über die Weboberfläche geänderten Werte zurück (config.yaml gilt wieder)."""
+    """Resets all values changed via the web UI (config.yaml applies again)."""
     core = core_of(request)
     await core.db.write(lambda c: repo.set_setting(c, "config_overrides", {}))
     await core.update_settings({})
@@ -68,9 +68,9 @@ async def fritz_test(request: Request, body: FritzTest):
     core = core_of(request)
     pw = body.password
     if not pw or pw == "********":
-        # Gespeichertes Passwort nur an die gespeicherte Adresse – siehe Core.update_settings.
+        # Stored password only goes to the stored address - see Core.update_settings.
         if core.cfg.fritzbox.password and body.host.strip().lower() != core.cfg.fritzbox.host.strip().lower():
-            raise HTTPException(400, "Für eine andere Adresse bitte das FRITZ!Box-Passwort eingeben")
+            raise HTTPException(400, "For a different address please enter the FRITZ!Box password")
         pw = core.cfg.fritzbox.password
     return await setup_wizard.test_fritz(core, body.host, body.username, pw, body.capture_interface, body.snaplen)
 
@@ -91,10 +91,10 @@ async def system(request: Request):
             "migration": core.db.migration}
 
 
-# ------------------------------------------------------------------ Datenbank
+# ------------------------------------------------------------------ database
 @router.get("/database")
 async def database(request: Request):
-    """Platzverbrauch je Tabelle, ältester Datenpunkt, Zustand der Größengrenze."""
+    """Space used per table, oldest data point, state of the size limit."""
     core = core_of(request)
     size, tables, oldest = await core.db.read(
         lambda c: (repo.db_size(c), repo.table_sizes(c), repo.oldest_data(c)))
@@ -104,8 +104,8 @@ async def database(request: Request):
         "retention": core.cfg.retention.model_dump(),
         "protected": list(repo.PROTECTED_TABLES),
         "free_disk": _free_disk(core.db.path),
-        # PCAP-Dateien liegen NEBEN der Datenbank und zählen nicht in deren Größe –
-        # sie waren der eigentliche Platzfresser und gehören deshalb hierher.
+        # PCAP files live NEXT TO the database and do not count towards its size -
+        # they were the real space hog and therefore belong here.
         "pcap": await asyncio.to_thread(core.pcap_usage),
         "deep_capture": core.cfg.deep_capture.model_dump(),
     }
@@ -113,7 +113,7 @@ async def database(request: Request):
 
 @router.post("/database/pcap-cleanup")
 async def pcap_cleanup(request: Request):
-    """Mitschnitte sofort auf das eingestellte Budget bringen."""
+    """Bring captures down to the configured budget right away."""
     core = core_of(request)
     before = await asyncio.to_thread(core.pcap_usage)
     await core._cleanup_pcaps()
@@ -121,8 +121,8 @@ async def pcap_cleanup(request: Request):
     after = await asyncio.to_thread(core.pcap_usage)
     return {"before": before, "after": after, "freed_bytes": before["bytes"] - after["bytes"],
             "note": None if core.capture_proc is None or not core.cfg.deep_capture.enabled else
-            "Der laufende Mitschnitt hält seine aktuellen Dateien – sie werden beim nächsten "
-            "Wechsel abgeräumt."}
+            "The running capture keeps its current files - they are removed at the next "
+            "rotation."}
 
 
 def _free_disk(path: str) -> int | None:
@@ -133,11 +133,11 @@ def _free_disk(path: str) -> int | None:
 
 
 class DeleteRange(BaseModel):
-    """Bereich zum Löschen. `start` weglassen heißt „alles davor"."""
+    """Range to delete. Omitting `start` means "everything before"."""
     start: float | None = None
     end: float
     tables: list[str] | None = None
-    confirm: str = Field("", description="Sicherheitsabfrage beim Löschen: muss 'LOESCHEN' sein")
+    confirm: str = Field("", description="Safety confirmation for deleting: must be 'DELETE'")
 
     @field_validator("tables")
     @classmethod
@@ -150,7 +150,7 @@ class DeleteRange(BaseModel):
 
 @router.post("/database/preview")
 async def database_preview(request: Request, body: DeleteRange):
-    """Wie viele Zeilen wären betroffen? Wird vor dem Löschen angezeigt."""
+    """How many rows would be affected? Shown before deleting."""
     core = core_of(request)
     names = body.tables or list(repo.TIME_TABLES)
     counts = await core.db.read(lambda c: repo.count_range(c, body.start, body.end, names))
@@ -160,14 +160,13 @@ async def database_preview(request: Request, body: DeleteRange):
 @router.post("/database/delete")
 async def database_delete(request: Request, body: DeleteRange):
     core = core_of(request)
-    if body.confirm != "LOESCHEN":
-        raise HTTPException(400, "Sicherheitsabfrage nicht bestätigt")
-    # Ein Enddatum in der Zukunft heißt „bis jetzt" – abgeschnitten wird auf den
-    # aktuellen Zeitpunkt, damit nicht gelöscht wird, was während der Anfrage
-    # gerade erst gemessen wird.
+    if body.confirm != "DELETE":
+        raise HTTPException(400, "Safety confirmation not given")
+    # An end date in the future means "until now" - it is clamped to the current
+    # time so that data being measured during the request is not deleted.
     end = min(body.end, time.time())
     if body.start is not None and body.start >= end:
-        raise HTTPException(400, "Das Startdatum liegt nicht vor dem Enddatum")
+        raise HTTPException(400, "The start date is not before the end date")
     deleted = await core.db.write(lambda c: repo.delete_range(c, body.start, end, body.tables))
     freed = await core.db.maintenance(repo.vacuum)
     size = await core.db.read(repo.db_size)
@@ -178,14 +177,14 @@ async def database_delete(request: Request, body: DeleteRange):
 
 @router.post("/database/vacuum")
 async def database_vacuum(request: Request):
-    """Datei verkleinern. Nach dem Senken der Retention schrumpft sie sonst nicht."""
+    """Shrink the file. After lowering retention it does not shrink otherwise."""
     core = core_of(request)
     return await core.db.maintenance(repo.vacuum)
 
 
 @router.get("/daily")
 async def daily_stats(request: Request, days: int = Query(90, ge=1, le=3650)):
-    """Tages-Zusammenfassung für den Langzeitvergleich."""
+    """Daily summary for long-term comparison."""
     core = core_of(request)
     return {"days": await core.db.read(lambda c: daily.read(c, days))}
 
@@ -220,7 +219,7 @@ def _recent_fails(ip: str, now: float) -> list[float]:
     if fails:
         _login_fails[ip] = fails
     else:
-        _login_fails.pop(ip, None)                     # sonst wächst das dict mit jeder IP
+        _login_fails.pop(ip, None)                     # otherwise the dict grows with every IP
     return fails
 
 
@@ -230,15 +229,15 @@ async def login(request: Request, body: LoginBody, response: Response):
     sec = core.cfg.security
     if not (sec.login_enabled and sec.password_hash):
         return {"ok": True}
-    # Bremse gegen Durchprobieren aus dem LAN: nach 5 Fehlversuchen je Adresse
-    # 15 Minuten Pause. Im Speicher genügt – ein Neustart dauert länger als ein Versuch.
+    # Brake against guessing from the LAN: after 5 failed attempts per address
+    # a 15-minute pause. In memory is enough - a restart takes longer than an attempt.
     ip = request.client.host if request.client else "?"
     now = time.time()
     if len(_recent_fails(ip, now)) >= LOGIN_MAX_FAILS:
-        raise HTTPException(429, "Zu viele Fehlversuche – bitte später erneut versuchen")
+        raise HTTPException(429, "Too many failed attempts - please try again later")
     if not verify_password(body.password, sec.password_hash):
         _login_fails.setdefault(ip, []).append(now)
-        raise HTTPException(401, "Falsches Passwort")
+        raise HTTPException(401, "Wrong password")
     _login_fails.pop(ip, None)
     token = request.app.state.signer.sign(sec.session_hours)
     response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict", max_age=sec.session_hours * 3600)
@@ -253,14 +252,14 @@ async def logout(response: Response):
 
 @router.post("/auth/setup")
 async def auth_setup(request: Request, body: AuthSetup, response: Response):
-    """Login aktivieren/deaktivieren bzw. Passwort ändern."""
+    """Enable/disable login or change the password."""
     core = core_of(request)
     sec = core.cfg.security
     if sec.password_hash and not verify_password(body.current_password or "", sec.password_hash):
-        raise HTTPException(403, "Aktuelles Passwort falsch")
+        raise HTTPException(403, "Current password is wrong")
     new_hash = hash_password(body.password) if body.password else sec.password_hash
     if body.enabled and not new_hash:
-        raise HTTPException(400, "Passwort (mind. 8 Zeichen) erforderlich")
+        raise HTTPException(400, "Password (at least 8 characters) required")
 
     def _save(c):
         o = repo.get_setting(c, "config_overrides", {})

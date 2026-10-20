@@ -1,4 +1,4 @@
-"""Einstiegspunkt: `python -m backend.main [--config PATH]`."""
+"""Entry point: `python -m backend.main [--config PATH]`."""
 from __future__ import annotations
 
 import argparse
@@ -9,12 +9,12 @@ import sys
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Network Lag Analyzer")
-    parser.add_argument("--config", default=os.environ.get("NLA_CONFIG"), help="Pfad zur config.yaml")
-    parser.add_argument("--dev", action="store_true", help="Dev-Modus mit simulierten Daten (DEMO)")
-    parser.add_argument("--data-dir", help="Datenverzeichnis überschreiben")
-    parser.add_argument("--port", type=int, help="Port überschreiben")
+    parser.add_argument("--config", default=os.environ.get("NLA_CONFIG"), help="Path to config.yaml")
+    parser.add_argument("--dev", action="store_true", help="Dev mode with simulated data (DEMO)")
+    parser.add_argument("--data-dir", help="Override the data directory")
+    parser.add_argument("--port", type=int, help="Override the port")
     args = parser.parse_args()
-    os.umask(0o027)   # Datenbank/PCAPs nicht weltlesbar (enthält ggf. FRITZ!Box-Zugangsdaten)
+    os.umask(0o027)   # database/PCAPs not world-readable (may contain FRITZ!Box credentials)
     if args.dev:
         os.environ["NLA_DEV_MODE"] = "1"
     if args.data_dir:
@@ -22,7 +22,7 @@ def main() -> None:
     if args.port:
         os.environ["NLA_PORT"] = str(args.port)
 
-    # journald ergänzt Zeitstempel selbst
+    # journald adds timestamps itself
     logging.basicConfig(level=os.environ.get("NLA_LOG_LEVEL", "INFO"),
                         format="%(levelname)s %(name)s: %(message)s", stream=sys.stdout)
 

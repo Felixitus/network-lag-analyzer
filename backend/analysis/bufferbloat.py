@@ -1,40 +1,40 @@
-"""Bufferbloat: Wie stark steigt die Latenz, wenn die Leitung ausgelastet ist?
+"""Bufferbloat: how much does latency rise when the line is saturated?
 
-Das ist die entscheidende Kennzahl für Gaming. Sie wird getrennt nach Richtung
-gemessen, weil die Konsequenz unterschiedlich ist:
+This is the decisive metric for gaming. It is measured separately per
+direction, because the consequence differs:
 
-* **Upload-Last**: Die Warteschlange steht im eigenen Router. Priorisierung
-  (FRITZ!Box: "Priorisierung/Echtzeitanwendungen") oder Drosseln des Geräts hilft.
-* **Download-Last**: Die Warteschlange steht beim Provider (DSLAM/BRAS). Lokale
-  Priorisierung hilft NICHT – nur das ladende Gerät bremsen (oder SQM/CAKE auf
-  einem Router, der das beherrscht).
+* **Upload load**: the queue sits in your own router. Prioritization
+  (FRITZ!Box: "Prioritization/real-time applications") or throttling the device helps.
+* **Download load**: the queue sits at the provider (DSLAM/BRAS). Local
+  prioritization does NOT help - only slowing the downloading device (or SQM/CAKE on
+  a router that supports it).
 
-Verfahren: Sekunden werden nach Auslastung in Gruppen geteilt und die RTT der
-Gruppen verglichen. Es wird nichts geschätzt – fehlen Messwerte für eine Gruppe,
-bleibt das Ergebnis leer.
+Method: seconds are split into groups by utilization and the RTT of the
+groups is compared. Nothing is estimated - if measurements are missing for a group,
+the result stays empty.
 
-Für den Langzeitverlauf werden 10-Minuten-Fenster gespeichert (Tabelle
-`bufferbloat`), weil die 1-s-Werte nur einen Tag aufbewahrt werden. Über längere
-Zeiträume wird der Median dieser Fenster gezeigt; das ist in `aggregate()`
-dokumentiert.
+For the long-term history 10-minute windows are stored (table
+`bufferbloat`), because 1 s values are only kept for one day. For longer
+spans the median of these windows is shown; this is documented in
+`aggregate()`.
 """
 from __future__ import annotations
 
 import statistics
 
-IDLE_MAX = 0.20      # bis 20 % Auslastung gilt die Leitung als "ruhig"
-LOAD_MIN = 0.70      # ab 70 % als "unter Last"
-ISOLATE_MAX = 0.40   # die jeweils andere Richtung muss darunter bleiben
+IDLE_MAX = 0.20      # up to 20 % utilization the line counts as "quiet"
+LOAD_MIN = 0.70      # from 70 % as "under load"
+ISOLATE_MAX = 0.40   # the other direction must stay below this
 MIN_SAMPLES = 5
-BUCKET = 600         # Länge eines gespeicherten Fensters in Sekunden
+BUCKET = 600         # length of a stored window in seconds
 
-# Bewertung des Latenzanstiegs unter Last (ms)
-GRADES = ((30, "gut", "good"), (100, "mäßig", "warning"), (float("inf"), "stark", "critical"))
+# Rating of the latency increase under load (ms)
+GRADES = ((30, "good", "good"), (100, "moderate", "warning"), (float("inf"), "severe", "critical"))
 
-UP_ADVICE = ("Warteschlange im eigenen Router: FRITZ!Box-Priorisierung für den Gaming-PC "
-             "oder das hochladende Gerät drosseln.")
-DOWN_ADVICE = ("Warteschlange beim Provider: Lokale Priorisierung hilft hier nicht – "
-               "das ladende Gerät bremsen (z. B. Downloadrate der Konsole begrenzen).")
+UP_ADVICE = ("Queue in your own router: FRITZ!Box prioritization for the gaming PC "
+             "or throttle the uploading device.")
+DOWN_ADVICE = ("Queue at the provider: local prioritization does not help here - "
+               "slow down the downloading device (e.g. limit the console's download rate).")
 ADVICE = {"up": UP_ADVICE, "down": DOWN_ADVICE}
 
 
@@ -52,7 +52,7 @@ def _median(vals: list[float]) -> float | None:
 
 
 def classify(rows: list[dict], cap_down: float, cap_up: float) -> dict[str, list[float]]:
-    """Teilt Sekunden in ruhig / unter Upload-Last / unter Download-Last."""
+    """Splits seconds into quiet / under upload load / under download load."""
     out: dict[str, list[float]] = {"idle": [], "up": [], "down": []}
     for r in rows:
         rtt, down, up = r.get("rtt_avg"), r.get("down_bps"), r.get("up_bps")
@@ -70,17 +70,17 @@ def classify(rows: list[dict], cap_down: float, cap_up: float) -> dict[str, list
 
 def measure(rows: list[dict], cap_down: float | None, cap_up: float | None,
             idle_rows: list[dict] | None = None) -> dict:
-    """Vergleicht die RTT bei ruhiger Leitung mit der RTT unter Last.
+    """Compares the RTT on a quiet line with the RTT under load.
 
-    rows:      Sekunden-Zeilen mit rtt_avg, down_bps, up_bps.
-    idle_rows: Optional ein größerer Zeitraum, aus dem die Ruhe-Baseline bestimmt
-               wird. Nötig, wenn `rows` durchgehend ausgelastet ist (langer
-               Download) und deshalb selbst keine ruhigen Sekunden enthält.
+    rows:      per-second rows with rtt_avg, down_bps, up_bps.
+    idle_rows: optionally a larger time span from which the idle baseline is
+               determined. Needed when `rows` is saturated throughout (long
+               download) and therefore contains no quiet seconds itself.
     """
     out: dict = {"idle_ms": None, "up": None, "down": None, "samples": {"idle": 0, "up": 0, "down": 0},
                  "capacity_known": bool(cap_down and cap_up), "note": None}
     if not (cap_down and cap_up):
-        out["note"] = "Leitungskapazität unbekannt – unter Einstellungen → Messung eintragen."
+        out["note"] = "Line capacity unknown - enter it under Settings → Measurement."
         return out
 
     groups = classify(rows, cap_down, cap_up)
@@ -92,7 +92,7 @@ def measure(rows: list[dict], cap_down: float | None, cap_up: float | None,
     base = _median(idle) if len(idle) >= MIN_SAMPLES else None
     out["idle_ms"] = round(base, 1) if base is not None else None
     if base is None:
-        out["note"] = "Zu wenige Sekunden mit ruhiger Leitung für einen Vergleich."
+        out["note"] = "Too few seconds with a quiet line for a comparison."
         return out
 
     for key in ("up", "down"):
@@ -107,28 +107,28 @@ def measure(rows: list[dict], cap_down: float | None, cap_up: float | None,
             "seconds": len(vals), "grade": label, "level": level, "advice": ADVICE[key],
         }
     if out["up"] is None and out["down"] is None:
-        out["note"] = "Noch keine Phase mit hoher Auslastung gemessen."
+        out["note"] = "No phase with high utilization measured yet."
     return out
 
 
 def storable(m: dict) -> bool:
-    """Lohnt sich ein gespeichertes Fenster? Nur mit Ruhe- UND Lastphase."""
+    """Is a stored window worth it? Only with an idle AND a load phase."""
     return m["idle_ms"] is not None and (m["up"] is not None or m["down"] is not None)
 
 
 def aggregate(buckets: list[dict]) -> dict:
-    """Fasst gespeicherte 10-Minuten-Fenster zu einer Aussage über den Zeitraum zusammen.
+    """Merges stored 10-minute windows into a statement about the time span.
 
-    Die Fenster enthalten bereits Mediane; über den Zeitraum wird deshalb der
-    Median dieser Fenster-Mediane gebildet (und das Maximum als Spitzenwert).
-    Das ist gröber als eine Rechnung über alle Einzelsekunden, aber ehrlich
-    zusammengesetzt: jedes Fenster zählt gleich viel.
+    The windows already contain medians; across the span the median of these
+    window medians is taken (and the maximum as the peak value).
+    This is coarser than a calculation over all individual seconds, but honestly
+    composed: every window counts equally.
     """
     out: dict = {"idle_ms": None, "up": None, "down": None, "windows": len(buckets),
                  "samples": {"idle": 0, "up": 0, "down": 0}, "capacity_known": True, "note": None,
                  "aggregated": True}
     if not buckets:
-        out["note"] = "Noch keine ausgewerteten Zeitfenster – dafür braucht es ruhige UND ausgelastete Phasen."
+        out["note"] = "No evaluated time windows yet - this needs quiet AND saturated phases."
         return out
     idle = [b["idle_ms"] for b in buckets if b.get("idle_ms") is not None]
     base = _median(idle)
@@ -148,12 +148,12 @@ def aggregate(buckets: list[dict]) -> dict:
                     "seconds": secs, "windows": len(vals), "grade": label, "level": level,
                     "advice": ADVICE[key]}
     if out["up"] is None and out["down"] is None:
-        out["note"] = "Keine Phase mit hoher Auslastung im Zeitraum."
+        out["note"] = "No phase with high utilization in the time span."
     return out
 
 
 def trend(buckets: list[dict], direction: str) -> list[dict]:
-    """Zeitreihe des Latenzanstiegs für die Verlaufsanzeige."""
+    """Time series of the latency increase for the history view."""
     out = []
     for b in buckets:
         loaded, base = b.get(f"{direction}_ms"), b.get("idle_ms")
