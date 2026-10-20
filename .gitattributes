@@ -1,6 +1,6 @@
-# Läuft auf dem Pi: Zeilenenden immer LF, auch bei Checkout unter Windows.
-# Ein install.sh mit CRLF bricht mit "/usr/bin/env: 'bash\r'" ab, eine
-# systemd-Unit mit CRLF wird stillschweigend falsch gelesen.
+# Runs on the Pi: always LF line endings, even when checked out on Windows.
+# An install.sh with CRLF fails with "/usr/bin/env: 'bash\r'", a systemd
+# unit with CRLF is silently misread.
 * text=auto eol=lf
 
 *.png  binary
@@ -10,5 +10,5 @@
 *.pcapng binary
 *.sqlite3 binary
 
-# Vendored, nicht diffen
+# Vendored, do not diff
 frontend/vendor/** -diff linguist-vendored

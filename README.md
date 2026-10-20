@@ -1,129 +1,132 @@
 # Network Lag Analyzer
 
-Lokale Netzwerk-Diagnose für den Raspberry Pi (mit Pi-hole), die eine Frage beantwortet:
+[![Tests](https://github.com/Felixitus/network-lag-analyzer/actions/workflows/tests.yml/badge.svg)](https://github.com/Felixitus/network-lag-analyzer/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **„Warum hatte ich genau zu diesem Zeitpunkt Lag oder Packet Loss?"**
+Local network diagnostics for the Raspberry Pi (with Pi-hole) that answers one question:
 
-Die Anwendung misst jede Sekunde Ping, Jitter und Packet Loss zu Router und Internet,
-erfasst – soweit technisch sichtbar – den Traffic jedes Geräts, erkennt Auffälligkeiten
-automatisch und korreliert sie zeitlich. Ergebnis ist z. B.:
+> **"Why did I have lag or packet loss at exactly this moment?"**
+
+The application measures ping, jitter and packet loss to the router and the internet every
+second, records - as far as technically visible - the traffic of every device, detects
+anomalies automatically and correlates them in time. A result looks like this:
 
 ```
-INCIDENT #124 · 21.09.2026 20:43:12 · Dauer 4,2 s
-Ping 18 → 184 ms · Jitter 2 → 61 ms · Packet Loss 8 % · Gateway 1,1 ms
+INCIDENT #124 · 2026-09-21 20:43:12 · duration 4.2 s
+Ping 18 → 184 ms · Jitter 2 → 61 ms · Packet Loss 8 % · Gateway 1.1 ms
 
-Possible Cause: Upload-Sättigung durch iPhone        Confidence: High
+Possible Cause: Upload saturation by iPhone          Confidence: High
 Evidence:
-  • Upload-Auslastung bis 97 % der Leitung (38,8 von 40 Mbit/s)
-  • Upload-Anstieg begann vor dem Latenzanstieg (2 s vorher)
-  • Router-Latenz blieb stabil
-  • 3 externe Ziele zeigten gleichzeitig erhöhte Latenz/Verlust
-  • iPhone verursachte 96 % des Uploads
+  • Upload utilization up to 97 % of the line (38.8 of 40 Mbit/s)
+  • Upload increase started before the latency increase (2 s earlier)
+  • Router latency stayed stable
+  • 3 external targets showed increased latency/loss at the same time
+  • iPhone caused 96 % of the upload
 ```
 
-Alles läuft lokal. Keine Cloud, keine Telemetrie, keine Payload-Speicherung.
+Everything runs locally. No cloud, no telemetry, no payload storage.
 
 ---
 
-## Inhalt
+## Contents
 
-1. [Funktionen](#funktionen)
-2. [Architektur](#architektur)
-3. [Raspberry-Pi-Anforderungen](#raspberry-pi-anforderungen)
+1. [Features](#features)
+2. [Architecture](#architecture)
+3. [Raspberry Pi requirements](#raspberry-pi-requirements)
 4. [Installation](#installation)
-5. [Netzwerkarchitektur & Traffic Visibility](#netzwerkarchitektur--traffic-visibility)
-6. [FRITZ!Box einrichten (empfohlen)](#fritzbox-einrichten-empfohlen)
-7. [Port Mirroring](#port-mirroring)
-8. [Raspberry Pi als Gateway](#raspberry-pi-als-gateway)
-9. [Pi-hole-Integration](#pi-hole-integration)
-10. [Bedienung](#bedienung)
-11. [Ursachenanalyse – so wird entschieden](#ursachenanalyse--so-wird-entschieden)
-12. [Konfiguration](#konfiguration)
-13. [Datenbank & Backup](#datenbank--backup)
+5. [Network architecture & traffic visibility](#network-architecture--traffic-visibility)
+6. [Setting up the FRITZ!Box (recommended)](#setting-up-the-fritzbox-recommended)
+7. [Port mirroring](#port-mirroring)
+8. [Raspberry Pi as gateway](#raspberry-pi-as-gateway)
+9. [Pi-hole integration](#pi-hole-integration)
+10. [Usage](#usage)
+11. [Root cause analysis - how it decides](#root-cause-analysis---how-it-decides)
+12. [Configuration](#configuration)
+13. [Database & backup](#database--backup)
 14. [Security](#security)
-15. [Performance & Load Guard](#performance--load-guard)
+15. [Performance & load guard](#performance--load-guard)
 16. [Troubleshooting](#troubleshooting)
-17. [Entwicklung & Tests](#entwicklung--tests)
-18. [Lizenz](#lizenz)
+17. [Development & tests](#development--tests)
+18. [License](#license)
 
 ---
 
-## Funktionen
+## Features
 
-| Bereich | Umfang |
+| Area | Scope |
 |---|---|
-| Latenz | ICMP zu Router + frei wählbaren Internetzielen, 1/s (Gaming Mode 4/s), ein dauerhaft offener Socket, Kernel-Zeitstempel |
-| Kennzahlen | RTT (Median/Min/Max), Jitter, Packet Loss über 5 s/10 s/30 s/60 s/5 min, Erreichbarkeit |
-| Traffic | pro Gerät Upload/Download, UDP-Anteil, TCP-Retransmissions (je Richtung), Flows (nur Metadaten) |
+| Latency | ICMP to the router + freely selectable internet targets, 1/s (Gaming Mode 4/s), one permanently open socket, kernel timestamps |
+| Metrics | RTT (median/min/max), jitter, packet loss over 5 s/10 s/30 s/60 s/5 min, reachability |
+| Traffic | upload/download per device, UDP share, TCP retransmissions (per direction), flows (metadata only) |
 | Events | `PING_SPIKE`, `PACKET_LOSS`, `HIGH_JITTER`, `HIGH_UPLOAD`, `HIGH_DOWNLOAD`, `TCP_RETRANSMISSION_SPIKE`, `CONNECTION_DROP`, `DNS_FAILURE`, `GATEWAY_LATENCY`, `INTERNET_LATENCY`, `GAME_FLOW_GAP` |
-| Incidents | automatische Korrelation + dokumentierte Ursachenregeln mit Confidence und Evidenz |
-| Handlungsempfehlung | zu jeder Kategorie eine konkrete Maßnahme – inkl. Hinweis, ob selbst behebbar oder Sache des Anbieters |
-| Latenz unter Last | Bufferbloat-Kennzahl je Richtung („+120 ms unter Download-Last"), Langzeitverlauf über Wochen |
-| „ICH HATTE GERADE LAG" | analysiert sofort 10 s/30 s/60 s/5 min und erzeugt einen Incident mit Zeitleiste |
-| Gaming Mode | manuell oder automatisch; Game-Server-Erkennung, Paketlücken im Game-Flow, Session-Zusammenfassung |
-| Web-UI | Dashboard, gemeinsame Timeline, Geräte-Lanes, Heatmap, Incident-Details, Top Talker, Setup-Wizard; hell/dunkel, responsiv |
-| Deep Capture | optionaler PCAP-Ringpuffer (nur Header), Incident-Mitschnitte werden geschützt und sind downloadbar; **harte Gesamtgrenze** über `max_total_mb` |
-| Timeline | gestapelte Panels mit EINER Zeitachse, Werte-Ablesen am Cursor, Zoom per Ziehen, Schraffur für nicht gemessene Zeiträume |
-| Langzeit | Tages-Zusammenfassung über Jahre (`daily_stats`), unabhängig von der Aufbewahrung der Detaildaten |
-| Speicher | Größe je Tabelle, Löschen nach Datum mit Vorschau, VACUUM, automatische Größengrenze |
-| Betrieb | systemd, journald, SQLite (WAL), Schema-Migrationen mit Sicherungskopie, Aggregation 1 s → 10 s → 1 min, Retention, Load Guard |
+| Incidents | automatic correlation + documented cause rules with confidence and evidence |
+| Recommendations | a concrete action for every category - including whether you can fix it yourself or it is up to the provider |
+| Latency under load | bufferbloat metric per direction ("+120 ms under download load"), long-term history over weeks |
+| "I JUST HAD LAG" | immediately analyzes 10 s/30 s/60 s/5 min and creates an incident with a timeline |
+| Gaming Mode | manual or automatic; game server detection, packet gaps in the game flow, session summary |
+| Web UI | dashboard, shared timeline, device lanes, heatmap, incident details, top talkers, setup wizard; light/dark, responsive |
+| Deep Capture | optional PCAP ring buffer (headers only), incident captures are protected and downloadable; **hard total limit** via `max_total_mb` |
+| Timeline | stacked panels with ONE time axis, value readout at the cursor, zoom by dragging, hatching for periods that were not measured |
+| Long-term | daily summary over years (`daily_stats`), independent of the retention of the detail data |
+| Storage | size per table, deletion by date with preview, VACUUM, automatic size limit |
+| Operations | systemd, journald, SQLite (WAL), schema migrations with backup copy, aggregation 1 s → 10 s → 1 min, retention, load guard |
 
-**Keine Fake-Daten:** Was nicht gemessen werden kann, erscheint als „Not available" mit
-Begründung. Simulierte Daten gibt es nur mit `dev_mode: true` – dann mit dauerhaftem
-„DEMO-MODUS"-Banner.
+**No fake data:** whatever cannot be measured appears as "Not available" with a reason.
+Simulated data only exists with `dev_mode: true` - and then with a permanent
+"DEMO MODE" banner.
 
 ---
 
-## Architektur
+## Architecture
 
 Details: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```
 backend/
-  main.py              Einstiegspunkt (uvicorn)
-  config.py            Konfiguration (YAML + Überschreibungen aus der UI), Validierung
-  core.py              Orchestrierung aller Komponenten
+  main.py              entry point (uvicorn)
+  config.py            configuration (YAML + overrides from the UI), validation
+  core.py              orchestration of all components
   collectors/
-    ping.py            ICMP-Prober (ein Socket, SO_TIMESTAMPNS)
-    dns.py             DNS-Prober (Pi-hole + Upstream)
-    fritzbox.py        FRITZ!Box: Login (PBKDF2), TR-064, Mitschnitt-URL
-    traffic.py         Capture-Prozess (FRITZ!Box-Stream oder AF_PACKET), PCAP-Ring
-    pcapstream.py      inkrementeller pcap/pcapng-Parser
-    flows.py           Paketanalyse: Bytes je Gerät, Flows, Retransmissions, Game-Flow
-    pihole.py          Pi-hole FTL-Datenbank (read-only)
-    devices.py         Geräteverzeichnis (FRITZ!Box, Pi-hole, ARP, Capture)
+    ping.py            ICMP prober (one socket, SO_TIMESTAMPNS)
+    dns.py             DNS prober (Pi-hole + upstream)
+    fritzbox.py        FRITZ!Box: login (PBKDF2), TR-064, capture URL
+    traffic.py         capture process (FRITZ!Box stream or AF_PACKET), PCAP ring
+    pcapstream.py      incremental pcap/pcapng parser
+    flows.py           packet analysis: bytes per device, flows, retransmissions, game flow
+    pihole.py          Pi-hole FTL database (read-only)
+    devices.py         device registry (FRITZ!Box, Pi-hole, ARP, capture)
   analysis/
-    metrics.py         Sekunden-Assembler, Jitter/Loss, 1-h-Ringpuffer
-    events.py          Event Detection mit Hysterese und Baselines
-    correlation.py     Incidents, Lag-Report
-    root_cause.py      Ursachenregeln (je Regel dokumentiert)
-    gaming.py          Gaming Sessions
-  database/            Schema, Batch-Writer, Aggregation, Retention
-  api/                 REST + Server-Sent Events, Security-Middleware
-  setup_wizard.py      Diagnose der Netzwerkarchitektur
-  simulation.py        NUR Tests/Dev-Modus
-frontend/              HTML/CSS/JS (ES-Module), uPlot lokal eingebunden
-deploy/                systemd-Unit
-tests/                 Unit-, Szenario- und API-Tests
+    metrics.py         per-second assembler, jitter/loss, 1 h ring buffer
+    events.py          event detection with hysteresis and baselines
+    correlation.py     incidents, lag report
+    root_cause.py      cause rules (each rule documented)
+    gaming.py          gaming sessions
+  database/            schema, batch writer, aggregation, retention
+  api/                 REST + server-sent events, security middleware
+  setup_wizard.py      diagnosis of the network architecture
+  simulation.py        ONLY tests/dev mode
+frontend/              HTML/CSS/JS (ES modules), uPlot bundled locally
+deploy/                systemd unit
+tests/                 unit, scenario and API tests
 ```
 
-Das Paketparsing läuft in einem **eigenen Prozess**. So verfälscht es weder die
-ICMP-Zeitstempel im Hauptprozess, noch bremst es die Web-API aus.
+Packet parsing runs in a **separate process**. That way it neither distorts the ICMP
+timestamps in the main process nor slows down the web API.
 
 ---
 
-## Raspberry-Pi-Anforderungen
+## Raspberry Pi requirements
 
-| | Minimum | Empfohlen |
+| | Minimum | Recommended |
 |---|---|---|
-| Modell | Raspberry Pi 3B+ | Raspberry Pi 4/5 (2 GB+) |
+| Model | Raspberry Pi 3B+ | Raspberry Pi 4/5 (2 GB+) |
 | OS | Raspberry Pi OS / Debian 12 (Bookworm), Python ≥ 3.10 | 64-bit |
-| Anbindung | LAN | **LAN-Kabel** (WLAN verfälscht Jitter/Latenz der Messung selbst) |
-| Speicher | ~200 MB für Programm, Daten je nach Traffic 50–500 MB | SSD statt SD-Karte bei Deep Capture |
-| RAM-Bedarf | ~80–150 MB (Hauptprozess + Capture-Prozess) | – |
+| Connection | LAN | **LAN cable** (Wi-Fi distorts jitter/latency of the measurement itself) |
+| Storage | ~200 MB for the program, data 50–500 MB depending on traffic | SSD instead of SD card when using Deep Capture |
+| RAM | ~80–150 MB (main process + capture process) | – |
 
-Pi-hole läuft unverändert weiter. Der Dienst hat niedrigere CPU-Priorität als Pi-hole
-(`Nice=10`, `CPUWeight=50`) und ist auf 350 MB RAM begrenzt.
+Pi-hole keeps running unchanged. The service has a lower CPU priority than Pi-hole
+(`Nice=10`, `CPUWeight=50`) and is limited to 350 MB RAM.
 
 ---
 
@@ -136,261 +139,260 @@ cd network-lag-analyzer
 sudo ./install.sh
 ```
 
-Der Installer:
+The installer:
 
-1. installiert fehlende Pakete (`python3`, `python3-venv`, `python3-pip`) – **kein** `apt upgrade`,
-2. legt den Systembenutzer `nla` an und nimmt ihn in die Gruppe `pihole` auf (nur Leserecht),
-3. kopiert das Programm nach `/opt/network-lag-analyzer` und erstellt dort ein venv,
-4. legt `/etc/network-lag-analyzer/config.yaml` an (bestehende bleibt erhalten),
-5. erstellt `/var/lib/network-lag-analyzer` (Datenbank, PCAPs),
-6. installiert und startet `network-lag-analyzer.service`.
+1. installs missing packages (`python3`, `python3-venv`, `python3-pip`) - **no** `apt upgrade`,
+2. creates the system user `nla` and adds it to the group `pihole` (read access only),
+3. copies the program to `/opt/network-lag-analyzer` and creates a venv there,
+4. creates `/etc/network-lag-analyzer/config.yaml` (an existing one is kept),
+5. creates `/var/lib/network-lag-analyzer` (database, PCAPs),
+6. installs and starts `network-lag-analyzer.service`.
 
-Danach im Browser (z. B. vom Windows-PC):
+Then open in a browser (e.g. from your PC):
 
 ```
-http://raspberrypi:8088      oder      http://IP-DES-PI:8088
+http://raspberrypi:8088      or      http://PI-IP-ADDRESS:8088
 ```
 
-Beim ersten Aufruf auf **Setup** gehen, Diagnose ausführen, FRITZ!Box-Zugang eintragen.
+On first use go to **Setup**, run the diagnosis and enter the FRITZ!Box access.
 
-Update: `git pull && sudo ./install.sh` im geklonten Verzeichnis – Konfiguration und Daten bleiben.
-Deinstallation: `sudo ./install.sh --uninstall`.
+Update: `git pull && sudo ./install.sh` in the cloned directory - configuration and data are kept.
+Uninstall: `sudo ./install.sh --uninstall`.
 
-**Pi-hole wird nicht verändert.** Der Installer fasst weder `/etc/pihole`, dnsmasq/FTL noch
-den Pi-hole-Webserver an. Der Standardport 8088 kollidiert nicht mit Pi-hole (80/443).
+**Pi-hole is not modified.** The installer touches neither `/etc/pihole`, dnsmasq/FTL nor
+the Pi-hole web server. The default port 8088 does not collide with Pi-hole (80/443).
 
 ---
 
-## Netzwerkarchitektur & Traffic Visibility
+## Network architecture & traffic visibility
 
-Wichtigster Punkt: **Pi-hole sieht nur DNS.** Ein Raspberry Pi, der nicht Router ist,
-sieht den Datenverkehr anderer Geräte grundsätzlich nicht – ein Switch schickt ihm nur
-Pakete, die an ihn adressiert sind. Promiscuous Mode ändert daran nichts.
+Most important point: **Pi-hole only sees DNS.** A Raspberry Pi that is not the router
+fundamentally does not see other devices' traffic - a switch only sends it packets that
+are addressed to it. Promiscuous mode does not change that.
 
-| Messung | Pi im LAN (Standard) | + FRITZ!Box-Mitschnitt | + Port-Mirroring | Pi als Gateway |
+| Measurement | Pi on the LAN (default) | + FRITZ!Box capture | + port mirroring | Pi as gateway |
 |---|:-:|:-:|:-:|:-:|
-| Ping/Jitter/Loss Router + Internet | ✓ | ✓ | ✓ | ✓ |
-| DNS-Aktivität je Gerät (Pi-hole) | ✓ | ✓ | ✓ | ✓ |
-| WAN-Gesamtrate (TR-064) | ✓¹ | ✓ | ✓¹ | ✓ |
-| Traffic pro Gerät | ✗ | ✓ | ✓ | ✓ |
-| TCP-Retransmissions, Flows | ✗ | ✓ | ✓ | ✓ |
-| Game-Flow-Analyse (Paketlücken) | ✗ | ✓ | ✓ | ✓ |
+| Ping/jitter/loss router + internet | ✓ | ✓ | ✓ | ✓ |
+| DNS activity per device (Pi-hole) | ✓ | ✓ | ✓ | ✓ |
+| Total WAN rate (TR-064) | ✓¹ | ✓ | ✓¹ | ✓ |
+| Traffic per device | ✗ | ✓ | ✓ | ✓ |
+| TCP retransmissions, flows | ✗ | ✓ | ✓ | ✓ |
+| Game flow analysis (packet gaps) | ✗ | ✓ | ✓ | ✓ |
 
-¹ mit FRITZ!Box-Zugangsdaten.
+¹ with FRITZ!Box credentials.
 
-Der **Setup-Wizard** prüft das aktiv (u. a. lauscht er 2 s am Interface, ob fremde
-Unicast-Frames ankommen) und zeigt die Fähigkeitsmatrix. Fehlt eine Quelle, sagt die
-Oberfläche das – und die Ursachenanalyse benennt dann **kein Gerät**.
+The **setup wizard** checks this actively (among other things it listens on the interface
+for 2 s to see whether foreign unicast frames arrive) and shows the capability matrix. If a
+source is missing, the UI says so - and the root cause analysis then names **no device**.
 
-### Empfehlung für ein Heimnetz mit FRITZ!Box + Deco (AP-Modus)
+### Recommendation for a home network with FRITZ!Box + Deco (AP mode)
 
-Der FRITZ!Box-Paketmitschnitt ist die beste Lösung ohne Zusatzhardware. Der Deco im
-Access-Point-Modus bridged; alle Clients (auch WLAN-Clients am Deco) haben eigene
-IP/MAC im Netz der FRITZ!Box, und ihr Internet-Traffic läuft über deren LAN-Bridge.
-
----
-
-## FRITZ!Box einrichten (empfohlen)
-
-1. **TR-064 aktivieren:** Heimnetz → Netzwerk → Netzwerkeinstellungen → „Zugriff für
-   Anwendungen zulassen".
-2. **Eigenen Benutzer anlegen:** System → FRITZ!Box-Benutzer → Hinzufügen, z. B. `nla`,
-   starkes Passwort, Recht **„FRITZ!Box Einstellungen"** (nötig für den Paketmitschnitt).
-   Kein Internetzugriff auf die Box nötig.
-3. In der Weboberfläche → **Setup** → „FRITZ!Box & Traffic-Quelle": Integration aktivieren,
-   Benutzer/Passwort eintragen, **„Verbindung & Mitschnitt testen"**, speichern.
-
-Technisch öffnet der Pi einen dauerhaften HTTP-Stream
-`/cgi-bin/capture_notimeout?ifaceorminor=1-lan&snaplen=128`. Die FRITZ!Box schickt einen
-libpcap-Strom ihrer LAN-Bridge – mit `snaplen=128` **nur Header, keine Inhalte**.
-Je nach FRITZ!OS ist das entweder klassisches pcap oder die Variante „modified pcap"
-(Magic `a1b2cd34`, 24-Byte-Recordheader); beide werden unterstützt, ebenso pcapng. Der Pi
-zählt daraus Bytes/Pakete pro MAC (Upload = Client → Router, Download = Router → Client)
-und bildet Flows. Die Mitschnitt-Verbindung selbst wird herausgefiltert.
-
-Hinweise:
-* Das Interface heißt je nach FRITZ!OS meist `1-lan`. Der Test zeigt gefundene Interfaces an.
-* Der Mitschnitt belastet die FRITZ!Box-CPU etwas und erzeugt ~1–2 MB/s LAN-Traffic bei
-  hoher Last. Bei sehr hohen Paketraten (Gigabit voll ausgelastet) schaltet der Load Guard
-  auf Sampling und kennzeichnet Werte als geschätzt.
-* Ohne Mitschnitt, aber mit Zugangsdaten, liefert TR-064 wenigstens die WAN-Gesamtrate
-  (ohne Geräteaufteilung) und die Leitungskapazität.
+The FRITZ!Box packet capture is the best solution without extra hardware. The Deco in
+access point mode bridges; all clients (including Wi-Fi clients on the Deco) have their own
+IP/MAC in the FRITZ!Box network, and their internet traffic passes through its LAN bridge.
 
 ---
 
-## Port Mirroring
+## Setting up the FRITZ!Box (recommended)
 
-Alternative mit Zusatzhardware: Ein Managed Switch (z. B. TP-Link TL-SG105E/108E,
-Netgear GS105E) zwischen FRITZ!Box und dem restlichen Netz spiegelt den Uplink-Port auf
-den Port des Pi.
+1. **Enable TR-064:** Home Network → Network → Network Settings → "Allow access for
+   applications".
+2. **Create a dedicated user:** System → FRITZ!Box Users → Add user, e.g. `nla`,
+   strong password, permission **"FRITZ!Box Settings"** (needed for the packet capture).
+   No internet access to the box is needed.
+3. In the web UI → **Setup** → "FRITZ!Box & traffic source": enable the integration,
+   enter user/password, click **"Test connection & capture"**, save.
+
+Technically, the Pi opens a permanent HTTP stream
+`/cgi-bin/capture_notimeout?ifaceorminor=1-lan&snaplen=128`. The FRITZ!Box sends a
+libpcap stream of its LAN bridge - with `snaplen=128` **headers only, no content**.
+Depending on FRITZ!OS this is either classic pcap or the "modified pcap" variant
+(magic `a1b2cd34`, 24-byte record headers); both are supported, as is pcapng. From it the Pi
+counts bytes/packets per MAC (upload = client → router, download = router → client)
+and builds flows. The capture connection itself is filtered out.
+
+Notes:
+* Depending on FRITZ!OS the interface is usually called `1-lan`. The test shows the interfaces it finds.
+* The capture puts some load on the FRITZ!Box CPU and creates ~1–2 MB/s of LAN traffic under
+  high load. At very high packet rates (gigabit fully utilized) the load guard switches to
+  sampling and marks values as estimated.
+* Without a capture but with credentials, TR-064 at least delivers the total WAN rate
+  (without a per-device split) and the line capacity.
+
+---
+
+## Port mirroring
+
+Alternative with extra hardware: a managed switch (e.g. TP-Link TL-SG105E/108E,
+Netgear GS105E) between the FRITZ!Box and the rest of the network mirrors the uplink port
+to the Pi's port.
 
 ```
-FRITZ!Box LAN ── [Port 1] Managed Switch [Port 2..n] ── Deco, PC, …
-                          [Port 5 = Mirror-Ziel] ── Raspberry Pi
+FRITZ!Box LAN ── [Port 1] Managed switch [Port 2..n] ── Deco, PC, …
+                          [Port 5 = mirror target] ── Raspberry Pi
 ```
 
-Einstellungen: Quelle = Port zur FRITZ!Box (ein- und ausgehend), Ziel = Port des Pi.
-In der Oberfläche: Traffic-Quelle = „Lokales Interface", Interface `eth0`. Der Wizard
-erkennt gespiegelten Traffic automatisch („Fremder Client-Traffic am Pi sichtbar ✓").
+Settings: source = port to the FRITZ!Box (ingress and egress), target = the Pi's port.
+In the UI: traffic source = "Local interface", interface `eth0`. The wizard detects
+mirrored traffic automatically ("Foreign client traffic visible at the Pi ✓").
 
-Achtung: Manche günstige Switches spiegeln nur eine Richtung oder deaktivieren den
-normalen Netzwerkzugang des Ziel-Ports – dann einen zweiten Netzwerkadapter (USB) am Pi
-als Mirror-Port nutzen.
-
----
-
-## Raspberry Pi als Gateway
-
-Möglich (Quelle „Lokales Interface", IP-Forwarding aktiv), aber für dieses Ziel **nicht
-empfohlen**: Jedes Paket läuft dann über den Pi. Das erzeugt zusätzliche Latenz, und fällt
-der Pi aus, ist das Internet weg. Für ein Lag-Diagnosewerkzeug ist das der falsche
-Kompromiss. Der FRITZ!Box-Mitschnitt oder Port-Mirroring liefern dieselbe Sicht ohne
-dieses Risiko.
+Caution: some cheap switches only mirror one direction or disable the normal network
+access of the target port - in that case use a second network adapter (USB) on the Pi
+as the mirror port.
 
 ---
 
-## Pi-hole-Integration
+## Raspberry Pi as gateway
 
-* Gelesen wird ausschließlich (read-only) `/etc/pihole/pihole-FTL.db` (Pi-hole v5 und v6):
-  Tabellen `network`/`network_addresses` (MAC, IP, Hostname, Hersteller) und `queries`.
-* Verwendung: Namen für Geräte, DNS-Aktivität und Top-Domains je Gerät (Geräte-Seite).
-* **DNS-Anfragen werden nie als Bandbreite interpretiert.** Viele DNS-Anfragen bedeuten
-  nicht viel Traffic.
-* FTL schreibt standardmäßig einmal pro Minute in die Datenbank – DNS-Daten sind daher bis
-  zu ~60 s verzögert. Für die Lag-Analyse spielt das keine Rolle.
-* Zusätzlich misst ein eigener DNS-Prober alle 5 s Pi-hole (127.0.0.1) und einen
-  Upstream-Resolver. So wird ein DNS-Ausfall erkannt und von echtem Lag unterschieden.
+Possible (source "Local interface", IP forwarding active), but **not recommended** for
+this purpose: every packet then passes through the Pi. That adds latency, and if the Pi
+fails, the internet is gone. For a lag diagnosis tool that is the wrong trade-off. The
+FRITZ!Box capture or port mirroring provide the same view without this risk.
 
 ---
 
-## Bedienung
+## Pi-hole integration
 
-**Dashboard:** Live-Kacheln (Internet, Ping, Jitter, Packet Loss, Gateway, Download,
-Upload), der große Button **„ICH HATTE GERADE LAG"**, Live-Charts mit Zeitbereichen
-LIVE/5 MIN/15 MIN/1 H/6 H/24 H/7 D, Top-Geräte, letzte Incidents, aktive Events.
-Aktualisierung per Server-Sent Events, ohne Neuladen.
+* Only `/etc/pihole/pihole-FTL.db` is read (read-only, Pi-hole v5 and v6):
+  tables `network`/`network_addresses` (MAC, IP, host name, vendor) and `queries`.
+* Used for: device names, DNS activity and top domains per device (devices page).
+* **DNS queries are never interpreted as bandwidth.** Many DNS queries do not mean
+  a lot of traffic.
+* By default FTL writes to the database once per minute - so DNS data is delayed by up
+  to ~60 s. That does not matter for the lag analysis.
+* In addition, a dedicated DNS prober measures Pi-hole (127.0.0.1) and an upstream
+  resolver every 5 s. This detects a DNS outage and distinguishes it from real lag.
 
-**Timeline:** Ping, Loss, Jitter, Upload, Download, Retransmissions und darunter je Gerät
-eine Upload-/Download-Lane – alles auf **einer gemeinsamen Zeitachse** mit synchronem
-Cursor. Incidents sind rote Bänder (Klick öffnet den Incident), gemeldeter Lag ist orange,
-Events sind Striche am oberen Rand. Darunter die Heatmap (Geräte × Zeit).
+---
 
-**Incidents:** Liste und Detailansicht (Kennzahlen vorher → Spitze, Possible Cause,
-Confidence, Evidenz, Top Traffic, alle geprüften Erklärungen, Events, Verbindungen,
-Charts rund um den Zeitpunkt, PCAP-Download bei Deep Capture).
+## Usage
 
-**Gaming:** Session starten/stoppen, Game-Server und Paketlücken live, Zusammenfassungen:
+**Dashboard:** live tiles (internet, ping, jitter, packet loss, gateway, download,
+upload), the big **"I JUST HAD LAG"** button, live charts with the time ranges
+LIVE/5 MIN/15 MIN/1 H/6 H/24 H/7 D, top devices, latest incidents, active events.
+Updated via server-sent events, without reloading.
+
+**Timeline:** ping, loss, jitter, upload, download, retransmissions and below them an
+upload/download lane per device - all on **one shared time axis** with a synchronized
+cursor. Incidents are red bands (clicking opens the incident), reported lag is orange,
+events are ticks at the top. Below that the heatmap (devices × time).
+
+**Incidents:** list and detail view (metrics before → peak, possible cause,
+confidence, evidence, top traffic, all explanations checked, events, connections,
+charts around the time, PCAP download with Deep Capture).
+
+**Gaming:** start/stop a session, game server and packet gaps live, summaries:
 
 ```
-Gaming Session 19:32–22:14
-Ping Durchschnitt 19 ms · Maximum 214 ms · Jitter Ø 3,2 ms
-Packet-Loss-Events 4 · Lag Events 7
-Mögliche Ursachen: 3× Upload-Sättigung, 2× WAN/ISP, 1× LAN/WLAN, 1× Unbekannt
+Gaming session 19:32–22:14
+Ping average 19 ms · maximum 214 ms · jitter avg 3.2 ms
+Packet loss events 4 · lag events 7
+Possible causes: 3× upload saturation, 2× WAN/ISP, 1× LAN/Wi-Fi, 1× unknown
 ```
 
-Automatische Erkennung: Hat der Gaming-PC anhaltend (≥ 20 s) bidirektionalen UDP-Traffic
-zu einem Internet-Server (≥ 15 Pakete/s je Richtung), startet die Session von selbst. Den
-Gaming-PC unter **Geräte** markieren (Haken „Gaming-PC").
+Automatic detection: if the gaming PC has sustained (≥ 20 s) bidirectional UDP traffic
+to an internet server (≥ 15 packets/s per direction), the session starts by itself.
+Mark the gaming PC under **Devices** (checkbox "Gaming PC").
 
-**Hinweis zum Game-Server:** Viele Spieleserver (z. B. Azure/AWS bei Rainbow Six Siege)
-antworten nicht auf Ping. Dann steht dort „Not available". Die Verbindung wird trotzdem
-über **Paketlücken im Game-Flow** überwacht: Schickt der Server länger als 250 ms keine
-Pakete, entsteht ein `GAME_FLOW_GAP`-Event.
-
----
-
-### Timeline lesen
-
-Alle Panels teilen sich eine Zeitachse; nur das unterste trägt die Uhrzeiten. Beim
-Überfahren zeigt die Leiste oben **alle Werte zum selben Zeitpunkt** – Ping, Loss,
-Jitter, Download, Upload und Retransmissions gleichzeitig. Das ist die Ansicht für
-„was war um 20:14 los?". Ein Panel lässt sich per ▸ aufklappen, ein Ziehen im Chart
-zoomt in den Zeitraum (mit passender Auflösung), „Zoom aufheben" kehrt zurück.
-
-Grau schraffierte Flächen sind Zeiträume **ohne Messdaten** – etwa weil der Dienst
-stand. Sie werden nicht als Null gezeichnet, weil das eine Messung vortäuschen würde.
-Bei „Traffic pro Gerät" lassen sich die Lanes auf eine **gemeinsame Skala** stellen;
-ohne sie hat jede Lane ihre eigene Achse und die Höhen sind nicht vergleichbar.
+**Note on the game server:** many game servers (e.g. Azure/AWS for Rainbow Six Siege)
+do not answer pings. Then it says "Not available" there. The connection is still
+monitored via **packet gaps in the game flow**: if the server sends no packets for more
+than 250 ms, a `GAME_FLOW_GAP` event is created.
 
 ---
 
-## Ursachenanalyse – so wird entschieden
+### Reading the timeline
 
-Jede Regel steht als eigene, kommentierte Funktion in `backend/analysis/root_cause.py`.
-Die Regel mit der höchsten Punktzahl gewinnt. Liegt eine zweite Erklärung einer anderen
-Kategorie gleichauf, wird die Confidence abgestuft.
+All panels share one time axis; only the bottom one carries the times. When hovering,
+the bar at the top shows **all values at the same point in time** - ping, loss,
+jitter, download, upload and retransmissions at once. This is the view for
+"what was going on at 20:14?". A panel can be expanded with ▸, dragging in a chart
+zooms into the time span (with a matching resolution), "Reset zoom" goes back.
 
-| Beobachtung | Ergebnis |
+Grey hatched areas are periods **without measurements** - for example because the
+service was stopped. They are not drawn as zero, because that would fake a measurement.
+Under "Traffic per device" the lanes can be switched to a **shared scale**; without it
+every lane has its own axis and the heights are not comparable.
+
+---
+
+## Root cause analysis - how it decides
+
+Every rule is a separate, commented function in `backend/analysis/root_cause.py`.
+The rule with the highest score wins. If a second explanation of a different category
+is on par, the confidence is lowered.
+
+| Observation | Result |
 |---|---|
-| Gateway-Ping hoch + Internet-Ping hoch | LAN/WLAN/Router-Problem |
-| Gateway normal + Internet-Ping hoch (mehrere Ziele) | WAN/ISP/Bufferbloat |
-| Gateway + Internet normal, nur ein Ziel auffällig | Zielserver/Routing |
-| Hoher Upload eines Geräts + Ping/Jitter hoch | Upload-Sättigung/Bufferbloat (+ Gerät) |
-| Hoher Download + Ping-Spike | Download-Sättigung/Bufferbloat (+ Gerät) |
-| TCP-Retransmissions stark erhöht | Paketverluste (Richtung wird angegeben) |
-| Mehrere externe Ziele gleichzeitig Packet Loss | WAN/ISP wahrscheinlicher als ein Server |
-| Nur ein externes Ziel betroffen | Routing/Zielserver wahrscheinlicher |
-| Router + Internet normal, Game-Flow hat Lücken | Game-Server/Routing |
-| DNS-Probes scheitern, Ping normal | DNS-Störung (Pi-hole bzw. Upstream) |
-| Alle Ziele weg, Router erreichbar/nicht erreichbar | Internet-Ausfall bzw. LAN-Verbindungsverlust |
+| Gateway ping high + internet ping high | LAN/Wi-Fi/router problem |
+| Gateway normal + internet ping high (several targets) | WAN/ISP/bufferbloat |
+| Gateway + internet normal, only one target abnormal | target server/routing |
+| High upload of a device + ping/jitter high | upload saturation/bufferbloat (+ device) |
+| High download + ping spike | download saturation/bufferbloat (+ device) |
+| TCP retransmissions strongly increased | packet loss (direction is stated) |
+| Several external targets with packet loss at once | WAN/ISP more likely than a single server |
+| Only one external target affected | routing/target server more likely |
+| Router + internet normal, game flow has gaps | game server/routing |
+| DNS probes fail, ping normal | DNS disruption (Pi-hole or upstream) |
+| All targets gone, router reachable/not reachable | internet outage or LAN connection loss |
 
-Confidence: ≥ 80 Punkte **High** („wahrscheinlicher Verursacher"), ≥ 55 **Medium**
-(„möglicher Verursacher"), sonst **Low** („zeitlich korreliert"). Ein Gerät wird nur dann
-als Verursacher genannt, wenn Traffic pro Gerät gemessen wurde und das Gerät den
-Engpass dominiert (≥ 60 % des Traffics in der gesättigten Richtung).
+Confidence: ≥ 80 points **High** ("likely cause"), ≥ 55 **Medium**
+("possible cause"), otherwise **Low** ("temporally correlated"). A device is only named
+as the cause if traffic per device was measured and the device dominates the
+bottleneck (≥ 60 % of the traffic in the saturated direction).
 
-**Leitungskapazität:** Für die Auslastung in % muss die Kapazität bekannt sein. `auto`
-nutzt die Linkrate der FRITZ!Box (TR-064). Liegt die gebuchte Rate darunter (Drosselung
-beim Provider), trage die gebuchte Rate unter Setup → Messung ein. Das ist genauer.
+**Line capacity:** for utilization in %, the capacity must be known. `auto`
+uses the link rate of the FRITZ!Box (TR-064). If the booked rate is lower (throttling
+at the provider), enter the booked rate under Setup → Measurement. That is more accurate.
 
-### Handlungsempfehlung statt nur Diagnose
+### Recommendations, not just a diagnosis
 
-Zu jeder Kategorie gehört eine konkrete Maßnahme (`recommendation` in der Analyse,
-sichtbar im Incident unter „Was jetzt hilft"). Sie sagt auch, ob sich das überhaupt
-selbst beheben lässt:
+Every category comes with a concrete action (`recommendation` in the analysis,
+visible in the incident under "What helps now"). It also says whether you can fix it
+yourself at all:
 
-| `scope` | Bedeutung |
+| `scope` | Meaning |
 |---|---|
-| `self` | in der eigenen Hand – Gerät, Router, WLAN |
-| `provider` | nur der Anschlussanbieter kann es ändern (dokumentieren und melden) |
-| `remote` | liegt beim Zielserver oder im Routing dorthin |
-| `none` | Datenlage reicht für keine belastbare Empfehlung |
+| `self` | in your own hands - device, router, Wi-Fi |
+| `provider` | only the internet provider can change it (document and report) |
+| `remote` | lies with the target server or the routing to it |
+| `none` | the data is not enough for a reliable recommendation |
 
-Wichtig ist dabei die Richtung, weil die Maßnahmen gegensätzlich sind:
+The direction matters, because the actions are opposite:
 
-* **Upload-Sättigung** – die Warteschlange steht im eigenen Router. Priorisierung in der
-  FRITZ!Box wirkt hier tatsächlich.
-* **Download-Sättigung** – die Warteschlange steht beim Provider. Lokale Priorisierung
-  kann Pakete, die bereits dort warten, nicht überholen; es hilft nur, das ladende Gerät
-  zu bremsen.
+* **Upload saturation** - the queue sits in your own router. Prioritization in the
+  FRITZ!Box really works here.
+* **Download saturation** - the queue sits at the provider. Local prioritization
+  cannot overtake packets that are already waiting there; the only thing that helps is
+  slowing down the downloading device.
 
-### Latenz unter Last (Bufferbloat)
+### Latency under load (bufferbloat)
 
-`backend/analysis/bufferbloat.py` misst, wie viel Ping dazukommt, wenn die Leitung voll
-ist – getrennt nach Richtung. Sekunden werden nach Auslastung gruppiert und die
-Median-RTT der Gruppen verglichen:
+`backend/analysis/bufferbloat.py` measures how much ping is added when the line is
+full - separately per direction. Seconds are grouped by utilization and the median RTT
+of the groups is compared:
 
-* **ruhig** ≤ 20 % Auslastung in beiden Richtungen
-* **unter Last** ≥ 70 % in einer Richtung, während die andere < 40 % bleibt
-* Sind beide Richtungen voll, wird die Sekunde verworfen – die Ursache wäre nicht trennbar.
+* **quiet** ≤ 20 % utilization in both directions
+* **under load** ≥ 70 % in one direction while the other stays < 40 %
+* If both directions are full, the second is discarded - the cause could not be separated.
 
-Pro Gruppe sind mindestens 5 Sekunden nötig, sonst bleibt das Ergebnis leer (kein
-Schätzwert). Bewertung: < 30 ms „gut", < 100 ms „mäßig", darüber „stark".
+Each group needs at least 5 seconds, otherwise the result stays empty (no estimate).
+Rating: < 30 ms "good", < 100 ms "moderate", above that "severe".
 
-Sichtbar an drei Stellen: als Karte auf dem Dashboard (1 h / 24 h / 7 d / 30 T), im
-Incident für dessen Analysefenster und über `GET /api/bufferbloat?range=…`. Damit der
-Verlauf Wochen übersteht, schreibt die Wartung alle 10 Minuten ein Fenster in die
-Tabelle `bufferbloat` (9 Zahlen) – die 1-s-Rohwerte werden nur einen Tag aufbewahrt.
-Kurze Zeiträume rechnet die API direkt aus den Sekundenwerten (`source: live`), längere
-aus den gespeicherten Fenstern (`source: windows`).
+Visible in three places: as a card on the dashboard (1 h / 24 h / 7 d / 30 d), in the
+incident for its analysis window and via `GET /api/bufferbloat?range=…`. So that the
+history survives for weeks, maintenance writes a window into the `bufferbloat` table
+every 10 minutes (9 numbers) - the 1 s raw values are only kept for one day.
+Short spans are computed by the API directly from the per-second values (`source: live`),
+longer ones from the stored windows (`source: windows`).
 
 ---
 
-## Konfiguration
+## Configuration
 
-`/etc/network-lag-analyzer/config.yaml` (Vorlage: `config.example.yaml`). Die wichtigsten
-Werte lassen sich in der Oberfläche ändern; diese Änderungen liegen in der Datenbank und
-überschreiben die Datei. „Setup" zeigt die wirksamen Werte.
+`/etc/network-lag-analyzer/config.yaml` (template: `config.example.yaml`). The most
+important values can be changed in the UI; those changes live in the database and
+override the file. "Setup" shows the effective values.
 
 ```yaml
 gateway: auto
@@ -408,238 +410,234 @@ retention:
   aggregate_days: 30
 ```
 
-Umgebungsvariablen: `NLA_CONFIG`, `NLA_DATA_DIR`, `NLA_PORT`, `NLA_DEV_MODE`, `NLA_LOG_LEVEL`.
+Environment variables: `NLA_CONFIG`, `NLA_DATA_DIR`, `NLA_PORT`, `NLA_DEV_MODE`, `NLA_LOG_LEVEL`.
 
 ---
 
-## Datenbank & Backup
+## Database & backup
 
-SQLite im WAL-Modus: `/var/lib/network-lag-analyzer/nla.sqlite3`.
+SQLite in WAL mode: `/var/lib/network-lag-analyzer/nla.sqlite3`.
 
-| Tabelle | Inhalt |
+| Table | Content |
 |---|---|
-| `measurements` | Netzwerkzustand je Bucket (`res` = 1/10/60 s) |
-| `target_measurements` | RTT/Verlust je Ziel |
-| `ping_samples` | einzelne Probes – **standardmäßig aus** (`retention.ping_samples`) |
-| `device_traffic` | Bytes je Gerät und Bucket (Schlüssel: `devices.id`) |
-| `daily_stats` | Tages-Zusammenfassung, **von der Retention ausgenommen** |
-| `bufferbloat` | Latenz unter Last je 10-Minuten-Fenster |
-| `network_flows` | abgeschlossene Flows (nur Metadaten) |
-| `devices` | Geräte inkl. eigener Namen |
-| `events`, `incidents` | erkannte Events, Incidents inkl. Analyse (JSON) |
-| `dns_queries` | DNS-Aktivität je Client und Minute (aus Pi-hole) |
-| `gaming_sessions` | Sessions inkl. Zusammenfassung |
-| `pcap_files` | Deep-Capture-Dateien |
-| `settings` | Überschreibungen aus der Weboberfläche |
+| `measurements` | network state per bucket (`res` = 1/10/60 s) |
+| `target_measurements` | RTT/loss per target |
+| `ping_samples` | individual probes - **off by default** (`retention.ping_samples`) |
+| `device_traffic` | bytes per device and bucket (key: `devices.id`) |
+| `daily_stats` | daily summary, **exempt from retention** |
+| `bufferbloat` | latency under load per 10-minute window |
+| `network_flows` | finished flows (metadata only) |
+| `devices` | devices incl. custom names |
+| `events`, `incidents` | detected events, incidents incl. analysis (JSON) |
+| `dns_queries` | DNS activity per client and minute (from Pi-hole) |
+| `gaming_sessions` | sessions incl. summary |
+| `pcap_files` | Deep Capture files |
+| `settings` | overrides from the web UI |
 
-Aggregation jede Minute: 1 s → 10 s → 1 min (Spitzen bleiben über `rtt_max` erhalten).
-Retention stündlich laut Konfiguration.
+Aggregation every minute: 1 s → 10 s → 1 min (peaks are kept via `rtt_max`).
+Retention hourly according to the configuration.
 
-### Speicherformat
+### Storage format
 
-Messwerte liegen als **INTEGER in festen Einheiten** (Zeiten in 1/100 ms, Anteile in
-1/100 %, Raten in bit/s). SQLite belegt für jedes REAL acht Bytes, für kleine
-Ganzzahlen zwei bis vier. Die Umrechnung passiert ausschließlich in
-`repository.py` (`enc`/`dec`); der übrige Code rechnet weiter in Millisekunden.
-`device_traffic` verweist über `devices.id` statt über die MAC als Text.
+Measurements are stored as **INTEGER in fixed units** (times in 1/100 ms, shares in
+1/100 %, rates in bit/s). SQLite uses eight bytes for every REAL, two to four for small
+integers. Conversion happens exclusively in `repository.py` (`enc`/`dec`); the rest of
+the code keeps working in milliseconds. `device_traffic` references `devices.id` instead
+of the MAC as text.
 
-Gemessen an einem Tag mit vier Zielen und 15 dauerhaft aktiven Geräten:
+Measured on one day with four targets and 15 permanently active devices:
 
-| Tabelle | vorher | jetzt |
+| Table | before | now |
 |---|---|---|
-| `device_traffic` | 63,3 MB | **26,7 MB** |
-| `target_measurements` | 12,1 MB | **7,8 MB** |
-| `measurements` | 9,3 MB | **5,6 MB** |
-| `ping_samples` | 9,6 MB | **0** (standardmäßig aus) |
-| **Summe je Tag** | **94,4 MB** | **40,1 MB** (−58 %) |
+| `device_traffic` | 63.3 MB | **26.7 MB** |
+| `target_measurements` | 12.1 MB | **7.8 MB** |
+| `measurements` | 9.3 MB | **5.6 MB** |
+| `ping_samples` | 9.6 MB | **0** (off by default) |
+| **Total per day** | **94.4 MB** | **40.1 MB** (−58 %) |
 
-Auf einer SD-Karte zählt jeder gesparte Schreibvorgang; aus rund 34 GB im Jahr
-werden so rund 15 GB.
+On an SD card every write saved counts; this turns about 34 GB per year into about 15 GB.
 
-### Schema-Migrationen
+### Schema migrations
 
-`backend/database/migrations.py` enthält nummerierte Schritte. Beim Start wird die
-gespeicherte `schema_version` gelesen und jeder fällige Schritt in einer eigenen
-Transaktion angewendet – davor legt der Dienst eine Sicherungskopie
-(`nla.sqlite3.pre-migration.bak`) an, sofern genug Platz frei ist. Das Ergebnis
-steht in `/api/system` unter `migration` und im Journal. Bestehende Daten werden
-umgerechnet, nicht verworfen.
+`backend/database/migrations.py` contains numbered steps. On start the stored
+`schema_version` is read and every due step is applied in its own transaction -
+before that the service creates a backup copy (`nla.sqlite3.pre-migration.bak`), as long
+as there is enough free space. The result is shown in `/api/system` under `migration`
+and in the journal. Existing data is converted, not discarded.
 
-### Deep Capture: wie viel Platz es wirklich braucht
+### Deep Capture: how much space it really needs
 
-`max_files × file_size_mb` begrenzt nur den **laufenden Ring**. Gehört eine Datei zu
-einem Incident, wird sie aus dem Ring genommen, damit sie nicht überschrieben wird –
-und zählte früher gegen gar keine Grenze. Bei einem Dutzend Incidents am Tag und 90
-Tagen Aufbewahrung werden daraus zweistellige Gigabyte, obwohl in den Einstellungen
-„5 × 50 MB" steht.
+`max_files × file_size_mb` only limits the **running ring**. If a file belongs to an
+incident, it is taken out of the ring so that it is not overwritten - and used to count
+against no limit at all. With a dozen incidents per day and 90 days of retention this
+adds up to tens of gigabytes, although the settings say "5 × 50 MB".
 
-Deshalb gibt es drei Stellschrauben, und nur die erste ist eine Garantie:
+That is why there are three knobs, and only the first is a guarantee:
 
-| Einstellung | Standard | Wirkung |
+| Setting | Default | Effect |
 |---|---|---|
-| `max_total_mb` | 1024 | **harte Obergrenze für das ganze Verzeichnis**. Ist sie erreicht, fällt der älteste Incident-Mitschnitt weg |
-| `protected_days` | 7 | so lange werden Incident-Mitschnitte höchstens aufgehoben |
-| `protect_auto` | `critical` | wofür überhaupt ein Mitschnitt festgehalten wird: `none` (nur gemeldeter Lag), `critical`, `all` |
+| `max_total_mb` | 1024 | **hard upper limit for the whole directory**. When it is reached, the oldest incident capture is dropped |
+| `protected_days` | 7 | incident captures are kept at most this long |
+| `protect_auto` | `critical` | for what a capture is kept at all: `none` (only reported lag), `critical`, `all` |
 
-Der Platzverbrauch steht unter **Setup → Datenbank** mit eigenem Balken – er zählt
-**nicht** zur Datenbankgröße, weil die Dateien daneben liegen. Dort gibt es auch
-„Jetzt aufräumen".
+The space used is shown under **Setup → Database** with its own bar - it does **not**
+count towards the database size, because the files live next to it. There is also
+"Clean up now".
 
-**Abschalten:** Setup → Speicher & Deep Capture → Haken bei „Deep Capture
-(PCAP-Ringpuffer)" entfernen → Speichern. Das wirkt sofort, ohne Neustart des
-Dienstes. Die laufenden Ringdateien werden beim nächsten Aufräumen (stündlich, oder
-sofort über „Jetzt aufräumen") gelöscht; Incident-Mitschnitte bleiben noch
-`protected_days`, damit sie herunterladbar sind.
+**Disabling:** Setup → Storage & Deep Capture → uncheck "Deep Capture (PCAP ring
+buffer)" → Save. This takes effect immediately, without restarting the service. The
+running ring files are deleted at the next cleanup (hourly, or right away via "Clean up
+now"); incident captures stay for `protected_days` so that they can be downloaded.
 
-Beim Start übernimmt der Mitschnitt vorhandene Dateien in seinen Ring. Das ist
-wichtig, weil der Capture-Prozess sich bei Störungen neu startet: Vorher waren die
-Dateien des vorherigen Laufs danach herrenlos – in keinem Ring, nicht geschützt, und
-damit für immer auf der Platte.
+On start the capture adopts existing files into its ring. That matters because the
+capture process restarts itself on errors: before, the files of the previous run were
+then orphaned - in no ring, not protected, and therefore on disk forever.
 
-### Platz verwalten
+### Managing space
 
-Unter **Setup → Datenbank** stehen Größe je Tabelle, ältester Datenpunkt und freier
-Platz auf dem Datenträger. Dort lassen sich Daten **nach Datum löschen** – wahlweise
-„alles vor einem Datum" oder ein Zeitraum, mit Vorschau der betroffenen Zeilen und
-anschließendem VACUUM. Gerätenamen, Ziele, Einstellungen und die
-Tages-Zusammenfassung bleiben dabei immer erhalten.
+**Setup → Database** shows the size per table, the oldest data point and the free
+space on disk. There you can **delete data by date** - either "everything before a date"
+or a time span, with a preview of the affected rows and a VACUUM afterwards. Device
+names, targets, settings and the daily summary are always kept.
 
-`retention.max_db_mb` ist zusätzlich eine Notbremse: Wird die Grenze überschritten,
-löscht der Dienst stündlich von selbst – zuerst Ping-Rohdaten, dann 1-s-Werte, dann
-Flows und 10-s-Werte, und nur so weit, bis wieder Luft ist. Maßstab ist der belegte
-Platz, nicht die Dateigröße (gelöschte Seiten bleiben zunächst in der Datei liegen).
+`retention.max_db_mb` is also an emergency brake: if the limit is exceeded, the service
+deletes data by itself every hour - first raw ping data, then 1 s values, then flows and
+10 s values, and only as far as needed to get some room again. The measure is the space
+used, not the file size (deleted pages initially stay in the file).
 
-**Backup** (im laufenden Betrieb konsistent):
+**Backup** (consistent while running):
 
 ```bash
 sudo -u nla sqlite3 /var/lib/network-lag-analyzer/nla.sqlite3 ".backup '/tmp/nla-backup.sqlite3'"
 sudo cp /etc/network-lag-analyzer/config.yaml /tmp/
 ```
 
-Wiederherstellen: Dienst stoppen, Datei zurückkopieren (`chown nla:nla`), Dienst starten.
+Restore: stop the service, copy the file back (`chown nla:nla`), start the service.
 
 ---
 
 ## Security
 
-* Läuft als Benutzer `nla`, **nicht als root**. Einzige Zusatzberechtigung: `CAP_NET_RAW`
-  (ICMP, optional AF_PACKET) über systemd `AmbientCapabilities`.
-* systemd-Härtung: `ProtectSystem=strict`, `ProtectHome`, `NoNewPrivileges`,
-  eingeschränkte Adressfamilien; Schreibzugriff nur auf `/var/lib/network-lag-analyzer`.
-* Keine Shell-Aufrufe; Eingaben werden mit Pydantic validiert (IP-Adressen, Hostnamen,
-  Interface-Namen per Whitelist).
-* CSRF-Schutz für alle schreibenden Requests (Double-Submit-Token), Origin-Prüfung.
-* Security-Header (CSP ohne Inline-Skripte, `X-Frame-Options: DENY`, `nosniff`).
-* Hostnamen aus dem Netz werden im Browser ausschließlich als Text gerendert (kein `innerHTML`).
-* Optionaler Login (Setup → Zugriffsschutz): scrypt-Hash, HttpOnly-Session-Cookie,
-  nach 5 Fehlversuchen je Adresse 15 Minuten Sperre. **Empfohlen**, sobald Gäste oder
-  fremde Geräte im WLAN sind – ohne Login darf jedes Gerät im LAN alles.
-* Das FRITZ!Box-Passwort wird nie über die API ausgegeben und nur an die Adresse geschickt,
-  für die es eingegeben wurde. `config.yaml` hat die Rechte 0640 (root:nla).
-* Pi-hole-Datenbank nur lesend. Payloads werden nie gespeichert (snaplen, nur Header).
-* Nur für das LAN gedacht – den Port **nicht** im Router freigeben.
+* Runs as user `nla`, **not as root**. Only extra capability: `CAP_NET_RAW`
+  (ICMP, optionally AF_PACKET) via systemd `AmbientCapabilities`.
+* systemd hardening: `ProtectSystem=strict`, `ProtectHome`, `NoNewPrivileges`,
+  restricted address families; write access only to `/var/lib/network-lag-analyzer`.
+* No shell calls; input is validated with Pydantic (IP addresses, host names,
+  interface names via allowlist).
+* CSRF protection for all writing requests (double-submit token), origin check.
+* Security headers (CSP without inline scripts, `X-Frame-Options: DENY`, `nosniff`).
+* Host names from the network are only ever rendered as text in the browser (no `innerHTML`).
+* Optional login (Setup → Access protection): scrypt hash, HttpOnly session cookie,
+  locked for 15 minutes after 5 failed attempts per address. **Recommended** as soon as
+  guests or untrusted devices are on your Wi-Fi - without login, every device on the LAN
+  can do everything.
+* The FRITZ!Box password is never returned by the API and only sent to the address it was
+  entered for. `config.yaml` has mode 0640 (root:nla).
+* Pi-hole database read-only. Payloads are never stored (snaplen, headers only).
+* Meant for the LAN only - do **not** forward the port in the router.
 
-Bedrohungsmodell und Meldeweg für Sicherheitslücken: [SECURITY.md](SECURITY.md).
+Threat model and how to report vulnerabilities: [SECURITY.md](SECURITY.md).
 
 ---
 
-## Performance & Load Guard
+## Performance & load guard
 
-* Anzeige-Verzögerung: Messwerte erscheinen ~3 s nach der Messung (Wartezeit auf
-  verspätete Ping-Antworten). Der gepufferte Router-Mitschnitt verzögert die Anzeige
-  NICHT: Traffic-Werte werden nachgetragen, sobald sie eintreffen. Nur die
-  Ursachenanalyse wartet bewusst, bis die Sekunde vollständig ist (`analysis_delay`).
-* ICMP: ein Socket, keine Prozessstarts; wenige hundert Byte/s. Die Pings werden
-  gleichmäßig über das Messintervall verteilt, damit sie nirgends als Burst
-  rate-limitiert werden (das sähe wie Paketverlust aus).
-* Paketanalyse im eigenen Prozess (`nice 5`), nur Header, Aggregation im Speicher,
-  einmal pro Sekunde ein Batch-Insert in SQLite.
-* Load Guard (`backend/util/loadguard.py`):
+* Display delay: values appear ~3 s after the measurement (waiting for late ping
+  replies). The buffered router capture does NOT delay the display: traffic values are
+  filled in as soon as they arrive. Only the root cause analysis deliberately waits
+  until the second is complete (`analysis_delay`).
+* ICMP: one socket, no process starts; a few hundred bytes/s. The pings are spread
+  evenly over the measuring interval so that they are not rate-limited anywhere as a
+  burst (that would look like packet loss).
+* Packet analysis in a separate process (`nice 5`), headers only, aggregation in
+  memory, one batch insert into SQLite per second.
+* Load guard (`backend/util/loadguard.py`):
 
-| Stufe | Auslöser | Maßnahme |
+| Level | Trigger | Action |
 |---|---|---|
-| 1 | CPU > 75 % (10 s) oder Capture-Rückstand > 2 s | Flow-/Retransmission-Analyse aus |
-| 2 | CPU > 90 %, RAM < 150 MB oder Rückstand > 5 s | Sampling 1:4, als „geschätzt" markiert |
-| 3 | Stufe 2 länger als 60 s | Mitschnitt 5 min pausiert |
+| 1 | CPU > 75 % (10 s) or capture backlog > 2 s | flow/retransmission analysis off |
+| 2 | CPU > 90 %, RAM < 150 MB or backlog > 5 s | sampling 1:4, marked as "estimated" |
+| 3 | level 2 for longer than 60 s | capture paused for 5 min |
 
-Die aktuelle Stufe steht als Banner in der Oberfläche.
+The current level is shown as a banner in the UI.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Lösung |
+| Problem | Solution |
 |---|---|
-| Seite nicht erreichbar | `systemctl status network-lag-analyzer`, `journalctl -u network-lag-analyzer -n 100`; Port frei? (`ss -ltnp \| grep 8088`) |
-| „Ping-Messung nicht möglich" | Dienst muss über systemd laufen (CAP_NET_RAW). Manuell: `sudo setcap cap_net_raw+ep $(readlink -f /opt/network-lag-analyzer/venv/bin/python)` |
-| Pi-hole „nicht lesbar" | `id nla` → Gruppe `pihole`? Rechte: `ls -l /etc/pihole/pihole-FTL.db` (Gruppe muss lesen dürfen). Danach Dienst neu starten |
-| FRITZ!Box-Login fehlgeschlagen | Benutzer/Passwort; zu viele Fehlversuche sperren den Login kurz (BlockTime) |
-| Mitschnitt HTTP 403/404 | Benutzer braucht Recht „FRITZ!Box Einstellungen"; Interface-Namen im Test prüfen |
-| „Unbekanntes Mitschnitt-Format (Magic …)" | Version ≥ 1.0.1 nötig: unterstützt pcap, pcap-modified (`a1b2cd34`) und pcapng |
-| „Interface liefert Linktype … statt Ethernet" | Falsches Mitschnitt-Interface (z. B. WAN/PPP). LAN-Bridge wählen, meist `1-lan` |
-| TR-064 401/Timeout | „Zugriff für Anwendungen zulassen" aktivieren |
-| Geräte-Traffic erscheint nur kurz und verschwindet wieder | Ab 1.0.2/1.0.3 behoben: Die FRITZ!Box liefert den Mitschnitt schubweise (`capture_delay` in `/api/status`, oft 3–9 s). Anzeige bleibt live, Traffic-Werte werden nachgetragen, die Auswertung wartet auf vollständige Daten (`analysis_delay`) |
-| „Game-Paketlücke"-Events ohne Spiel | Ab 1.0.3 behoben: Diese Events entstehen nur noch während einer laufenden Gaming Session |
-| Traffic je Gerät bleibt leer | Setup → Diagnose; Status „capture" in `/api/status`; Router-MAC erkannt? |
-| Werte „geschätzt" | Load Guard aktiv – Pi überlastet; Deep Capture abschalten, Pi 4/5 verwenden |
-| Konstant ~33 % (oder 25/50 %) Packet Loss, obwohl `ping` sauber läuft | Ab 1.0.4 behoben: Die Pings gingen als Bündel im Millisekundenabstand raus und wurden unterwegs rate-limitiert. Jetzt werden sie über das Intervall verteilt (~175 ms Abstand bei 4 Zielen) |
-| Ein Ziel antwortet dauerhaft nicht | Ab 1.0.4 wird es als „antwortet nicht" markiert und aus Verlust/Latenz herausgerechnet, statt Dauerverlust vorzutäuschen. Verlustquote je Ziel steht in `/api/status` unter `targets` |
-| „Verbindung & Mitschnitt testen" meldet „Keine Pakete empfangen" | Ab 1.0.4 behoben: Die FRITZ!Box erlaubt nur EINEN Mitschnitt je Interface. Läuft der Dienst bereits, zeigt der Test jetzt dessen Live-Werte statt einen zweiten Mitschnitt zu öffnen (der zuvor den laufenden beendete) |
-| Download/Upload auf dem Dashboard „Not available" | Ab 1.0.5: Solange der gepufferte Mitschnitt unterwegs ist, füllt die WAN-Gesamtrate aus TR-064 die Lücke („FRITZ!Box gesamt (Summe)"), die exakten Werte je Gerät werden nachgetragen. Bleibt es leer: `capture.state` in `/api/status` prüfen und Dienst neu starten |
-| „Latenz unter Last" zeigt nichts an | Es braucht ruhige UND ausgelastete Phasen sowie eine bekannte Leitungskapazität. Ohne eine Phase über 70 % Auslastung bleibt die Karte leer – das ist kein Fehler |
-| PCAP-Verzeichnis belegt mehrere Gigabyte | Ab 1.1.1 begrenzt `deep_capture.max_total_mb` das gesamte Verzeichnis (Standard 1 GB) und beim Start wird der Bestand übernommen; vorhandene Altlasten verschwinden beim ersten Start oder über Setup → Datenbank → „Jetzt aufräumen" |
-| Datenbank wird zu groß / Speicherkarte voll | Setup → Datenbank: Größe je Tabelle ansehen, nach Datum löschen, danach „Datei verkleinern". Dauerhaft: `retention.max_db_mb` setzen und `retention.ping_samples` aus lassen |
-| Nach einem Update dauert der erste Start länger | Ab 1.1.0 werden bestehende Datenbanken auf das kompakte Format umgebaut (einmalig, mit Sicherungskopie `nla.sqlite3.pre-migration.bak`). Fortschritt steht im Journal |
-| Ein Ziel meldet dauerhaft Verluste | Setup → Diagnose prüft jedes Ziel zweimal (verteilt und als Bündel). Verluste nur im Bündel = das Ziel drosselt ICMP, kein Netzwerkproblem |
-| Oberfläche zeigt nach einem Update altes Verhalten | Ab 1.0.4 werden Frontend-Dateien nicht mehr gecacht; einmal mit Strg+F5 neu laden |
-| Viele PING_SPIKE-Events ohne spürbaren Lag | Schwellwerte in Setup anheben; ICMP-Rate-Limiting einzelner Ziele → andere Ziele wählen |
-| Pi misst selbst über WLAN | LAN-Kabel verwenden, sonst misst du die eigene WLAN-Strecke mit |
-| Zeitstempel verschoben | NTP auf Pi und FRITZ!Box prüfen (`timedatectl`). Der Capture-Prozess gleicht Offsets automatisch aus |
+| Page not reachable | `systemctl status network-lag-analyzer`, `journalctl -u network-lag-analyzer -n 100`; port free? (`ss -ltnp \| grep 8088`) |
+| "Ping measurement not possible" | The service must run via systemd (CAP_NET_RAW). Manually: `sudo setcap cap_net_raw+ep $(readlink -f /opt/network-lag-analyzer/venv/bin/python)` |
+| Pi-hole "not readable" | `id nla` → group `pihole`? Permissions: `ls -l /etc/pihole/pihole-FTL.db` (the group must be able to read). Then restart the service |
+| FRITZ!Box login failed | User/password; too many failed attempts block the login for a while (BlockTime) |
+| Capture HTTP 403/404 | The user needs the "FRITZ!Box Settings" permission; check the interface name in the test |
+| "Unknown capture format (magic …)" | Version ≥ 1.0.1 needed: supports pcap, pcap-modified (`a1b2cd34`) and pcapng |
+| "Interface delivers link type … instead of Ethernet" | Wrong capture interface (e.g. WAN/PPP). Select the LAN bridge, usually `1-lan` |
+| TR-064 401/timeout | Enable "Allow access for applications" |
+| Device traffic shows up only briefly and disappears again | Fixed in 1.0.2/1.0.3: the FRITZ!Box delivers the capture in bursts (`capture_delay` in `/api/status`, often 3–9 s). The display stays live, traffic values are filled in later, the evaluation waits for complete data (`analysis_delay`) |
+| "Game packet gap" events without a game | Fixed in 1.0.3: these events are only created during a running gaming session |
+| Traffic per device stays empty | Setup → diagnosis; status "capture" in `/api/status`; router MAC detected? |
+| Values "estimated" | Load guard active - Pi overloaded; disable Deep Capture, use a Pi 4/5 |
+| Constant ~33 % (or 25/50 %) packet loss although `ping` runs cleanly | Fixed in 1.0.4: the pings went out as a burst milliseconds apart and were rate-limited along the way. Now they are spread over the interval (~175 ms apart with 4 targets) |
+| A target never answers | Since 1.0.4 it is marked as "not answering" and excluded from loss/latency instead of faking a permanent loss. The loss rate per target is in `/api/status` under `targets` |
+| "Test connection & capture" reports "No packets received" | Fixed in 1.0.4: the FRITZ!Box allows only ONE capture per interface. If the service is already running, the test now shows its live values instead of opening a second capture (which used to end the running one) |
+| Download/upload on the dashboard "Not available" | Since 1.0.5: while the buffered capture is on its way, the total WAN rate from TR-064 fills the gap ("FRITZ!Box total (sum)"), the exact per-device values are filled in later. If it stays empty: check `capture.state` in `/api/status` and restart the service |
+| "Latency under load" shows nothing | It needs quiet AND saturated phases plus a known line capacity. Without a phase above 70 % utilization the card stays empty - that is not an error |
+| PCAP directory uses several gigabytes | Since 1.1.1, `deep_capture.max_total_mb` limits the whole directory (default 1 GB) and existing files are adopted on start; old leftovers disappear on the first start or via Setup → Database → "Clean up now" |
+| Database gets too big / memory card full | Setup → Database: look at the size per table, delete by date, then "Shrink file". Permanently: set `retention.max_db_mb` and keep `retention.ping_samples` off |
+| The first start after an update takes longer | Since 1.1.0 existing databases are converted to the compact format (once, with backup copy `nla.sqlite3.pre-migration.bak`). Progress is shown in the journal |
+| A target permanently reports losses | Setup → diagnosis checks every target twice (spread out and as a burst). Losses only in the burst = the target throttles ICMP, not a network problem |
+| The UI shows old behavior after an update | Since 1.0.4 frontend files are no longer cached; reload once with Ctrl+F5 |
+| Many PING_SPIKE events without noticeable lag | Raise the thresholds in Setup; ICMP rate limiting of individual targets → choose other targets |
+| The Pi itself measures over Wi-Fi | Use a LAN cable, otherwise you measure your own Wi-Fi link as well |
+| Timestamps shifted | Check NTP on the Pi and the FRITZ!Box (`timedatectl`). The capture process compensates offsets automatically |
 
-API-Übersicht: `http://PI:8088/api/docs`.
+API overview: `http://PI:8088/api/docs`.
 
 ---
 
-## Entwicklung & Tests
+## Development & tests
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-python -m pytest -q                       # Unit-, Szenario- und API-Tests
-python -m backend.main --dev --data-dir /tmp/nla --port 8099   # Demo mit simulierten Daten
+python -m pytest -q                       # unit, scenario and API tests
+python -m backend.main --dev --data-dir /tmp/nla --port 8099   # demo with simulated data
 ```
 
-Git-Ablauf, Commit-Regeln und Release: [CONTRIBUTING.md](CONTRIBUTING.md).
-Änderungen je Version: [CHANGELOG.md](CHANGELOG.md).
+Git workflow, commit rules and releases: [CONTRIBUTING.md](CONTRIBUTING.md).
+Changes per version: [CHANGELOG.md](CHANGELOG.md).
 
-Simulierte Testszenarien (`tests/test_scenarios.py`): Upload Saturation, Download
-Saturation, ISP Packet Loss, lokales Gateway-Problem, nur ein Zielserver betroffen,
-DNS-Ausfall, Game-Server-Problem sowie Normalbetrieb ohne Fehlalarme.
+Simulated test scenarios (`tests/test_scenarios.py`): upload saturation, download
+saturation, ISP packet loss, local gateway problem, only one target server affected,
+DNS outage, game server problem and normal operation without false alarms.
 
-### Umsetzung nach Phasen
+### Implementation by phases
 
-| Phase | Inhalt | Tests |
+| Phase | Content | Tests |
 |---|---|---|
-| 1–3 | Anforderungsanalyse, Umgebung, [ARCHITECTURE.md](ARCHITECTURE.md) | – |
-| 4–5 | Grundprojekt, SQLite-Schema, ICMP/Jitter/Loss, Dashboard, SSE | `test_metrics.py` |
-| 6 | Device Discovery (FRITZ!Box, Pi-hole, ARP, Capture), Pi-hole | `test_api.py` |
-| 7 | FRITZ!Box-Mitschnitt, pcap/pcapng-Parser, Flows, Retransmissions | `test_capture.py` |
-| 8 | Event Detection, Incident-Korrelation, Ursachenregeln | `test_scenarios.py` |
-| 9 | Gaming Mode, „ICH HATTE GERADE LAG" | `test_scenarios.py`, `test_misc.py` |
-| 10 | Load Guard, PCAP-Ring, systemd, Installer, README | `test_misc.py` |
+| 1–3 | Requirements analysis, environment, [ARCHITECTURE.md](ARCHITECTURE.md) | – |
+| 4–5 | Base project, SQLite schema, ICMP/jitter/loss, dashboard, SSE | `test_metrics.py` |
+| 6 | Device discovery (FRITZ!Box, Pi-hole, ARP, capture), Pi-hole | `test_api.py` |
+| 7 | FRITZ!Box capture, pcap/pcapng parser, flows, retransmissions | `test_capture.py` |
+| 8 | Event detection, incident correlation, cause rules | `test_scenarios.py` |
+| 9 | Gaming Mode, "I JUST HAD LAG" | `test_scenarios.py`, `test_misc.py` |
+| 10 | Load guard, PCAP ring, systemd, installer, README | `test_misc.py` |
+| 11 | Security hardening (FRITZ!Box password binding, login throttle) | `test_security.py` |
 
-### Bekannte Grenzen
+### Known limitations
 
-* ICMP-Ziele nur IPv4; IPv6-Traffic wird im Mitschnitt aber pro Gerät (über die MAC) gezählt.
-* Traffic zwischen zwei Geräten hinter demselben Deco läuft nicht über die FRITZ!Box und
-  ist nicht sichtbar. Für Internet-Lag ist das unerheblich.
-* Game-Server, die ICMP blockieren, werden nur über Paketlücken im Game-Flow bewertet.
-* Retransmissions werden heuristisch erkannt (wie Wireshark: Sequenz ≤ bereits gesehen).
-  Umsortierte Pakete zählen mit.
+* ICMP targets IPv4 only; IPv6 traffic is still counted per device in the capture (via the MAC).
+* Traffic between two devices behind the same Deco does not pass through the FRITZ!Box and
+  is not visible. For internet lag that does not matter.
+* Game servers that block ICMP are only assessed via packet gaps in the game flow.
+* Retransmissions are detected heuristically (like Wireshark: sequence ≤ already seen).
+  Reordered packets count as well.
 
 ---
 
-## Lizenz
+## License
 
-[MIT](LICENSE). Enthält [uPlot](https://github.com/leeoniya/uPlot) (MIT, siehe
+[MIT](LICENSE). Includes [uPlot](https://github.com/leeoniya/uPlot) (MIT, see
 `frontend/vendor/uPlot.LICENSE`).

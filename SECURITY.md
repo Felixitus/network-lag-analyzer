@@ -1,46 +1,45 @@
-# Sicherheit
+# Security
 
-## Sicherheitslücke melden
+## Reporting a vulnerability
 
-Bitte **kein öffentliches Issue** eröffnen. Stattdessen über GitHub
-„Security → Report a vulnerability" (private Meldung) melden. Rückmeldung in der
-Regel innerhalb einer Woche.
+Please do **not** open a public issue. Instead, report it privately via GitHub
+"Security → Report a vulnerability". You will usually get a response within a week.
 
-## Bedrohungsmodell
+## Threat model
 
-Der Network Lag Analyzer ist ein Werkzeug **für das eigene Heimnetz**. Er ist nicht
-dafür gebaut, aus dem Internet erreichbar zu sein.
+Network Lag Analyzer is a tool **for your own home network**. It is not built
+to be reachable from the internet.
 
-| Annahme | Folge |
+| Assumption | Consequence |
 |---|---|
-| Port 8088 ist **nicht** im Router freigegeben | Angreifer müssen im LAN sein |
-| Ohne aktivierten Login darf jedes Gerät im LAN alles | Einstellungen ändern, Daten löschen, Mitschnitte laden |
-| Mit Login: scrypt-Hash, signiertes HttpOnly-Cookie, 5 Fehlversuche / 15 min je Adresse | |
-| Gerätenamen und DNS-Namen kommen aus dem Netz und sind **nicht vertrauenswürdig** | Frontend rendert sie nur als Text |
+| Port 8088 is **not** forwarded in the router | Attackers have to be on the LAN |
+| Without login enabled, every device on the LAN can do everything | Change settings, delete data, download captures |
+| With login: scrypt hash, signed HttpOnly cookie, 5 failed attempts / 15 min per address | |
+| Device names and DNS names come from the network and are **not trustworthy** | The frontend renders them as text only |
 
-**Empfehlung:** Unter *Setup → Zugriffsschutz* den Login aktivieren, sobald andere
-Personen oder fremde Geräte im WLAN sind (Gäste, IoT). Die Oberfläche zeigt
-Traffic pro Gerät – das ist eine sensible Information.
+**Recommendation:** enable the login under *Setup → Access protection* as soon
+as other people or untrusted devices are on your Wi-Fi (guests, IoT). The UI
+shows traffic per device - that is sensitive information.
 
-## Was geschützt ist
+## What is protected
 
-* Dienst läuft als `nla`, nicht als root; einzige Zusatzberechtigung `CAP_NET_RAW`.
-  systemd-Härtung (`ProtectSystem=strict`, `NoNewPrivileges`, …).
-* CSRF-Schutz (Double-Submit-Token + Origin-Prüfung) für alle schreibenden Requests,
-  CSP ohne Inline-Skripte, `X-Frame-Options: DENY`.
-* Das FRITZ!Box-Passwort wird nie über die API ausgegeben und nur an die Adresse
-  geschickt, für die es eingegeben wurde. Wer Adresse oder Gateway ändert, muss es
-  neu eingeben.
-* `config.yaml` 0640 (root:nla), Datenverzeichnis 0750, `session.key` 0600.
-* Pi-hole-Datenbank nur lesend. Mitschnitte enthalten nur Header (`snaplen`), keine Payload.
+* The service runs as `nla`, not as root; the only extra capability is `CAP_NET_RAW`.
+  systemd hardening (`ProtectSystem=strict`, `NoNewPrivileges`, …).
+* CSRF protection (double-submit token + origin check) for all writing requests,
+  CSP without inline scripts, `X-Frame-Options: DENY`.
+* The FRITZ!Box password is never returned by the API and is only sent to the
+  address it was entered for. Changing the address or the gateway requires
+  entering it again.
+* `config.yaml` 0640 (root:nla), data directory 0750, `session.key` 0600.
+* Pi-hole database read-only. Captures contain headers only (`snaplen`), no payload.
 
-## Was bewusst nicht geschützt ist
+## What is deliberately not protected
 
-* Kein HTTPS – im LAN ohne eigene CA nicht sinnvoll umsetzbar. Wer die Oberfläche
-  über fremde Netze erreichen will, nutzt ein VPN (WireGuard der FRITZ!Box).
-* Abmelden löscht das Cookie im Browser; ein vorher kopiertes Cookie bleibt bis zum
-  Ablauf (`session_hours`) gültig. Alle Sitzungen beenden: `session.key` im
-  Datenverzeichnis löschen und den Dienst neu starten.
-* Das FRITZ!Box-Passwort liegt im Klartext in `config.yaml` bzw. der Datenbank,
-  weil es für TR-064 im Klartext gebraucht wird. Deshalb einen **eigenen
-  FRITZ!Box-Benutzer** nur mit dem Recht „FRITZ!Box Einstellungen" anlegen.
+* No HTTPS - not reasonably possible on a LAN without your own CA. If you want to
+  reach the UI from other networks, use a VPN (e.g. the FRITZ!Box WireGuard).
+* Logging out deletes the cookie in the browser; a cookie copied beforehand stays
+  valid until it expires (`session_hours`). To end all sessions: delete `session.key`
+  in the data directory and restart the service.
+* The FRITZ!Box password is stored in plain text in `config.yaml` or the database,
+  because TR-064 needs it in plain text. So create a **dedicated FRITZ!Box user**
+  with only the "FRITZ!Box Settings" permission.

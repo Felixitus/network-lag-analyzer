@@ -5,7 +5,7 @@ __pycache__/
 venv/
 .venv/
 
-# Laufzeitdaten – enthalten Messwerte, Geräte-MACs und ggf. das FRITZ!Box-Passwort
+# Runtime data - contains measurements, device MACs and possibly the FRITZ!Box password
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
@@ -15,11 +15,11 @@ venv/
 session.key
 data/
 
-# Lokale Konfiguration (nur config.example.yaml gehört ins Repo)
+# Local configuration (only config.example.yaml belongs in the repo)
 config.yaml
 .env
 
-# Editor / Betriebssystem
+# Editor / operating system
 .idea/
 .vscode/
 *.swp

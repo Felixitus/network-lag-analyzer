@@ -1,314 +1,313 @@
-# Network Lag Analyzer – Architektur
+# Network Lag Analyzer - Architecture
 
-Dieses Dokument beschreibt das konkrete technische Design. Ziel: die Frage
-**„Warum hatte ich genau zu diesem Zeitpunkt Lag?"** beantworten, ohne Daten
-vorzutäuschen, die der Raspberry Pi technisch nicht sehen kann.
+This document describes the concrete technical design. Goal: answer the question
+**"Why did I have lag at exactly this moment?"** without faking data that the
+Raspberry Pi technically cannot see.
 
-## 1. Ausgangslage (Phase 1/2 – Analyse)
+## 1. Starting point (phase 1/2 - analysis)
 
-Zielumgebung:
+Target environment:
 
 ```
-Internet ── FRITZ!Box 7690 (Router, DHCP, 192.168.178.1)
-               ├── LAN ── TP-Link Deco XE75 (Access-Point-Modus, LAN-Backhaul)
-               │             ├── Gaming-PC (LAN am Deco)
-               │             └── WLAN-Clients (iPhone, Smart-TV …)
-               ├── WLAN-Clients der FRITZ!Box
-               └── Raspberry Pi (Pi-hole, DNS)  ← diese Anwendung
+Internet ── FRITZ!Box 7690 (router, DHCP, 192.168.178.1)
+               ├── LAN ── TP-Link Deco XE75 (access point mode, LAN backhaul)
+               │             ├── gaming PC (LAN on the Deco)
+               │             └── Wi-Fi clients (iPhone, smart TV …)
+               ├── Wi-Fi clients of the FRITZ!Box
+               └── Raspberry Pi (Pi-hole, DNS)  ← this application
 ```
 
-Konsequenzen:
+Consequences:
 
-* Der Pi ist **nicht im Datenpfad**. Er sieht nur eigenen Traffic, Broadcasts
-  und DNS-Anfragen (Pi-hole). Promiscuous Mode am Pi-Port hilft nicht, weil
-  der Switch nur Frames an die MAC des Pi ausliefert.
-* Pi-hole liefert **DNS-Metadaten**, nie Bandbreite. DNS-Anfragen werden
-  ausschließlich zur Zuordnung IP → Hostname und als Aktivitäts-Hinweis
-  genutzt, niemals als Traffic-Wert.
-* Da der Deco im AP-Modus bridged, gibt es **kein doppeltes NAT**. Alle
-  Clients haben eigene IPs/MACs im Netz der FRITZ!Box und ihr Internet-Traffic
-  läuft durch die LAN-Bridge der FRITZ!Box.
+* The Pi is **not in the data path**. It only sees its own traffic, broadcasts
+  and DNS queries (Pi-hole). Promiscuous mode on the Pi's port does not help,
+  because the switch only delivers frames addressed to the Pi's MAC.
+* Pi-hole delivers **DNS metadata**, never bandwidth. DNS queries are used
+  exclusively to map IP → host name and as an activity hint, never as a
+  traffic value.
+* Since the Deco bridges in AP mode, there is **no double NAT**. All clients
+  have their own IPs/MACs in the FRITZ!Box network, and their internet traffic
+  passes through the FRITZ!Box LAN bridge.
 
-Da der Pi in der Zielumgebung nicht erreichbar war, prüft der **Setup-Wizard**
-(Abschnitt 9) die tatsächliche Umgebung beim ersten Start automatisch.
+Since the Pi in the target environment was not reachable during development, the
+**setup wizard** (section 9) checks the actual environment automatically on first start.
 
-## 2. Datenquellen und Sichtbarkeit
+## 2. Data sources and visibility
 
-| Datenquelle | Liefert | Voraussetzung | Standard |
+| Data source | Delivers | Prerequisite | Default |
 |---|---|---|---|
-| ICMP-Prober (eigener Socket) | RTT, Loss, Jitter zu Gateway + Internetzielen | CAP_NET_RAW oder `ping_group_range` | an |
-| DNS-Prober | DNS-Antwortzeit/Ausfall (Pi-hole + Upstream) | – | an |
-| FRITZ!Box TR-064 | WAN-Gesamtrate ↑/↓, Leitungskapazität, Hostliste (IP/MAC/Name) | FRITZ!Box-Benutzer, TR-064 aktiv | an, wenn Zugangsdaten gesetzt |
-| **FRITZ!Box Paketmitschnitt** | Traffic pro Gerät, Flows, TCP-Retransmissions, UDP-Game-Flows | Benutzer mit Recht „FRITZ!Box Einstellungen" | an, wenn Zugangsdaten gesetzt |
-| Lokaler AF_PACKET-Capture | wie oben | Pi ist Gateway oder hängt an Mirror-Port | aus |
-| Pi-hole FTL-Datenbank | Hostnamen, MAC, Hersteller, DNS-Anfragen je Client | Leserecht (Gruppe `pihole`) | automatisch |
-| `/proc/net/arp` | IP ↔ MAC | – | an |
-| psutil | CPU/RAM/Temperatur des Pi | – | an |
+| ICMP prober (own socket) | RTT, loss, jitter to gateway + internet targets | CAP_NET_RAW or `ping_group_range` | on |
+| DNS prober | DNS response time/failure (Pi-hole + upstream) | – | on |
+| FRITZ!Box TR-064 | total WAN rate ↑/↓, line capacity, host list (IP/MAC/name) | FRITZ!Box user, TR-064 enabled | on when credentials are set |
+| **FRITZ!Box packet capture** | traffic per device, flows, TCP retransmissions, UDP game flows | user with the "FRITZ!Box Settings" permission | on when credentials are set |
+| Local AF_PACKET capture | as above | Pi is the gateway or sits on a mirror port | off |
+| Pi-hole FTL database | host names, MAC, vendor, DNS queries per client | read access (group `pihole`) | automatic |
+| `/proc/net/arp` | IP ↔ MAC | – | on |
+| psutil | CPU/RAM/temperature of the Pi | – | on |
 
-### Warum der FRITZ!Box-Paketmitschnitt?
+### Why the FRITZ!Box packet capture?
 
-Bewertete Alternativen:
+Alternatives considered:
 
-* **libpcap/tcpdump/eBPF/nftables/conntrack am Pi**: sehen nur Traffic, der
-  den Pi passiert. Nutzlos, solange der Pi nicht Gateway ist.
-* **Pi als Gateway**: vollständige Sicht, aber jeder Paketpfad hängt dann
-  am Pi. Ein Pi-Ausfall legt das Internet lahm und bringt zusätzliche Latenz,
-  ungeeignet für ein Lag-Diagnosetool.
-* **Managed Switch mit Port-Mirroring**: sehr gut, erfordert aber neue
-  Hardware (vom Nutzer aktuell nicht gewünscht; als Quelle `local` unterstützt).
-* **FRITZ!Box TR-064**: liefert nur Gesamt-WAN-Raten, nicht pro Gerät.
-* **FRITZ!Box-Mitschnitt (`/cgi-bin/capture_notimeout`)**: die FRITZ!Box
-  streamt einen libpcap-Datenstrom ihrer LAN-Bridge über HTTP (klassisches pcap,
-  „modified pcap" mit Magic `a1b2cd34` und 24-Byte-Recordheader, oder pcapng –
-  der Parser erkennt alle drei). Mit
-  `snaplen=128` werden nur Header übertragen (keine Payload). Der Pi zählt
-  daraus Bytes/Pakete pro MAC und Flow-Metadaten. **Keine Zusatzhardware,
-  vollständige Sicht auf den Internet-Traffic aller Clients.**
+* **libpcap/tcpdump/eBPF/nftables/conntrack on the Pi**: only see traffic that
+  passes the Pi. Useless as long as the Pi is not the gateway.
+* **Pi as gateway**: full visibility, but every packet path then depends on the
+  Pi. A Pi failure takes down the internet and adds latency - unsuitable for a
+  lag diagnosis tool.
+* **Managed switch with port mirroring**: very good, but needs new hardware
+  (not wanted by the user at the moment; supported as source `local`).
+* **FRITZ!Box TR-064**: only delivers total WAN rates, not per device.
+* **FRITZ!Box capture (`/cgi-bin/capture_notimeout`)**: the FRITZ!Box streams a
+  libpcap data stream of its LAN bridge over HTTP (classic pcap, "modified pcap"
+  with magic `a1b2cd34` and 24-byte record headers, or pcapng - the parser
+  recognizes all three). With `snaplen=128` only headers are transferred (no
+  payload). From it the Pi counts bytes/packets per MAC and flow metadata.
+  **No extra hardware, full visibility of all clients' internet traffic.**
 
-Gewählt: **FRITZ!Box-Mitschnitt als Primärquelle**, TR-064 als
-Gesamtraten-Fallback, AF_PACKET als Alternative für Mirror-/Gateway-Setups.
+Chosen: **FRITZ!Box capture as the primary source**, TR-064 as the total-rate
+fallback, AF_PACKET as the alternative for mirror/gateway setups.
 
-Kosten des Mitschnitts:
+Cost of the capture:
 
-* Pro Paket ~16 Byte pcap-Header + max. 128 Byte Header-Daten. Bei 10 000
-  Paketen/s ≈ 1,4 MB/s LAN-Traffic vom Router zum Pi – im Gigabit-LAN
-  vernachlässigbar.
-* Der Mitschnitt-Datenstrom läuft selbst über die LAN-Bridge und wird
-  mitgeschnitten (Rückkopplung ≈ 1/10, konvergiert). Diese Verbindung wird
-  über ihr 4-Tupel **aus allen Statistiken ausgefiltert**.
-* Die FRITZ!Box-CPU wird zusätzlich belastet. Das Setup zeigt das an; der
-  Mitschnitt ist abschaltbar.
-* Grenze: Python parst auf einem Pi 4 grob 30–50 kpps. Bei voll ausgelasteter
-  Gigabit-Leitung reicht das nicht; der Load-Guard (Abschnitt 8) schaltet
-  dann auf Sampling mit Hochrechnung um und **kennzeichnet die Werte als
-  geschätzt**.
+* Per packet ~16 bytes of pcap header + at most 128 bytes of header data. At 10,000
+  packets/s that is ≈ 1.4 MB/s of LAN traffic from the router to the Pi - negligible
+  on a gigabit LAN.
+* The capture stream itself passes through the LAN bridge and is captured too
+  (feedback ≈ 1/10, converges). This connection is **filtered out of all
+  statistics** via its 4-tuple.
+* The FRITZ!Box CPU gets additional load. Setup shows this; the capture can be
+  switched off.
+* Limit: Python parses roughly 30–50 kpps on a Pi 4. That is not enough for a fully
+  utilized gigabit line; the load guard (section 8) then switches to sampling with
+  extrapolation and **marks the values as estimated**.
 
-### Zuordnung von Paketen zu Geräten
+### Mapping packets to devices
 
-Auf der LAN-Bridge hat jedes Paket eine Quell- und Ziel-MAC:
+On the LAN bridge every packet has a source and destination MAC:
 
-* Die **Router-MAC** wird aus der ARP-Tabelle (Gateway-IP) bestimmt und
-  zusätzlich gelernt (die MAC, die Pakete mit öffentlichen Quell-IPs sendet).
-* `src_mac = Client, dst_mac = Router, Ziel-IP nicht lokal` → **Upload** des Clients.
-* `src_mac = Router, dst_mac = Client, Quell-IP nicht lokal` → **Download** des Clients.
-* Alles andere → LAN-intern (separat gezählt, nicht als WAN-Last).
+* The **router MAC** is determined from the ARP table (gateway IP) and is also
+  learned (the MAC that sends packets with public source IPs).
+* `src_mac = client, dst_mac = router, destination IP not local` → **upload** of the client.
+* `src_mac = router, dst_mac = client, source IP not local` → **download** of the client.
+* Everything else → LAN-internal (counted separately, not as WAN load).
 
-Der Schlüssel ist die **MAC**, dadurch funktioniert die Zuordnung auch für
-IPv6 (Privacy-Adressen). Die angezeigte IPv4 wird aus ARP/FRITZ!Box/Pi-hole
-bzw. aus beobachteten Paketen gelernt.
+The key is the **MAC**, so the mapping also works for IPv6 (privacy addresses).
+The IPv4 shown is learned from ARP/FRITZ!Box/Pi-hole or from observed packets.
 
-## 3. Prozess- und Modulstruktur
+## 3. Process and module structure
 
 ```
-                ┌───────────────────────────── Hauptprozess (asyncio) ─────────────────────────────┐
-                │ collectors/ping.py   ICMP-Prober (1 Socket, SO_TIMESTAMPNS)                        │
-                │ collectors/dns.py    DNS-Prober                                                    │
-                │ collectors/fritzbox.py  TR-064 (WAN-Raten, Linkrate, Hostliste)                    │
-                │ collectors/pihole.py  FTL-DB read-only (Hostnamen, DNS je Client)                 │
-                │ collectors/devices.py Gerätetabelle (ARP + FRITZ!Box + Pi-hole + Capture)          │
-                │ analysis/metrics.py   Sekunden-Assembler, Ringpuffer (1 h live)                   │
-                │ analysis/events.py    Event Detection (Hysterese, Baseline)                        │
-                │ analysis/correlation.py Incidents, Lag-Report, Timeline-Fenster                    │
-                │ analysis/root_cause.py  dokumentierte Ursachen-Regeln + Empfehlungen               │
-                │ analysis/bufferbloat.py Latenz unter Last (je Richtung)                           │
-                │ analysis/gaming.py    Gaming Sessions, Server-Erkennung                            │
-                │ analysis/daily.py     Tages-Zusammenfassung (Langzeit)                            │
-                │ database/migrations.py nummerierte Schema-Schritte + Sicherungskopie              │
-                │ database/*            SQLite WAL, Batch-Writer, Aggregation, Retention             │
-                │ api/*                 FastAPI REST + Server-Sent Events                            │
+                ┌───────────────────────────── main process (asyncio) ─────────────────────────────┐
+                │ collectors/ping.py   ICMP prober (1 socket, SO_TIMESTAMPNS)                        │
+                │ collectors/dns.py    DNS prober                                                    │
+                │ collectors/fritzbox.py  TR-064 (WAN rates, link rate, host list)                   │
+                │ collectors/pihole.py  FTL DB read-only (host names, DNS per client)               │
+                │ collectors/devices.py device table (ARP + FRITZ!Box + Pi-hole + capture)           │
+                │ analysis/metrics.py   per-second assembler, ring buffer (1 h live)                │
+                │ analysis/events.py    event detection (hysteresis, baseline)                       │
+                │ analysis/correlation.py incidents, lag report, timeline windows                    │
+                │ analysis/root_cause.py  documented cause rules + recommendations                   │
+                │ analysis/bufferbloat.py latency under load (per direction)                        │
+                │ analysis/gaming.py    gaming sessions, server detection                            │
+                │ analysis/daily.py     daily summary (long-term)                                   │
+                │ database/migrations.py numbered schema steps + backup copy                        │
+                │ database/*            SQLite WAL, batch writer, aggregation, retention             │
+                │ api/*                 FastAPI REST + server-sent events                            │
                 └───────────────▲──────────────────────────────────────────────────────────────────┘
-                                │ multiprocessing.Queue (Sekunden-Aggregate, Flows, Status)
-                ┌───────────────┴────────── Capture-Prozess (collectors/traffic.py) ──────────────┐
-                │ Quelle: FRITZ!Box-HTTP-Stream | AF_PACKET | none                                │
-                │ collectors/pcapstream.py  inkrementeller pcap/pcapng-Parser                      │
-                │ collectors/flows.py       Paket-Dekodierung, Bins pro MAC, Flow-Tabelle,         │
-                │                           TCP-Retransmission-Heuristik, Game-Flow-Gaps           │
-                │ PCAP-Ringpuffer (optional, Deep Capture)                                         │
+                                │ multiprocessing.Queue (per-second aggregates, flows, status)
+                ┌───────────────┴────────── capture process (collectors/traffic.py) ──────────────┐
+                │ source: FRITZ!Box HTTP stream | AF_PACKET | none                                │
+                │ collectors/pcapstream.py  incremental pcap/pcapng parser                         │
+                │ collectors/flows.py       packet decoding, bins per MAC, flow table,             │
+                │                           TCP retransmission heuristic, game flow gaps           │
+                │ PCAP ring buffer (optional, Deep Capture)                                        │
                 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Das CPU-intensive Paketparsing läuft **in einem eigenen Prozess**, damit der
-GIL die Zeitstempel der ICMP-Messungen im Hauptprozess nicht verfälscht und
-ein zweiter CPU-Kern genutzt wird. Zwischen den Prozessen werden nur
-Sekunden-Aggregate übertragen, keine Pakete.
+The CPU-intensive packet parsing runs **in a separate process** so that the GIL does
+not distort the timestamps of the ICMP measurements in the main process and a second
+CPU core is used. Only per-second aggregates are transferred between the processes,
+no packets.
 
-## 4. Messverfahren
+## 4. Measuring methods
 
 ### ICMP
 
-* Ein einziger Socket für alle Ziele (`SOCK_DGRAM/IPPROTO_ICMP`, Fallback
-  `SOCK_RAW` mit CAP_NET_RAW). Kein Prozessstart pro Ping.
-* Empfangszeit per Kernel-Zeitstempel (`SO_TIMESTAMPNS`), damit Event-Loop-
-  Verzögerungen die RTT nicht verfälschen.
-* Standard: 1 Probe/s pro Ziel; im Gaming-Modus 4 Probes/s. Die Probes eines
-  Zyklus werden gleichmäßig über das Intervall verteilt (bei 4 Zielen ~175 ms
-  Abstand) – ein ICMP-Burst würde von Routern, Providern oder Zielservern
-  rate-limitiert und wie Paketverlust aussehen.
-* Ein Ziel, das `unreachable_after` Sekunden am Stück nicht antwortet, während
-  andere Ziele weiterhin antworten, gilt als "antwortet nicht" und fließt nicht
-  mehr in Verlust/Latenz ein (sichtbar in `/api/status`). Fallen alle Ziele aus,
-  bleibt es ein echter Ausfall.
-* Timeout 1,5 s → gilt als verloren. Sekunde *T* wird bei *T + 1 + Timeout*
-  finalisiert, das Dashboard hinkt also ~2,5 s hinterher (bewusst, damit
-  Verlust korrekt gezählt wird).
+* A single socket for all targets (`SOCK_DGRAM/IPPROTO_ICMP`, fallback
+  `SOCK_RAW` with CAP_NET_RAW). No process start per ping.
+* Receive time via kernel timestamps (`SO_TIMESTAMPNS`) so that event loop
+  delays do not distort the RTT.
+* Default: 1 probe/s per target; 4 probes/s in Gaming Mode. The probes of one
+  cycle are spread evenly over the interval (~175 ms apart with 4 targets) -
+  an ICMP burst would be rate-limited by routers, providers or target servers and
+  look like packet loss.
+* A target that does not answer for `unreachable_after` seconds in a row while
+  other targets keep answering counts as "not answering" and is no longer included
+  in loss/latency (visible in `/api/status`). If all targets fail, it remains a
+  real outage.
+* Timeout 1.5 s → counts as lost. Second *T* is finalized at *T + 1 + timeout*,
+  so the dashboard lags ~2.5 s behind (deliberately, so that loss is counted
+  correctly).
 
-### Umgang mit dem gepufferten Router-Stream
+### Dealing with the buffered router stream
 
-Die FRITZ!Box liefert den Mitschnitt nicht kontinuierlich, sondern in Schüben
-(bei wenig Traffic mehrere Sekunden am Stück). Würde eine Sekunde stur nach
-Zeitplan finalisiert, fehlten dort die Traffic-Daten – das Dashboard flackert.
-Deshalb:
+The FRITZ!Box does not deliver the capture continuously, but in bursts
+(several seconds at a time when there is little traffic). If a second were
+finalized strictly on schedule, its traffic data would be missing - the dashboard
+would flicker. Therefore:
 
-* Der Hauptprozess misst die tatsächliche Zustellverzögerung der Sekunden-Bins
-  (90. Perzentil der letzten 60) und trennt danach zwei Pfade:
-  **Anzeige** (max. 3 s Wartezeit, damit Ping/Jitter/Loss live bleiben) und
-  **Auswertung** (Event-Engine und Incidents bekommen eine Sekunde erst, wenn ihre
-  Traffic-Daten da sind, spätestens nach `analysis_delay` = Pufferzeit + 3 s).
-* Kommt ein Bin trotzdem zu spät, wird die betroffene Sekunde im Ringpuffer und
-  in der Datenbank nachgetragen und die Oberfläche per `tick_patch`-Ereignis
-  aktualisiert.
-* Bleibt der Mitschnitt ganz aus, finalisiert die Auswertung nach spätestens
-  `traffic_grace` Sekunden trotzdem – dann ehrlich ohne Traffic-Werte.
-* Für die Gesamtraten überbrückt TR-064 die Wartezeit (Quelle `tr064`, alle 2 s,
-  ohne Geräte-Zuordnung). Trifft der Mitschnitt ein, ersetzt er diese Werte. Die
-  Ursachenanalyse akzeptiert TR-064 NICHT als vollständig, weil ihr damit die
-  Zuordnung zum Gerät fehlt.
+* The main process measures the actual delivery delay of the per-second bins
+  (90th percentile of the last 60) and separates two paths based on it:
+  **display** (at most 3 s wait so that ping/jitter/loss stay live) and
+  **evaluation** (the event engine and incidents only get a second once its
+  traffic data is there, at the latest after `analysis_delay` = buffer time + 3 s).
+* If a bin still arrives too late, the affected second is patched in the ring
+  buffer and in the database, and the UI is updated via a `tick_patch` event.
+* If the capture stops entirely, the evaluation still finalizes after at most
+  `traffic_grace` seconds - honestly without traffic values.
+* For the total rates TR-064 bridges the wait (source `tr064`, every 2 s,
+  without per-device mapping). When the capture arrives, it replaces these values.
+  The root cause analysis does NOT accept TR-064 as complete, because it lacks
+  the mapping to devices.
 
-### Kennzahlen pro Sekunde
+### Metrics per second
 
-* **Internet-RTT**: Median der Internetziele (robust gegen ein einzelnes
-  langsames Ziel), zusätzlich Min/Max.
-* **Jitter**: mittlere absolute Differenz aufeinanderfolgender RTTs je Ziel
-  (RFC 3550-Idee, ungeglättet) über 10 s, Median über die Ziele.
-* **Packet Loss**: verlorene/gesendete Probes der Internetziele; Fenster
-  5 s/10 s/30 s/60 s/5 min aus dem Ringpuffer.
-* **Durchsatz**: aus dem Mitschnitt (pro Gerät, exakt) oder TR-064
-  (nur gesamt). Die Quelle wird immer mit angezeigt.
-* **TCP-Retransmissions**: Segment mit Payload, dessen Sequenzende ≤ bereits
-  gesehenem Maximum derselben Richtung (Wireshark-ähnliche Heuristik),
-  getrennt nach Download-/Upload-Richtung.
+* **Internet RTT**: median of the internet targets (robust against a single
+  slow target), plus min/max.
+* **Jitter**: mean absolute difference of consecutive RTTs per target
+  (RFC 3550 idea, unsmoothed) over 10 s, median across the targets.
+* **Packet loss**: lost/sent probes of the internet targets; windows
+  5 s/10 s/30 s/60 s/5 min from the ring buffer.
+* **Throughput**: from the capture (per device, exact) or TR-064
+  (total only). The source is always shown.
+* **TCP retransmissions**: a segment with payload whose sequence end ≤ the maximum
+  already seen in the same direction (Wireshark-like heuristic), separated into
+  download and upload direction.
 
-## 5. Event Detection
+## 5. Event detection
 
-Sprünge der Systemuhr (NTP nach dem Boot) werden erkannt: Weicht die Wanduhr um
-mehr als zwei Sekunden von der monotonen Uhr ab, werden angefangene Sekunden
-verworfen und die Zeitrechnung rastet neu ein – lieber eine ehrliche Lücke als
-Messwerte unter falschem Zeitstempel. Erkannte Sprünge stehen in `/api/system`.
+Jumps of the system clock (NTP after boot) are detected: if the wall clock deviates
+from the monotonic clock by more than two seconds, started seconds are discarded and
+the time base locks in again - an honest gap is better than measurements under a
+wrong timestamp. Detected jumps are listed in `/api/system`.
 
-Jede finalisierte Sekunde läuft durch die Detektoren in `analysis/events.py`.
-Baseline = gleitender Median der letzten 5 min (ohne Spike-Sekunden).
-Jeder Detektor hat eine Start- und eine End-Bedingung (Hysterese), Events
-haben Start, Ende, Spitzenwert, Baseline und Details.
+Every finalized second passes through the detectors in `analysis/events.py`.
+Baseline = rolling median of the last 5 min (without spike seconds).
+Every detector has a start and an end condition (hysteresis); events
+have a start, end, peak value, baseline and details.
 
-Event-Typen: `PING_SPIKE, PACKET_LOSS, HIGH_JITTER, HIGH_UPLOAD,
+Event types: `PING_SPIKE, PACKET_LOSS, HIGH_JITTER, HIGH_UPLOAD,
 HIGH_DOWNLOAD, TCP_RETRANSMISSION_SPIKE, CONNECTION_DROP, DNS_FAILURE,
 GATEWAY_LATENCY, INTERNET_LATENCY, GAME_FLOW_GAP`.
 
-## 6. Incidents und Ursachenanalyse
+## 6. Incidents and root cause analysis
 
-* Lag-relevante Events öffnen einen **Incident**; er schließt 5 s nach dem
-  letzten Lag-Event. Danach wird das Fenster [Start − 30 s, Ende + 5 s]
-  analysiert.
-* Der **„ICH HATTE GERADE LAG"-Button** erzeugt sofort einen Incident für
-  die letzten 10 s/30 s/60 s/5 min und liefert eine Zeitleiste der Funde.
-* `analysis/root_cause.py` enthält jede Regel als eigene, dokumentierte
-  Funktion. Jede Regel liefert Kategorie, Punktzahl, Evidenzliste und ggf.
-  Gerät. Die Confidence wird aus der Evidenz abgeleitet:
+* Lag-relevant events open an **incident**; it closes 5 s after the last lag
+  event. Then the window [start − 30 s, end + 5 s] is analyzed.
+* The **"I JUST HAD LAG" button** immediately creates an incident for the last
+  10 s/30 s/60 s/5 min and returns a timeline of the findings.
+* `analysis/root_cause.py` contains every rule as a separate, documented function.
+  Every rule returns a category, score, list of evidence and possibly a device.
+  The confidence is derived from the evidence:
 
-| Confidence | Formulierung | Bedeutung |
+| Confidence | Wording | Meaning |
 |---|---|---|
-| low | „zeitlich korreliert" | trat gleichzeitig auf, mehr nicht |
-| medium | „möglicher Verursacher" | plausibel, aber Evidenz unvollständig |
-| high | „wahrscheinlicher Verursacher" | Reihenfolge, Dauer und Ausschlusskriterien passen |
+| low | "temporally correlated" | happened at the same time, nothing more |
+| medium | "possible cause" | plausible, but evidence incomplete |
+| high | "likely cause" | order, duration and exclusion criteria fit |
 
-Fehlt eine Datenquelle (z. B. kein Traffic pro Gerät), sagt die Analyse das
-ausdrücklich und benennt kein Gerät.
+If a data source is missing (e.g. no traffic per device), the analysis says so
+explicitly and names no device.
 
-* Zu jeder Kategorie gehört eine **Handlungsempfehlung** (`RECOMMENDATIONS` in
-  `root_cause.py`) mit einem `scope`: `self` (selbst behebbar), `provider`
-  (nur der Anbieter kann es ändern), `remote` (Zielserver/Routing) oder `none`.
-  Upload- und Download-Sättigung bekommen bewusst gegensätzliche Ratschläge:
-  beim Upload steht die Warteschlange im eigenen Router (Priorisierung wirkt),
-  beim Download beim Provider (nur Drosseln des ladenden Geräts wirkt).
-* `analysis/bufferbloat.py` misst die **Latenz unter Last** je Richtung:
-  Median-RTT ruhiger Sekunden (≤ 20 % Auslastung) gegen die Median-RTT
-  ausgelasteter Sekunden (≥ 70 % in einer Richtung, < 40 % in der anderen).
-  Mindestens 5 Sekunden je Gruppe, sonst kein Ergebnis. Wird im Incident
-  mitgeliefert (`metrics.latency_under_load`) und über `/api/bufferbloat`
-  als Zeitraum-Kennzahl ausgegeben.
+* Every category comes with a **recommendation** (`RECOMMENDATIONS` in
+  `root_cause.py`) with a `scope`: `self` (fixable yourself), `provider`
+  (only the provider can change it), `remote` (target server/routing) or `none`.
+  Upload and download saturation deliberately get opposite advice:
+  for the upload the queue sits in your own router (prioritization works),
+  for the download at the provider (only throttling the downloading device works).
+* `analysis/bufferbloat.py` measures the **latency under load** per direction:
+  median RTT of quiet seconds (≤ 20 % utilization) against the median RTT of
+  saturated seconds (≥ 70 % in one direction, < 40 % in the other).
+  At least 5 seconds per group, otherwise no result. Included in the incident
+  (`metrics.latency_under_load`) and returned as a time-span metric via
+  `/api/bufferbloat`.
 
-## 7. Datenhaltung (SQLite, WAL)
+## 7. Data storage (SQLite, WAL)
 
-Tabellen: `settings, targets, ping_samples, measurements, target_measurements,
+Tables: `settings, targets, ping_samples, measurements, target_measurements,
 devices, device_traffic, network_flows, events, incidents, dns_queries,
 gaming_sessions, pcap_files, bufferbloat, daily_stats`.
 
-* `measurements`, `target_measurements`, `device_traffic` haben eine Spalte
-  `res` (1, 10, 60 s). Ein Aggregations-Job verdichtet minütlich 1 s → 10 s → 60 s.
-* Retention (konfigurierbar): 1 s-Werte 24 h, 10 s-Werte 7 Tage, 60 s-Werte
-  30 Tage, Flows 7 Tage, Events/Incidents 90 Tage.
-* Messwerte liegen als INTEGER in festen Einheiten (1/100 ms, 1/100 %, bit/s);
-  umgerechnet wird nur in `repository.py` (`enc`/`dec`). `device_traffic` nutzt
-  `devices.id` statt der MAC als Text. Zusammen rund 58 % weniger Schreibvolumen
-  – auf einer SD-Karte der entscheidende Punkt.
-* Schema-Änderungen laufen über nummerierte Schritte in `migrations.py`. Beim
-  Start wird `schema_version` gelesen, jeder fällige Schritt in einer eigenen
-  Transaktion angewendet, davor eine Sicherungskopie angelegt (sofern Platz frei).
-* `daily_stats` hält je Tag rund 200 Byte (Perzentile, Verlust, Spitzen,
-  Bufferbloat, Incidents je Kategorie) und ist von der Retention ausgenommen.
-* `retention.max_db_mb` ist eine Notbremse: Überschreitet der BELEGTE Platz die
-  Grenze, wird schrittweise gelöscht (Rohdaten → 1 s → Flows → 10 s) und danach
-  VACUUM ausgeführt. Freie Seiten zählen nicht mit, sonst liefe das Löschen endlos.
-* Deep Capture hat ein **Gesamtbudget** (`max_total_mb`), nicht nur `max_files`.
-  Geschützte Incident-Mitschnitte liegen außerhalb des Rings und bekommen den
-  Rest des Budgets; ist es voll, fällt der älteste weg. Beim Start übernimmt der
-  Ring den vorhandenen Bestand – ohne das blieben nach jedem Neustart des
-  Capture-Prozesses dessen Dateien herrenlos liegen.
-* `bufferbloat` speichert je 10-Minuten-Fenster neun Zahlen (Ruhe-Median,
-  Median und Spitze je Richtung, Sekundenzahlen). Damit bleibt der Verlauf der
-  Latenz unter Last über Wochen sichtbar, obwohl die 1-s-Werte nach einem Tag
-  gelöscht werden. Aufbewahrung wie Events (90 Tage).
-* Schreiben ausschließlich über einen Batch-Writer (ein Thread, eine
-  Transaktion pro Sekunde). Lesen über separate Verbindungen.
-* Live-Charts und die Lag-Analyse lesen primär aus dem In-Memory-Ringpuffer
-  (1 h), historische Bereiche aus der Datenbank.
+* `measurements`, `target_measurements`, `device_traffic` have a column
+  `res` (1, 10, 60 s). An aggregation job condenses 1 s → 10 s → 60 s every minute.
+* Retention (configurable): 1 s values 24 h, 10 s values 7 days, 60 s values
+  30 days, flows 7 days, events/incidents 90 days.
+* Measurements are stored as INTEGER in fixed units (1/100 ms, 1/100 %, bit/s);
+  conversion only happens in `repository.py` (`enc`/`dec`). `device_traffic` uses
+  `devices.id` instead of the MAC as text. Together about 58 % less write volume -
+  on an SD card the decisive point.
+* Schema changes go through numbered steps in `migrations.py`. On start
+  `schema_version` is read, every due step is applied in its own transaction, and a
+  backup copy is made beforehand (if there is enough space).
+* `daily_stats` keeps about 200 bytes per day (percentiles, loss, peaks,
+  bufferbloat, incidents per category) and is exempt from retention.
+* `retention.max_db_mb` is an emergency brake: if the USED space exceeds the limit,
+  data is deleted step by step (raw data → 1 s → flows → 10 s) and VACUUM runs
+  afterwards. Free pages do not count, otherwise the deletion would run forever.
+* Deep Capture has a **total budget** (`max_total_mb`), not just `max_files`.
+  Protected incident captures live outside the ring and get the rest of the budget;
+  when it is full, the oldest one is dropped. On start the ring adopts the existing
+  files - without that, the capture process's files would be left orphaned after
+  every restart.
+* `bufferbloat` stores nine numbers per 10-minute window (idle median, median and
+  peak per direction, second counts). This keeps the history of the latency under
+  load visible over weeks, although the 1 s values are deleted after one day.
+  Retention as for events (90 days).
+* Writing happens exclusively via a batch writer (one thread, one transaction per
+  second). Reading via separate connections.
+* Live charts and the lag analysis read primarily from the in-memory ring buffer
+  (1 h), historical ranges from the database.
 
-## 8. Ressourcenschutz (Load Guard)
+## 8. Resource protection (load guard)
 
-`util/loadguard.py` überwacht System-CPU, verfügbaren RAM, Temperatur und
-den Rückstand des Capture-Prozesses:
+`util/loadguard.py` monitors system CPU, available RAM, temperature and the
+backlog of the capture process:
 
-| Stufe | Auslöser (Standard) | Maßnahme |
+| Level | Trigger (default) | Action |
 |---|---|---|
-| 0 | normal | volle Analyse |
-| 1 | CPU > 75 % (10 s) oder Rückstand > 2 s | keine Flow-/Retransmission-Analyse, nur Bytes pro Gerät |
-| 2 | CPU > 90 % oder RAM < 150 MB oder Rückstand > 5 s | Sampling 1:4, hochgerechnet, als „geschätzt" markiert |
-| 3 | anhaltend Stufe 2 für 60 s | Mitschnitt pausiert für 5 min, UI zeigt „Not available (Last)" |
+| 0 | normal | full analysis |
+| 1 | CPU > 75 % (10 s) or backlog > 2 s | no flow/retransmission analysis, only bytes per device |
+| 2 | CPU > 90 % or RAM < 150 MB or backlog > 5 s | sampling 1:4, extrapolated, marked as "estimated" |
+| 3 | level 2 sustained for 60 s | capture paused for 5 min, UI shows "Not available (load)" |
 
-Pi-hole hat Vorrang: der Dienst läuft mit `Nice=10`, `CPUWeight=50`,
-`MemoryMax=300M`.
+Pi-hole takes precedence: the service runs with `Nice=10`, `CPUWeight=50`,
+`MemoryMax=350M`.
 
-## 9. Setup-Wizard
+## 9. Setup wizard
 
-Prüft Interfaces, IP, Default-Gateway, Pi-hole, ob der Pi Gateway ist,
-IP-Forwarding, sichtbare Clients, Promiscuous Mode, FRITZ!Box-Login,
-TR-064 und Mitschnitt – und zeigt eine ehrliche Fähigkeitsmatrix
-(„Traffic all LAN devices: ✗ – Pi nicht im Datenpfad …").
+Checks interfaces, IP, default gateway, Pi-hole, whether the Pi is the gateway,
+IP forwarding, visible clients, promiscuous mode, FRITZ!Box login,
+TR-064 and capture - and shows an honest capability matrix
+("Traffic all LAN devices: ✗ - Pi not in the data path …").
 
-## 10. Sicherheit
+## 10. Security
 
-* Dienst läuft als Benutzer `nla`, nicht root. `CAP_NET_RAW` (ICMP,
-  AF_PACKET) über systemd `AmbientCapabilities`.
-* Keine Shell-Aufrufe; keine Benutzereingabe erreicht einen Subprozess.
-* Pydantic-Validierung aller Eingaben, IP-Adressen über `ipaddress`.
-* Optionaler Login (scrypt-Hash, HttpOnly-Session-Cookie). CSRF-Schutz für
-  alle schreibenden Requests über Double-Submit-Token (`X-CSRF-Token`).
-* FRITZ!Box-Passwort in `/etc/network-lag-analyzer/config.yaml` (0640,
-  root:nla) bzw. DB-Setting; wird nie über die API zurückgegeben.
-* Pi-hole wird nur **lesend** geöffnet (`mode=ro`).
+* The service runs as user `nla`, not root. `CAP_NET_RAW` (ICMP,
+  AF_PACKET) via systemd `AmbientCapabilities`.
+* No shell calls; no user input reaches a subprocess.
+* Pydantic validation of all input, IP addresses via `ipaddress`.
+* Optional login (scrypt hash, HttpOnly session cookie, throttled after failed
+  attempts). CSRF protection for all writing requests via a double-submit token
+  (`X-CSRF-Token`).
+* FRITZ!Box password in `/etc/network-lag-analyzer/config.yaml` (0640,
+  root:nla) or DB setting; never returned by the API and only sent to the address
+  it was entered for.
+* Pi-hole is only opened **read-only** (`mode=ro`).
 
-## 11. Keine Fake-Daten
+Threat model: [SECURITY.md](SECURITY.md).
 
-Jeder Messwert ist entweder gemessen oder `null`. Das Frontend zeigt `null`
-als **„Not available"** mit Begründung. Synthetische Daten gibt es nur mit
-`dev_mode: true`, dann mit dauerhaftem Banner „DEMO-MODUS".
+## 11. No fake data
+
+Every measurement is either measured or `null`. The frontend shows `null`
+as **"Not available"** with a reason. Synthetic data only exists with
+`dev_mode: true`, then with a permanent "DEMO MODE" banner.
