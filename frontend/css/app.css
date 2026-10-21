@@ -111,6 +111,7 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
 .status-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
 .tiles { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--border);
   border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.tiles.tiles-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .tile { background: var(--surface-1); padding: 14px 16px; min-width: 0; }
 .tile .label { font-size: 12px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 .tile .value { font-size: 28px; font-weight: 650; margin-top: 6px; white-space: nowrap; }
@@ -294,6 +295,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .empty { color: var(--text-muted); padding: 18px 0; text-align: center; }
 .skeleton { color: var(--text-muted); padding: 30px; text-align: center; }
 
+/* ------------------------------------------------------------ DNS usage */
+.stack-sm > * + * { margin-top: 8px; }
+.cat-row { grid-template-columns: 14px minmax(0, 1fr) 64px; }
+.badge.cat { font-weight: 500; }
+.badge.cat-low { border-style: dashed; }
+.pager { margin-top: 12px; }
+
 @media (max-width: 1200px) {
   .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .status-wrap { grid-template-columns: 1fr; }
@@ -308,7 +316,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
   .hm-row { grid-template-columns: 110px minmax(0, 1fr); }
 }
 @media (max-width: 560px) {
-  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tiles, .tiles.tiles-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tile .value { font-size: 22px; }
   .talker { grid-template-columns: 1fr; }
   .brand span { display: none; }

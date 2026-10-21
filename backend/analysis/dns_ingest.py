@@ -21,11 +21,12 @@ worse.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from ..collectors.ftl_queries import FtlQueryLog
+from ..collectors.ftl_queries import DnsQuery, FtlQueryLog
 from ..database.repository import get_setting, set_setting
 from .dns_clients import Attribution, ClientResolver, IpHistory
 
@@ -49,6 +50,7 @@ class Batch:
     clients: dict[str, list] = field(default_factory=dict)              # key → [Attribution, first, last]
     hourly: dict[tuple[str, int], list[int]] = field(default_factory=dict)       # (key, hour) → [q, blocked, dup]
     daily: dict[tuple[str, int, str], list] = field(default_factory=dict)       # (key, day, domain) → [q, b, first, last]
+    hourly_domains: dict[tuple[str, int, str], list] = field(default_factory=dict)  # (key, hour, domain) → same
     history: list[tuple] = field(default_factory=list)                   # (ip, first, mac, last)
     history_since: float | None = None
 
@@ -73,6 +75,12 @@ ON CONFLICT(client, day, domain) DO UPDATE SET
     queries = queries + excluded.queries, blocked = blocked + excluded.blocked,
     first_ts = MIN(first_ts, excluded.first_ts), last_ts = MAX(last_ts, excluded.last_ts)
 """
+UPSERT_HOURLY_DOMAIN = """
+INSERT INTO dns_domain_hourly(ts, client, domain, queries, blocked, first_ts, last_ts) VALUES (?,?,?,?,?,?,?)
+ON CONFLICT(client, ts, domain) DO UPDATE SET
+    queries = queries + excluded.queries, blocked = blocked + excluded.blocked,
+    first_ts = MIN(first_ts, excluded.first_ts), last_ts = MAX(last_ts, excluded.last_ts)
+"""
 UPSERT_HISTORY = """
 INSERT INTO dns_ip_history(ip, first_seen, mac, last_seen) VALUES (?,?,?,?)
 ON CONFLICT(ip, first_seen) DO UPDATE SET mac = excluded.mac,
@@ -81,14 +89,18 @@ ON CONFLICT(ip, first_seen) DO UPDATE SET mac = excluded.mac,
 
 
 class DnsIngestor:
-    def __init__(self, ftl: FtlQueryLog, cfg, own_ips: Iterable[str] = ()):
+    def __init__(self, ftl: FtlQueryLog, cfg, own_ips: Iterable[str] = (), hourly_domain_hours: float = 48):
         self.ftl = ftl
         self.cfg = cfg
+        self.hourly_domain_hours = hourly_domain_hours
         self.own_ips = list(own_ips)
         self.last_id: int | None = None
         self.last_ts: float | None = None
         self.history = IpHistory()
         self._addresses: list = []
+        # step() runs in a worker thread while API requests build resolvers from
+        # the same history and address list in other threads.
+        self._lock = threading.Lock()
         self.status: dict = {"enabled": True, "ok": None, "message": "Starting", "backlog": None,
                              "last_id": None, "last_ts": None, "history_since": None}
 
@@ -119,11 +131,13 @@ class DnsIngestor:
             last_id = resume
 
         if self.history.refreshed_at is None or now - self.history.refreshed_at >= self.cfg.interval:
-            self._addresses = self.ftl.network()
-            changed = self.history.observe(self._addresses, now)
+            addresses = self.ftl.network()
+            with self._lock:
+                self._addresses = addresses
+                changed = self.history.observe(addresses, now)
         else:
             changed = []
-        resolver = ClientResolver(self._addresses, self.own_ips, self.history)
+        resolver = self.resolver()
 
         limit = self.cfg.batch_rows if allow_backfill else max(1000, self.cfg.batch_rows // 10)
         rows = self.ftl.read_since(last_id, limit)
@@ -164,22 +178,39 @@ class DnsIngestor:
             day = day_cache.get(qh)
             if day is None:
                 day = day_cache[qh] = local_day(q.ts)
-            d = b.daily.get((att.key, day, q.domain))
-            if d is None:
-                b.daily[(att.key, day, q.domain)] = [1, int(blocked), int(q.ts), int(q.ts)]
-            else:
-                d[0] += 1
-                d[1] += blocked
-                if q.ts < d[2]:
-                    d[2] = int(q.ts)
-                if q.ts > d[3]:
-                    d[3] = int(q.ts)
+            for acc, k in ((b.daily, (att.key, day, q.domain)), (b.hourly_domains, (att.key, hour, q.domain))):
+                d = acc.get(k)
+                if d is None:
+                    acc[k] = [1, int(blocked), int(q.ts), int(q.ts)]
+                else:
+                    d[0] += 1
+                    d[1] += blocked
+                    if q.ts < d[2]:
+                        d[2] = int(q.ts)
+                    if q.ts > d[3]:
+                        d[3] = int(q.ts)
         self.status["backlog"] = max(0, max_id - b.last_id)
         return b
 
+    def resolver(self) -> ClientResolver:
+        with self._lock:
+            return ClientResolver(list(self._addresses), self.own_ips, self.history)
+
+    # ------------------------------------------------------------- live reads
+    def recent(self, n: int = 30) -> list[tuple[DnsQuery, Attribution]]:
+        """The newest queries straight from FTL (already written by FTL, so up to ~60 s old)."""
+        max_id = self.ftl.max_id()
+        rows = self.ftl.read_since(max(0, max_id - n), n)
+        r = self.resolver()
+        return [(q, r.resolve(q.client, q.ts)) for q in reversed(rows)]
+
     # ------------------------------------------------------------------ write
-    def commit(self, conn, b: Batch) -> None:
-        """Write a batch and the new position in the caller's transaction."""
+    def commit(self, conn, b: Batch, now: float | None = None) -> None:
+        """Write a batch and the new position in the caller's transaction.
+
+        Hourly domain rows older than `hourly_domain_hours` are not written at all:
+        during the backfill they would be deleted by the next retention run anyway.
+        """
         if b.clients:
             conn.executemany(UPSERT_CLIENT, [
                 (k, att.basis, att.mac, att.ip, att.name, int(first), int(last))
@@ -201,6 +232,10 @@ class DnsIngestor:
                                              for (k, hour), (q, bl, dup) in b.hourly.items()])
             conn.executemany(UPSERT_DAILY, [(day, ids[k], dom_ids[dom], q, bl, f, la)
                                             for (k, day, dom), (q, bl, f, la) in b.daily.items()])
+            cut = (time.time() if now is None else now) - self.hourly_domain_hours * 3600
+            conn.executemany(UPSERT_HOURLY_DOMAIN, [(hour, ids[k], dom_ids[dom], q, bl, f, la)
+                                                    for (k, hour, dom), (q, bl, f, la) in b.hourly_domains.items()
+                                                    if hour + 3600 > cut])
         if b.history:
             conn.executemany(UPSERT_HISTORY, [(ip, int(first), mac, int(last)) for ip, first, mac, last in b.history])
         set_setting(conn, STATE_KEY, {"last_id": b.last_id, "last_ts": b.last_ts,

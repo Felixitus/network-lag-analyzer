@@ -156,6 +156,7 @@ class RetentionCfg(BaseModel):
     # per device and day are larger (~140 KB per day on the Pi), hence the shorter default.
     dns_hourly_days: float = Field(400, ge=7, le=3650)
     dns_domain_days: float = Field(180, ge=7, le=3650)
+    dns_domain_hourly_hours: float = Field(48, ge=24, le=24 * 31)
     # Individual ICMP probes. No evaluation reads them, but they cost about 14 MB
     # of writes to the SD card per day. Only enable for troubleshooting.
     ping_samples: bool = False

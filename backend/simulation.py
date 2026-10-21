@@ -186,5 +186,111 @@ class LiveSimulator:
             s = make_second(self.scenario, self.k, self.rng, probes_per_target=4 if core.gaming else 1,
                             onset=3, gaming=core.gaming is not None)
             feed_second(core.hub, sec, s, tid_map=self.tid_map)
+            if sec % 20 == 0 and core.dns_usage is not None:
+                await asyncio.to_thread(build_demo_ftl, core.dns_usage.ftl.db_path, time.time())
             self.k += 1
             await asyncio.sleep(max(0.05, sec + 1.02 - time.time()))
+
+
+# ---------------------------------------------------------------------------- demo DNS log
+# Dev mode feeds the real DNS ingestion pipeline from a generated FTL database,
+# so the DNS pages run the same code path as production - with demo devices only.
+DEMO_IP_ONLY = "192.0.2.99"              # a client Pi-hole knows no MAC for
+_FTL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS query_storage (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL,
+  type INTEGER NOT NULL, status INTEGER NOT NULL, domain INTEGER NOT NULL, client INTEGER NOT NULL,
+  forward INTEGER, additional_info INTEGER, reply_type INTEGER, reply_time REAL, dnssec INTEGER,
+  list_id INTEGER, ede INTEGER);
+CREATE INDEX IF NOT EXISTS idx_queries_timestamp ON query_storage (timestamp);
+CREATE TABLE IF NOT EXISTS domain_by_id (id INTEGER PRIMARY KEY, domain TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS client_by_id (id INTEGER PRIMARY KEY, ip TEXT NOT NULL, name TEXT, UNIQUE(ip, name));
+CREATE TABLE IF NOT EXISTS network (id INTEGER PRIMARY KEY NOT NULL, hwaddr TEXT UNIQUE NOT NULL,
+  interface TEXT NOT NULL, firstSeen INTEGER NOT NULL, lastQuery INTEGER NOT NULL, numQueries INTEGER NOT NULL,
+  macVendor TEXT, aliasclient_id INTEGER);
+CREATE TABLE IF NOT EXISTS network_addresses (network_id INTEGER NOT NULL, ip TEXT UNIQUE NOT NULL,
+  lastSeen INTEGER NOT NULL, name TEXT, nameUpdated INTEGER);
+"""
+# service → (domains, fixed status or None). Status 1 = blocked, 2 = forwarded, 3 = cached.
+_SERVICES = {
+    "steam": (["store.steampowered.com", "steamcommunity.com", "cdn.steamstatic.com", "api.steampowered.com"], None),
+    "discord": (["discord.com", "gateway.discord.gg", "cdn.discordapp.com"], None),
+    "youtube": (["www.youtube.com", "i.ytimg.com", "rr3---sn-demo.googlevideo.com", "youtubei.googleapis.com"], None),
+    "twitch": (["www.twitch.tv", "video-weaver.demo.hls.ttvnw.net"], None),
+    "instagram": (["i.instagram.com", "scontent.cdninstagram.com", "graph.instagram.com"], None),
+    "whatsapp": (["g.whatsapp.net", "mmg.whatsapp.net"], None),
+    "tiktok": (["www.tiktok.com", "v16m.tiktokcdn.com"], None),
+    "facebook": (["www.facebook.com", "static.xx.fbcdn.net", "graph.facebook.com"], None),
+    "netflix": (["www.netflix.com", "ipv4-c001.demo.nflxvideo.net", "assets.nflxext.com"], None),
+    "spotify": (["spclient.wg.spotify.com", "i.scdn.co"], None),
+    "office": (["outlook.office.com", "www.office.com", "teams.microsoft.com"], None),
+    "github": (["github.com", "avatars.githubusercontent.com"], None),
+    "news": (["www.spiegel.de", "www.tagesschau.de", "www.heise.de"], None),
+    "shopping": (["www.amazon.de", "m.media-amazon.com", "www.ebay.de"], None),
+    "icloud": (["gateway.icloud.com", "p42-contacts.icloud.com"], None),
+    "ads": (["securepubads.g.doubleclick.net", "www.google-analytics.com", "app-measurement.com"], 1),
+    "cdn": (["d1demo.cloudfront.net", "a1234.dscx.akamaiedge.net", "fonts.gstatic.com"], None),
+    "updates": (["fe2.update.microsoft.com", "settings-win.data.microsoft.com"], None),
+    "unknown": (["api.weather.example", "telemetry.example"], None),
+}
+# device → (services, active local hours [from, to))
+_PROFILES = {
+    MAC_PC: (["steam", "discord", "youtube", "twitch", "ads", "updates", "cdn"], (15, 24)),
+    MAC_IPHONE: (["instagram", "whatsapp", "tiktok", "facebook", "icloud", "ads", "cdn", "spotify"], (7, 24)),
+    MAC_TV: (["netflix", "youtube", "ads", "unknown"], (18, 24)),
+    MAC_LAPTOP: (["office", "github", "news", "shopping", "ads", "cdn"], (8, 19)),
+}
+
+
+def _demo_rows(rng: random.Random, t_from: float, t_to: float) -> list[tuple[int, str, str, int]]:
+    """(ts, client_ip, domain, status) for all demo clients with t_from <= ts < t_to."""
+    rows: list[tuple[int, str, str, int]] = []
+    t = int(t_from) // 3600 * 3600
+    while t < t_to:
+        hour = time.localtime(t).tm_hour
+        for mac, (services, (h0, h1)) in _PROFILES.items():
+            ip = DEMO_DEVICES[mac][0]
+            # background lookups every hour, also at night
+            for _ in range(rng.randint(2, 6)):
+                rows.append((t + rng.randint(0, 3599), ip, rng.choice(_SERVICES["cdn"][0]), 3))
+            if not (h0 <= hour < h1) or rng.random() < 0.35:
+                continue
+            for svc in rng.sample(services, k=min(len(services), rng.randint(1, 3))):
+                domains, status = _SERVICES[svc]
+                ts = t + rng.randint(0, 2400)
+                for _ in range(rng.randint(10, 60)):
+                    ts += rng.randint(5, 40)
+                    rows.append((ts, ip, rng.choice(domains), status if status is not None else rng.choice((2, 3, 3))))
+                    if rng.random() < 0.02:
+                        rows.append((ts, ip, rng.choice(domains), 14))   # in-flight duplicate
+        rows.append((t + rng.randint(0, 3599), DEMO_IP_ONLY, rng.choice(_SERVICES["unknown"][0]), 2))
+        rows.append((t + rng.randint(0, 3599), "127.0.0.1", "pi.hole", 3))
+        t += 3600
+    return sorted(r for r in rows if t_from <= r[0] < t_to)
+
+
+def build_demo_ftl(path: str, now: float, days: float = 8) -> None:
+    """Create the demo FTL database, or catch it up to `now`."""
+    import sqlite3
+    rng = random.Random()
+    c = sqlite3.connect(path)
+    try:
+        c.executescript(_FTL_SCHEMA)
+        if not c.execute("SELECT 1 FROM network").fetchone():
+            for mac, (ip, name) in DEMO_DEVICES.items():
+                nid = c.execute("INSERT INTO network (hwaddr, interface, firstSeen, lastQuery, numQueries) "
+                                "VALUES (?, 'eth0', ?, 0, 0)", (mac, int(now - days * 86400 - 3600))).lastrowid
+                c.execute("INSERT INTO network_addresses (network_id, ip, lastSeen, name) VALUES (?,?,?,?)",
+                          (nid, ip, int(now), name))
+        last = c.execute("SELECT MAX(timestamp) FROM query_storage").fetchone()[0]
+        rows = _demo_rows(rng, (last + 1) if last else now - days * 86400, now)
+        for _ts, ip, domain, _st in rows:
+            c.execute("INSERT OR IGNORE INTO domain_by_id (domain) VALUES (?)", (domain,))
+            c.execute("INSERT OR IGNORE INTO client_by_id (ip, name) VALUES (?, NULL)", (ip,))
+        dom = {d: i for i, d in c.execute("SELECT id, domain FROM domain_by_id")}
+        cli = {ip: i for i, ip in c.execute("SELECT id, ip FROM client_by_id")}
+        c.executemany("INSERT INTO query_storage (timestamp, type, status, domain, client) VALUES (?,1,?,?,?)",
+                      [(ts, st, dom[d], cli[ip]) for ts, ip, d, st in rows])
+        c.execute("UPDATE network_addresses SET lastSeen = ?", (int(now),))
+        c.commit()
+    finally:
+        c.close()

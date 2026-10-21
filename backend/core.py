@@ -14,6 +14,7 @@ from typing import Any
 
 from . import __version__
 from .analysis import bufferbloat, daily
+from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day
 from .analysis.events import EVENT_LABELS, Event, EventEngine
@@ -85,6 +86,7 @@ class Core:
         self.pihole_status: dict = {"enabled": False}
         self.dns_usage: DnsIngestor | None = None
         self.dns_usage_status: dict = {"enabled": False, "ok": None, "message": "Not available: disabled"}
+        self.classifier: Classifier = Classifier.load(None)
         self.capture_proc: mp.Process | None = None
         self.capture_ctrl: Any = None
         self.capture_out: Any = None
@@ -132,6 +134,7 @@ class Core:
             except Exception as e:  # invalid overrides must not prevent startup
                 log.error("Stored settings invalid, ignoring them: %s", e)
         self.setup_done = await self.db.read(lambda c: repo.get_setting(c, "setup_done", False))
+        self.reload_classifier(await self.db.read(lambda c: repo.get_setting(c, "dns_category_overrides", {})))
         await self.db.read(self._load_state)
         self._init_network()
 
@@ -150,8 +153,7 @@ class Core:
         if self.cfg.dev_mode:
             from .simulation import LiveSimulator
             self.simulator = LiveSimulator(self)
-            self.dns_usage_status = {"enabled": False, "ok": None,
-                                     "message": "Not available: dev mode has no Pi-hole query log"}
+            self._start_demo_dns_usage()
             self.tasks.append(asyncio.create_task(self.simulator.run(), name="simulator"))
         else:
             await self._start_collectors()
@@ -260,6 +262,22 @@ class Core:
                 self.tasks.append(asyncio.create_task(self._fritz_loop(), name="fritz"))
         self._start_capture()
 
+    def reload_classifier(self, overrides: dict) -> None:
+        self.classifier = Classifier.load(self.cfg.data_dir, overrides)
+        for e in self.classifier.errors:
+            log.error("Category rules: %s", e)
+
+    def _start_demo_dns_usage(self) -> None:
+        """Dev mode only: the real ingestion pipeline, fed from a generated FTL database."""
+        from .simulation import build_demo_ftl
+        path = os.path.join(self.cfg.data_dir, "demo-pihole-FTL.db")
+        build_demo_ftl(path, time.time())
+        self.dns_usage = DnsIngestor(FtlQueryLog(path), self.cfg.dns_usage.model_copy(update={"backfill_days": 8}),
+                                     hourly_domain_hours=self.cfg.retention.dns_domain_hourly_hours)
+        self.dns_usage_status = self.dns_usage.status
+        self.dns_usage_status["demo"] = True
+        self.tasks.append(asyncio.create_task(self._dns_usage_loop(self.dns_usage), name="dns-usage"))
+
     def _start_dns_usage(self, pihole_ok: bool) -> None:
         cfg = self.cfg
         if not cfg.dns_usage.enabled:
@@ -271,7 +289,8 @@ class Core:
             return
         own = [a["address"] for i in netinfo.interface_addresses().values() for a in i["ipv4"]]
         own += [a for i in netinfo.interface_addresses().values() for a in i["ipv6"]]
-        self.dns_usage = DnsIngestor(FtlQueryLog(cfg.pihole.ftl_db), cfg.dns_usage, own_ips=own)
+        self.dns_usage = DnsIngestor(FtlQueryLog(cfg.pihole.ftl_db), cfg.dns_usage, own_ips=own,
+                                     hourly_domain_hours=cfg.retention.dns_domain_hourly_hours)
         self.dns_usage_status = self.dns_usage.status
         self.tasks.append(asyncio.create_task(self._dns_usage_loop(self.dns_usage), name="dns-usage"))
 

@@ -265,6 +265,20 @@ CREATE TABLE IF NOT EXISTS dns_domain_daily (
 -- No index on `day`: on the Pi it was half the size of the table and only served
 -- the hourly retention DELETE, for which a scan is cheap.
 
+-- The same per hour, kept only briefly (48 h by default): ranges like "last hour"
+-- or "last 24 h" must not show domains of whole calendar days next to totals
+-- that cover exactly the selected hours.
+CREATE TABLE IF NOT EXISTS dns_domain_hourly (
+    ts        INTEGER NOT NULL,          -- start of the hour
+    client    INTEGER NOT NULL,
+    domain    INTEGER NOT NULL,          -- dns_domains.id
+    queries   INTEGER NOT NULL,
+    blocked   INTEGER NOT NULL,
+    first_ts  INTEGER NOT NULL,
+    last_ts   INTEGER NOT NULL,
+    PRIMARY KEY (client, ts, domain)
+) WITHOUT ROWID;
+
 -- Recorded by us, because FTL's network table only knows the current owner of an IP.
 CREATE TABLE IF NOT EXISTS dns_ip_history (
     ip         TEXT NOT NULL,

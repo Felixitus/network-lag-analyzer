@@ -28,6 +28,34 @@ versions follow [SemVer](https://semver.org/).
   device and day) and `retention.dns_hourly_days` (400) / `dns_domain_days` (180).
 - API: `/api/dns/status`, `/api/dns/clients`, `/api/dns/clients/{id}/hourly`,
   `/api/dns/clients/{id}/domains` (paginated, optionally blocked only).
+- New page **DNS usage**:
+  - Overview: known/active clients, queries, blocked, queries per hour,
+    top domains, categories, latest queries, status of Pi-hole, FRITZ!Box and
+    the ingestion.
+  - Client list with search, online status and an "IP only" badge where no MAC
+    is known.
+  - Client detail: comparison with the previous period (only when that period
+    is fully recorded), categories, top domains, and a domain list filterable by
+    category, name and allowed/blocked, sortable and paginated. Aliases are set
+    there or on the devices page.
+  - Time ranges 1 h, 24 h, 7 d, 30 d or custom. Hours before recording started
+    are hatched, not drawn as zero.
+- Domain categories, rule based and offline:
+  - A shipped rule file covers about 400 domains of known services (Facebook,
+    Instagram, TikTok, YouTube, Twitch, Steam, Discord, Reddit, Microsoft 365, …).
+  - Shared infrastructure (CDNs, cloud hosting, big platforms) is "Other" with
+    low confidence, never a service. SDK domains such as `graph.facebook.com`
+    are ads & tracking, not Facebook use.
+  - Every domain shows the rule, the rule layer and the confidence.
+  - Manual rules in the UI win over the shipped list for the same name. An
+    optional `domain_categories.local.yaml` in the data directory adds own rules.
+    `python -m backend.dns_category_import` adds the UT1 lists (download them
+    yourself; CC BY-SA) as the lowest layer.
+- Domain lists of the last 48 h are exact to the hour (new short-term table
+  `dns_domain_hourly`, `retention.dns_domain_hourly_hours`). Longer ranges use
+  whole local days and say so.
+- Dev mode: the DNS pages run the real ingestion pipeline against a generated
+  demo FTL log (demo devices only).
 
 ### Changed
 - The whole project is now in English: web UI, analysis texts and

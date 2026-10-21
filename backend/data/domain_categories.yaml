@@ -1,0 +1,548 @@
+# Domain → service → category rules for the DNS usage module.
+#
+# Hand-maintained, works offline, MIT like the rest of the project.
+#
+# Matching: a rule for `example.com` matches `example.com` and every subdomain
+# (`cdn.example.com`). The longest matching rule wins, so `youtubei.googleapis.com`
+# beats the shared `googleapis.com`. `exact:` rules match only that one name.
+#
+# Only list domains that belong to ONE service. Shared infrastructure (CDNs, cloud
+# hosting, big platforms serving many products) goes under `shared` - naming a
+# service there would be made up. A query to fastly.net says nothing about which
+# website was behind it.
+#
+# confidence: high   = the domain is operated by and only used for this service
+#             medium = mostly this service, but also embedded elsewhere (SDKs, widgets)
+#             low    = shared infrastructure
+#
+# Overrides without editing this file: `domain_categories.local.yaml` in the data
+# directory (same format, wins over this file) or the manual rules in the web UI
+# (win over everything).
+
+version: 1
+
+categories:
+  social: Social media
+  gaming: Gaming
+  streaming: Streaming & video
+  communication: Communication
+  productivity: Productivity & work
+  shopping: Shopping & e-commerce
+  news: News & media
+  music: Music & audio
+  cloud: Cloud & file storage
+  ads_tracking: Ads & tracking
+  os_updates: Operating systems & updates
+  smart_home: Smart home & IoT
+  other: Other
+  unknown: Unknown
+
+services:
+  # ------------------------------------------------------------ social media
+  facebook:
+    name: Facebook
+    categories: [social]
+    domains: [facebook.com, fbcdn.net, fbsbx.com, fb.com, facebook.net]
+  facebook_sdk:
+    # The Facebook SDK and pixel are embedded in countless other apps and
+    # websites - a query here does not mean Facebook was open.
+    name: Facebook SDK / pixel
+    categories: [ads_tracking]
+    confidence: medium
+    domains: [graph.facebook.com, connect.facebook.net, an.facebook.com, pixel.facebook.com]
+  instagram:
+    name: Instagram
+    categories: [social]
+    domains: [instagram.com, cdninstagram.com, ig.me]
+  tiktok:
+    name: TikTok
+    categories: [social, streaming]
+    domains: [tiktok.com, tiktokv.com, tiktokcdn.com, tiktokcdn-us.com, tiktokv.us, musical.ly]
+  snapchat:
+    name: Snapchat
+    categories: [social, communication]
+    domains: [snapchat.com, sc-cdn.net, sc-static.net, snapkit.com]
+    exact: [feelinsonice-hrd.appspot.com]
+  twitter:
+    name: X (Twitter)
+    categories: [social]
+    domains: [twitter.com, x.com, twimg.com, t.co]
+  reddit:
+    name: Reddit
+    categories: [social]
+    domains: [reddit.com, redd.it, redditmedia.com, redditstatic.com]
+  pinterest:
+    name: Pinterest
+    categories: [social]
+    domains: [pinterest.com, pinimg.com]
+  linkedin:
+    name: LinkedIn
+    categories: [social, productivity]
+    domains: [linkedin.com, licdn.com]
+  bereal:
+    name: BeReal
+    categories: [social]
+    domains: [bereal.com, bere.al]
+
+  # ------------------------------------------------------------ communication
+  whatsapp:
+    name: WhatsApp
+    categories: [communication]
+    domains: [whatsapp.com, whatsapp.net, wa.me]
+  messenger:
+    name: Facebook Messenger
+    categories: [communication]
+    domains: [messenger.com]
+  discord:
+    name: Discord
+    categories: [communication, gaming]
+    domains: [discord.com, discord.gg, discordapp.com, discordapp.net, discord.media, discordcdn.com]
+  telegram:
+    name: Telegram
+    categories: [communication]
+    domains: [telegram.org, telegram.me, t.me]
+  signal:
+    name: Signal
+    categories: [communication]
+    domains: [signal.org, whispersystems.org]
+  threema:
+    name: Threema
+    categories: [communication]
+    domains: [threema.ch]
+  zoom:
+    name: Zoom
+    categories: [communication, productivity]
+    domains: [zoom.us, zoom.com]
+  teams:
+    name: Microsoft Teams
+    categories: [communication, productivity]
+    domains: [teams.microsoft.com, teams.live.com, teams.cloud.microsoft]
+  skype:
+    name: Skype
+    categories: [communication]
+    domains: [skype.com]
+  gmail:
+    name: Gmail
+    categories: [communication]
+    domains: [mail.google.com]
+  outlook:
+    name: Outlook
+    categories: [communication, productivity]
+    domains: [outlook.live.com, outlook.office.com, outlook.office365.com, outlook.com]
+  webde_gmx:
+    name: WEB.DE / GMX
+    categories: [communication]
+    domains: [web.de, gmx.net, gmx.de, gmx.at, gmx.ch]
+  facetime_imessage:
+    name: FaceTime / iMessage
+    categories: [communication]
+    confidence: medium      # ess.apple.com is Apple's identity service, also used in the background
+    domains: [facetime.apple.com, ess.apple.com]
+
+  # ------------------------------------------------------------ productivity
+  microsoft365:
+    name: Microsoft 365
+    categories: [productivity]
+    domains: [office.com, office.net, office365.com, microsoft365.com, officeapps.live.com, sharepoint.com,
+              onenote.com, m365.cloud.microsoft]
+  google_workspace:
+    name: Google Docs / Workspace
+    categories: [productivity]
+    domains: [docs.google.com, sheets.google.com, slides.google.com, calendar.google.com, meet.google.com]
+  slack:
+    name: Slack
+    categories: [communication, productivity]
+    domains: [slack.com, slack-edge.com, slack-msgs.com]
+  notion:
+    name: Notion
+    categories: [productivity]
+    domains: [notion.so, notion.site]
+  github:
+    name: GitHub
+    categories: [productivity]
+    domains: [github.com, githubusercontent.com, githubassets.com, github.io]
+  atlassian:
+    name: Atlassian (Jira, Confluence)
+    categories: [productivity]
+    domains: [atlassian.net, atlassian.com]
+  chatgpt:
+    name: ChatGPT
+    categories: [productivity]
+    domains: [chatgpt.com, openai.com, oaistatic.com, oaiusercontent.com]
+  claude:
+    name: Claude
+    categories: [productivity]
+    domains: [claude.ai, anthropic.com]
+
+  # ------------------------------------------------------------ streaming & video
+  youtube:
+    name: YouTube
+    categories: [streaming]
+    domains: [youtube.com, googlevideo.com, ytimg.com, youtu.be, youtube-nocookie.com, youtubei.googleapis.com,
+              yt3.ggpht.com]
+  twitch:
+    name: Twitch
+    categories: [streaming, gaming]
+    domains: [twitch.tv, ttvnw.net, jtvnw.net, twitchcdn.net, twitchsvc.net, ext-twitch.tv]
+  netflix:
+    name: Netflix
+    categories: [streaming]
+    domains: [netflix.com, netflix.net, nflxvideo.net, nflximg.net, nflxext.com, nflxso.net]
+  disneyplus:
+    name: Disney+
+    categories: [streaming]
+    domains: [disneyplus.com, disney-plus.net, dssott.com, bamgrid.com]
+  primevideo:
+    name: Prime Video
+    categories: [streaming]
+    domains: [primevideo.com, aiv-cdn.net, aiv-delivery.net, amazonvideo.com, atv-ps.amazon.com, atv-ext.amazon.com]
+  appletv:
+    name: Apple TV+
+    categories: [streaming]
+    domains: [tv.apple.com]
+  dazn:
+    name: DAZN
+    categories: [streaming]
+    domains: [dazn.com]
+  crunchyroll:
+    name: Crunchyroll
+    categories: [streaming]
+    domains: [crunchyroll.com]
+  vimeo:
+    name: Vimeo
+    categories: [streaming]
+    domains: [vimeo.com, vimeocdn.com]
+  zdf:
+    name: ZDF Mediathek
+    categories: [streaming, news]
+    domains: [zdf.de]
+  ard:
+    name: ARD Mediathek
+    categories: [streaming, news]
+    domains: [ardmediathek.de, ard.de]
+  joyn:
+    name: Joyn
+    categories: [streaming]
+    domains: [joyn.de]
+  rtlplus:
+    name: RTL+
+    categories: [streaming]
+    domains: [plus.rtl.de]
+  wow:
+    name: WOW
+    categories: [streaming]
+    domains: [wowtv.de]
+
+  # ------------------------------------------------------------ music & audio
+  spotify:
+    name: Spotify
+    categories: [music]
+    domains: [spotify.com, scdn.co, spotifycdn.com]
+  applemusic:
+    name: Apple Music
+    categories: [music]
+    domains: [music.apple.com]
+  soundcloud:
+    name: SoundCloud
+    categories: [music]
+    domains: [soundcloud.com, sndcdn.com]
+  deezer:
+    name: Deezer
+    categories: [music]
+    domains: [deezer.com, dzcdn.net]
+  amazonmusic:
+    name: Amazon Music
+    categories: [music]
+    domains: [music.amazon.com, music.amazon.de]
+  tidal:
+    name: TIDAL
+    categories: [music]
+    domains: [tidal.com]
+
+  # ------------------------------------------------------------ gaming
+  steam:
+    name: Steam
+    categories: [gaming]
+    domains: [steampowered.com, steamcommunity.com, steamcontent.com, steamstatic.com, steamserver.net,
+              steamusercontent.com, valvesoftware.com, steamgames.com]
+  epic:
+    name: Epic Games / Fortnite
+    categories: [gaming]
+    domains: [epicgames.com, epicgames.dev, fortnite.com, unrealengine.com]
+  playstation:
+    name: PlayStation Network
+    categories: [gaming]
+    domains: [playstation.com, playstation.net, sonyentertainmentnetwork.com]
+  xbox:
+    name: Xbox
+    categories: [gaming]
+    domains: [xboxlive.com, xbox.com]
+  nintendo:
+    name: Nintendo
+    categories: [gaming]
+    domains: [nintendo.net, nintendo.com]
+  riot:
+    name: Riot Games
+    categories: [gaming]
+    domains: [riotgames.com, leagueoflegends.com, riotcdn.net, playvalorant.com]
+  battlenet:
+    name: Battle.net
+    categories: [gaming]
+    domains: [battle.net, blizzard.com]
+  ea:
+    name: EA
+    categories: [gaming]
+    domains: [ea.com, origin.com]
+  ubisoft:
+    name: Ubisoft
+    categories: [gaming]
+    domains: [ubi.com, ubisoft.com]
+  roblox:
+    name: Roblox
+    categories: [gaming]
+    domains: [roblox.com, rbxcdn.com]
+  minecraft:
+    name: Minecraft
+    categories: [gaming]
+    domains: [minecraft.net, mojang.com]
+  gog:
+    name: GOG
+    categories: [gaming]
+    domains: [gog.com]
+
+  # ------------------------------------------------------------ shopping
+  amazon:
+    name: Amazon
+    categories: [shopping]
+    confidence: medium      # amazon.com also serves Alexa, Prime Video and devices
+    domains: [amazon.de, amazon.com, amazon.co.uk, amazon.fr, amazon.it, amazon.es, media-amazon.com]
+  ebay:
+    name: eBay
+    categories: [shopping]
+    domains: [ebay.de, ebay.com, ebayimg.com, ebaystatic.com]
+  zalando:
+    name: Zalando
+    categories: [shopping]
+    domains: [zalando.de, zalando.com, zalando.at, ztat.net]
+  otto:
+    name: OTTO
+    categories: [shopping]
+    domains: [otto.de]
+  aliexpress:
+    name: AliExpress
+    categories: [shopping]
+    domains: [aliexpress.com, aliexpress.us]
+  temu:
+    name: Temu
+    categories: [shopping]
+    domains: [temu.com, kwcdn.com]
+  shein:
+    name: SHEIN
+    categories: [shopping]
+    domains: [shein.com, ltwebstatic.com]
+  etsy:
+    name: Etsy
+    categories: [shopping]
+    domains: [etsy.com, etsystatic.com]
+  idealo:
+    name: idealo
+    categories: [shopping]
+    domains: [idealo.de]
+  kleinanzeigen:
+    name: Kleinanzeigen
+    categories: [shopping]
+    domains: [kleinanzeigen.de]
+  paypal:
+    name: PayPal
+    categories: [shopping]
+    domains: [paypal.com, paypalobjects.com]
+
+  # ------------------------------------------------------------ news & media
+  news_de:
+    name: German news sites
+    categories: [news]
+    domains: [spiegel.de, zeit.de, tagesschau.de, faz.net, sueddeutsche.de, bild.de, welt.de, n-tv.de, stern.de,
+              focus.de, handelsblatt.com, t-online.de, heise.de, golem.de, chip.de, computerbase.de]
+  news_at_ch:
+    name: Austrian / Swiss news sites
+    categories: [news]
+    domains: [orf.at, derstandard.at, krone.at, srf.ch, nzz.ch, 20min.ch]
+  news_intl:
+    name: International news sites
+    categories: [news]
+    domains: [bbc.co.uk, bbc.com, bbci.co.uk, cnn.com, nytimes.com, theguardian.com, reuters.com, washingtonpost.com]
+  wikipedia:
+    name: Wikipedia
+    categories: [news]
+    domains: [wikipedia.org, wikimedia.org]
+
+  # ------------------------------------------------------------ cloud & files
+  icloud:
+    name: iCloud
+    categories: [cloud]
+    domains: [icloud.com, icloud-content.com, gateway.icloud.com]
+  icloud_private_relay:
+    # Private Relay hides the real destinations from Pi-hole: everything after
+    # this lookup is invisible to DNS-based statistics.
+    name: iCloud Private Relay
+    categories: [other]
+    domains: [mask.icloud.com, mask-h2.icloud.com, mask-api.icloud.com]
+  onedrive:
+    name: OneDrive
+    categories: [cloud]
+    domains: [onedrive.com, onedrive.live.com, 1drv.com, 1drv.ms]
+  googledrive:
+    name: Google Drive
+    categories: [cloud]
+    domains: [drive.google.com, drive.usercontent.google.com]
+  dropbox:
+    name: Dropbox
+    categories: [cloud]
+    domains: [dropbox.com, dropboxapi.com, dropboxusercontent.com, dropboxstatic.com]
+  mega:
+    name: MEGA
+    categories: [cloud]
+    domains: [mega.nz, mega.io]
+  box:
+    name: Box
+    categories: [cloud]
+    domains: [box.com, boxcdn.net]
+
+  # ------------------------------------------------------------ ads & tracking
+  google_ads:
+    name: Google Ads / Analytics
+    categories: [ads_tracking]
+    domains: [doubleclick.net, googlesyndication.com, googleadservices.com, google-analytics.com,
+              googletagmanager.com, googletagservices.com, app-measurement.com, adservice.google.com]
+  firebase_crashlytics:
+    name: Firebase / Crashlytics telemetry
+    categories: [ads_tracking]
+    confidence: medium
+    domains: [crashlytics.com, firebaselogging-pa.googleapis.com, firebase-settings.crashlytics.com]
+  microsoft_telemetry:
+    name: Microsoft telemetry
+    categories: [ads_tracking]
+    domains: [events.data.microsoft.com, vortex.data.microsoft.com, telemetry.microsoft.com]
+  apple_ads:
+    name: Apple ads / analytics
+    categories: [ads_tracking]
+    domains: [iadsdk.apple.com, xp.apple.com, metrics.icloud.com]
+  ad_networks:
+    name: Ad networks
+    categories: [ads_tracking]
+    domains: [adnxs.com, criteo.com, criteo.net, taboola.com, outbrain.com, amazon-adsystem.com, adsrvr.org,
+              rubiconproject.com, pubmatic.com, openx.net, smartadserver.com, adform.net, yieldlab.net]
+  trackers:
+    name: Tracking / analytics services
+    categories: [ads_tracking]
+    domains: [scorecardresearch.com, hotjar.com, appsflyer.com, adjust.com, branch.io, mixpanel.com,
+              segment.io, segment.com, amplitude.com, ioam.de]
+  app_telemetry:
+    name: App monitoring / crash reports
+    categories: [ads_tracking]
+    confidence: medium
+    domains: [newrelic.com, nr-data.net, sentry.io, bugsnag.com]
+
+  # ------------------------------------------------------------ OS & updates
+  windows_update:
+    name: Windows Update
+    categories: [os_updates]
+    domains: [windowsupdate.com, update.microsoft.com, delivery.mp.microsoft.com, download.windowsupdate.com]
+  apple_updates:
+    name: Apple software updates
+    categories: [os_updates]
+    domains: [swcdn.apple.com, swscan.apple.com, mesu.apple.com, updates.cdn-apple.com, gdmf.apple.com,
+              osxapps.itunes.apple.com]
+  google_updates:
+    name: Google / Chrome updates
+    categories: [os_updates]
+    confidence: medium      # gvt1/gvt2 also deliver Play Store downloads
+    domains: [update.googleapis.com, gvt1.com, gvt2.com]
+  linux_updates:
+    name: Linux package updates
+    categories: [os_updates]
+    domains: [debian.org, raspberrypi.org, raspberrypi.com, ubuntu.com, archlinux.org, fedoraproject.org,
+              pi-hole.net]
+  samsung_updates:
+    name: Samsung firmware updates
+    categories: [os_updates]
+    domains: [samsungotn.net]
+
+  # ------------------------------------------------------------ smart home & IoT
+  alexa:
+    name: Amazon Alexa
+    categories: [smart_home]
+    domains: [amazonalexa.com, alexa.amazon.com, alexa.amazon.de]
+  tuya:
+    name: Tuya (Smart Life)
+    categories: [smart_home]
+    domains: [tuya.com, tuyaeu.com, tuyaus.com, tuyacn.com]
+  hue:
+    name: Philips Hue
+    categories: [smart_home]
+    domains: [meethue.com]
+  tplink_cloud:
+    name: TP-Link cloud (Tapo, Kasa, Deco)
+    categories: [smart_home]
+    domains: [tplinkcloud.com, tplinknbu.com, tplinkra.com]
+  nanoleaf:
+    name: Nanoleaf
+    categories: [smart_home]
+    domains: [nanoleaf.me]
+  home_connect:
+    name: Home Connect (Bosch, Siemens)
+    categories: [smart_home]
+    domains: [home-connect.com]
+  vesync:
+    name: VeSync (Levoit)
+    categories: [smart_home]
+    domains: [vesync.com]
+  shelly:
+    name: Shelly
+    categories: [smart_home]
+    domains: [shelly.cloud]
+  tado:
+    name: tado°
+    categories: [smart_home]
+    domains: [tado.com]
+  netatmo:
+    name: Netatmo
+    categories: [smart_home]
+    domains: [netatmo.net, netatmo.com]
+  ring:
+    name: Ring
+    categories: [smart_home]
+    domains: [ring.com]
+  sonos:
+    name: Sonos
+    categories: [smart_home, music]
+    domains: [sonos.com]
+  smartthings:
+    name: SmartThings
+    categories: [smart_home]
+    domains: [smartthings.com]
+  avm:
+    name: AVM FRITZ!
+    categories: [smart_home]
+    domains: [avm.de, myfritz.net]
+
+  # ------------------------------------------------------------ local network
+  local_network:
+    name: Local network names
+    categories: [other]
+    domains: [lan, local, home.arpa, fritz.box, in-addr.arpa, ip6.arpa]
+
+# Infrastructure shared by many services. Classified as "Other" with low
+# confidence - which service was behind it cannot be told from DNS.
+shared:
+  name: Shared infrastructure (CDN, cloud, platform)
+  categories: [other]
+  domains: [akamai.net, akamaiedge.net, akamaihd.net, akamaized.net, edgekey.net, edgesuite.net,
+            cloudfront.net, amazonaws.com, fastly.net, fastly-edge.com, cloudflare.com, cloudflare.net,
+            cdn77.org, azureedge.net, azurefd.net, trafficmanager.net, msedge.net, windows.net,
+            googleapis.com, gstatic.com, googleusercontent.com, ggpht.com, 1e100.net, google.com, google.de,
+            apple.com, icloud.apple.com, cdn-apple.com, aaplimg.com, itunes.apple.com, apple-dns.net,
+            akadns.net, microsoft.com, live.com, msn.com, bing.com, azure.com, office.cloud.microsoft,
+            gvt3.com, doubleverify.com, jsdelivr.net, unpkg.com, cdnjs.cloudflare.com, wp.com,
+            byteoversea.com, ibytedtos.com, bytefcdn.com, alicdn.com, samsung.com, samsungcloud.com,
+            ntp.org, time.apple.com, time.windows.com]

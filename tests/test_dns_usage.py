@@ -246,3 +246,19 @@ def test_local_day_is_local_midnight():
     t = time.localtime(local_day(T0))
     assert (t.tm_hour, t.tm_min, t.tm_sec) == (0, 0, 0)
     assert 0 <= T0 - local_day(T0) < 25 * 3600
+
+
+def test_hourly_domain_counters_cover_only_recent_hours(ftl, db):
+    now = T0 + 5 * 86400
+    log = ftl.device(MAC_A, [IP_A]).add([(T0, IP_A, "old.example", 2), (now - 600, IP_A, "new.example", 1)]).log()
+    ing = DnsIngestor(log, cfg(), hourly_domain_hours=48)
+    for _ in range(5):
+        b = ing.step(now)
+        db.write_sync(lambda c: ing.commit(c, b, now=now))
+        ing.applied(b)
+        if not b.more:
+            break
+    rows = db.read_sync(lambda c: [tuple(r) for r in c.execute(
+        "SELECT n.name, x.queries, x.blocked FROM dns_domain_hourly x JOIN dns_domains n ON n.id = x.domain")])
+    assert rows == [("new.example", 1, 1)]
+    assert set(domains(db, f"mac:{MAC_A}")) == {"old.example", "new.example"}   # daily keeps both
