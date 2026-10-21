@@ -5,6 +5,18 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Groundwork for the DNS usage module: read-only access to Pi-hole's DNS query
+  log (normalized v6 schema and the older v5 `queries` table), streamed per time
+  range and client on the indexed columns only.
+- DNS queries are attributed to devices by MAC only where that is sound. Queries
+  from IPs without a known MAC, or older than the device now using the IP, stay
+  "IP only" instead of being given to today's owner. The Pi's own queries are
+  counted separately; retries and duplicate in-flight queries are not counted.
+- `python -m backend.dns_mapping_report`: shows how much of the DNS log can be
+  attributed to individual devices, and warns when everything comes from one
+  router or forwarder address.
+
 ### Changed
 - The whole project is now in English: web UI, analysis texts and
   recommendations, log messages, API errors, comments, tests and documentation.
