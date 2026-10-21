@@ -1,6 +1,6 @@
 // DNS usage: network overview, client detail, category rules.
 // Everything shown here are counts of DNS queries as Pi-hole logged them - not usage time, not traffic.
-import { api, clear, fmtDate, fmtDateTime, h, ago, toast, cssVar, NA } from '../lib.js';
+import { api, clear, fmtDate, fmtDateTime, fmtTime, h, ago, toast, cssVar, NA } from '../lib.js';
 import { timeChart } from '../charts.js';
 import { naBox, segmented } from './common.js';
 
@@ -64,7 +64,7 @@ let LABELS = {};
 const catLabel = c => (c === 'not_itemized' ? 'Not itemized' : LABELS[c] || c);
 
 function catBadge(cat, cls) {
-  const title = cls
+  const title = cls === undefined ? catLabel(cat) : cls
     ? `Rule: ${cls.rule || '–'} · source: ${cls.source || 'none'} · confidence: ${CONF_TEXT[cls.confidence] || 'none'}`
       + (cls.service_name ? ` · service: ${cls.service_name}` : '')
       + (cls.categories && cls.categories.length > 1 ? ` · also: ${cls.categories.slice(1).map(catLabel).join(', ')}` : '')
@@ -289,6 +289,7 @@ async function mountClient(main, cid) {
       h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Top domains')), top,
         rangeNote(s.domains_resolution, s.domains_range))));
 
+    body.append(activityCard(cid));
     const domCard = h('div', { class: 'card' });
     body.append(domCard);
     filt.offset = 0;
@@ -358,6 +359,81 @@ async function mountClient(main, cid) {
     fetchPage();
   }
   await load();
+}
+
+// ------------------------------------------------------------------ activity phases (estimated)
+const GAPS = [[0, 'Default'], [2, '2 min'], [5, '5 min'], [10, '10 min'], [15, '15 min'], [30, '30 min']];
+let phaseGap = 0;
+
+function fmtMinutes(s) {
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
+}
+
+function activityCard(cid) {
+  const body = h('div');
+  const card = h('div', { class: 'card' },
+    h('div', { class: 'card-head' }, h('h2', null, 'Activity phases (estimated)'),
+      h('div', { class: 'row small' }, h('span', { class: 'muted' }, 'Pause that ends a phase:'),
+        segmented(GAPS, phaseGap, v => { phaseGap = v; load(); }))),
+    h('p', { class: 'small muted' }, 'Estimated from DNS lookups - not verified screen or app usage time. ',
+      'A phase runs from the first to the last lookup of a service; pauses longer than the chosen gap end it and are not counted.'),
+    body);
+  async function load() {
+    clear(body).append(h('div', { class: 'skeleton' }, 'Computing phases from the Pi-hole log…'));
+    let r;
+    try { r = await api(`api/dns/clients/${cid}/activity?${qs()}${phaseGap ? `&gap=${phaseGap}` : ''}`); }
+    catch (e) { clear(body).append(naBox(`Not available - ${e.message}`)); return; }
+    clear(body);
+    if (r.rebuild_note) body.append(h('div', { class: 'banner warn' }, h('b', null, 'Rebuilding'), h('span', null, r.rebuild_note)));
+    if (r.coverage_note) body.append(h('div', { class: 'small muted' }, r.coverage_note));
+    if (!r.services.length) { body.append(naBox('No lookups that can be attributed to a service in this range.')); return; }
+    body.append(h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
+      h('thead', null, h('tr', null, h('th', null, 'Service'), h('th', { class: 'num' }, 'DNS queries'),
+        h('th', { class: 'num' }, 'Phases'), h('th', null, 'Estimated activity'), h('th', null, 'Confidence'))),
+      h('tbody', null, r.services.map(s => h('tr', null,
+        h('td', null, h('div', null, s.name), h('div', { class: 'small' }, catBadge(s.category)),
+          s.gap_minutes !== (r.gap_minutes || r.default_gap_minutes) ? h('div', { class: 'small muted' }, `gap ${s.gap_minutes} min`) : null),
+        h('td', { class: 'num' }, n(s.queries), s.blocked ? h('div', { class: 'small muted' }, `${n(s.blocked)} blocked`) : null),
+        h('td', { class: 'num' }, n(s.phase_count)),
+        h('td', null, s.estimate_seconds === null
+          ? h('span', { class: 'muted' }, 'Not reliably determinable')
+          : h('b', null, `≈ ${fmtMinutes(s.estimate_seconds)}`)),
+        h('td', { class: 'small' }, s.confidence ? h('span', { class: `badge conf-${s.confidence === 'medium' ? 'medium' : 'low'}` }, s.confidence) : null,
+          h('div', { class: 'muted', style: { maxWidth: '360px' } }, s.reason))))))));
+    body.append(phaseLanes(r));
+    const un = Object.entries(r.unattributed || {});
+    if (un.length) {
+      body.append(h('div', { class: 'small muted', style: { marginTop: '8px' } },
+        `${n(un.reduce((a, [, v]) => a + v, 0))} lookups could not be attributed to a service: `,
+        un.map(([c, v]) => `${catLabel(c)} ${n(v)}`).join(', '), '.'));
+    }
+    body.append(h('details', { class: 'small', style: { marginTop: '12px' } },
+      h('summary', null, 'Why this is only an estimate'),
+      h('ul', null, r.explanation.map(e => h('li', null, e)))));
+  }
+  load();
+  return card;
+}
+
+/** One lane per service with phases, plus "all services" on top. Bars are positioned in % of the range. */
+function phaseLanes(r) {
+  const span = r.end - r.start;
+  const pos = t => `${Math.max(0, Math.min(100, 100 * (t - r.start) / span))}%`;
+  const width = p => `max(2px, ${100 * Math.max(0, Math.min(p.end, r.end) - Math.max(p.start, r.start)) / span}%)`;
+  const lane = (label, phases, color, title) => h('div', { class: 'phase-lane' },
+    h('div', { class: 'phase-label small', title: title || label }, label),
+    h('div', { class: 'phase-track' }, phases.map(p => h('span', {
+      class: 'phase-bar', style: { left: pos(p.start), width: width(p), background: color },
+      title: `${fmtDateTime(p.start)} – ${fmtTime(p.end)} · ${fmtMinutes(p.seconds)} · ${p.queries} lookups`,
+    }))));
+  const services = r.services.filter(s => s.phases.length && s.estimate_seconds !== null).slice(0, 10);
+  if (!services.length && !r.overall.length) return h('div');
+  return h('div', { class: 'phase-lanes', style: { marginTop: '14px' } },
+    lane('All services', r.overall, cssVar('--text-secondary'), 'Phases of any foreground service (at least 3 lookups)'),
+    services.map(s => lane(s.name, s.phases, catColor(s.category))),
+    h('div', { class: 'phase-lane' }, h('div'), h('div', { class: 'phase-axis small muted' },
+      h('span', null, fmtDateTime(r.start)), h('span', null, fmtDateTime(r.end)))));
 }
 
 function comparisonList(cats) {

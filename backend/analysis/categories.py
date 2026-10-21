@@ -17,6 +17,7 @@ is. "Unknown" means no rule matched - not that the domain is harmless.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -50,6 +51,7 @@ class Rule:
     service: str | None
     service_name: str | None
     confidence: str
+    phase_gap: float | None = None   # minutes; service-specific gap for activity phases
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +62,7 @@ class Classification:
     source: str | None = None       # layer that decided, None = no rule matched
     rule: str | None = None         # matched pattern; "=name" for an exact rule
     confidence: str | None = None
+    phase_gap: float | None = None
 
     @property
     def primary(self) -> str:
@@ -106,7 +109,10 @@ def _rule_set_from_data(data: dict, source: str, known: set[str] | None) -> tupl
         conf = entry.get("confidence") or ("low" if sid is None else "high")
         if conf not in CONFIDENCE:
             raise RuleError(f"{sid or 'shared'}: confidence must be one of {CONFIDENCE}")
-        rule = Rule(cats, sid, entry.get("name"), conf)
+        gap = entry.get("phase_gap_minutes")
+        if gap is not None and not (isinstance(gap, (int, float)) and 1 <= gap <= 120):
+            raise RuleError(f"{sid or 'shared'}: phase_gap_minutes must be 1-120")
+        rule = Rule(cats, sid, entry.get("name"), conf, float(gap) if gap is not None else None)
         for key, target in (("domains", into.suffix), ("exact", into.exact)):
             for d in entry.get(key) or ():
                 d = normalize_domain(str(d))
@@ -155,7 +161,11 @@ def manual_rule_set(overrides: dict, known: set[str]) -> RuleSet:
         cats = tuple(c for c in (o.get("categories") or ()) if c in known)
         if not cats or not valid_domain(dom):
             continue
-        r = Rule(cats, None, o.get("service_name") or None, "high")
+        name = (o.get("service_name") or "").strip() or None
+        # A named manual rule defines a service of its own, so that activity phases
+        # can be built for it like for a shipped service.
+        sid = f"manual:{re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')}" if name else None
+        r = Rule(cats, sid, name, "high")
         (rs.exact if o.get("exact") else rs.suffix)[normalize_domain(dom)] = r
     return rs
 
@@ -169,6 +179,13 @@ class Classifier:
         self.errors = errors or []
         self._cache: dict[str, Classification] = {}
         self._cache_size = cache_size
+        # service id → rule; the highest layer that names a service defines it.
+        self.services: dict[str, Rule] = {}
+        for rs in self.layers:
+            for r in (*rs.exact.values(), *rs.suffix.values()):
+                if r.service and r.service not in self.services:
+                    self.services[r.service] = r
+        self.fingerprint = _fingerprint(self.layers)
 
     @classmethod
     def load(cls, data_dir: str | None = None, overrides: dict | None = None,
@@ -224,11 +241,26 @@ class Classifier:
                     return _result(r, rs.source, suffix)
         return UNKNOWN
 
+    def service_info(self, service: str) -> Rule | None:
+        return self.services.get(service)
+
     def summary(self) -> dict:
         return {"layers": [{"source": rs.source, "rules": len(rs)} for rs in self.layers],
                 "errors": self.errors, "categories": self.labels}
 
 
+def _fingerprint(layers: list[RuleSet]) -> str:
+    """Changes whenever any rule changes - stored data derived from rules is rebuilt then."""
+    h = hashlib.sha1()
+    for rs in layers:
+        h.update(rs.source.encode())
+        for kind, d in (("=", rs.exact), ("~", rs.suffix)):
+            for name in sorted(d):
+                r = d[name]
+                h.update(f"{kind}{name}|{','.join(r.categories)}|{r.service}|{r.confidence}|{r.phase_gap};".encode())
+    return h.hexdigest()[:16]
+
+
 def _result(r: Rule, source: str, pattern: str) -> Classification:
     return Classification(categories=r.categories, service=r.service, service_name=r.service_name,
-                          source=source, rule=pattern, confidence=r.confidence)
+                          source=source, rule=pattern, confidence=r.confidence, phase_gap=r.phase_gap)

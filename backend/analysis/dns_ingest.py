@@ -24,7 +24,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Callable, Iterable
 
 from ..collectors.ftl_queries import DnsQuery, FtlQueryLog
 from ..database.repository import get_setting, set_setting
@@ -33,6 +33,13 @@ from .dns_clients import Attribution, ClientResolver, IpHistory
 log = logging.getLogger(__name__)
 
 STATE_KEY = "dns_usage_state"
+# Part of the key the activity minutes are built with: bump it when the way they
+# are written changes, and existing installations rebuild them on the next start.
+MINUTES_FORMAT = 2
+
+
+def minutes_key(rules_fingerprint: str) -> str:
+    return f"{rules_fingerprint}:m{MINUTES_FORMAT}"
 
 
 def local_day(ts: float) -> int:
@@ -53,6 +60,9 @@ class Batch:
     hourly_domains: dict[tuple[str, int, str], list] = field(default_factory=dict)  # (key, hour, domain) → same
     history: list[tuple] = field(default_factory=list)                   # (ip, first, mac, last)
     history_since: float | None = None
+    minutes: dict[tuple[str, int, str], list[int]] = field(default_factory=dict)  # (key, minute, service) → [q, b]
+    rebuild: dict | None = None          # rebuild state after this batch
+    minutes_fp: str | None = None        # rules fingerprint the activity minutes are built with
 
 
 UPSERT_CLIENT = """
@@ -81,6 +91,11 @@ ON CONFLICT(client, ts, domain) DO UPDATE SET
     queries = queries + excluded.queries, blocked = blocked + excluded.blocked,
     first_ts = MIN(first_ts, excluded.first_ts), last_ts = MAX(last_ts, excluded.last_ts)
 """
+UPSERT_MINUTE = """
+INSERT INTO dns_service_minutes(client, ts, service, queries, blocked) VALUES (?,?,?,?,?)
+ON CONFLICT(client, ts, service) DO UPDATE SET
+    queries = queries + excluded.queries, blocked = blocked + excluded.blocked
+"""
 UPSERT_HISTORY = """
 INSERT INTO dns_ip_history(ip, first_seen, mac, last_seen) VALUES (?,?,?,?)
 ON CONFLICT(ip, first_seen) DO UPDATE SET mac = excluded.mac,
@@ -89,10 +104,16 @@ ON CONFLICT(ip, first_seen) DO UPDATE SET mac = excluded.mac,
 
 
 class DnsIngestor:
-    def __init__(self, ftl: FtlQueryLog, cfg, own_ips: Iterable[str] = (), hourly_domain_hours: float = 48):
+    def __init__(self, ftl: FtlQueryLog, cfg, own_ips: Iterable[str] = (), hourly_domain_hours: float = 48,
+                 classifier: Callable[[], object] | None = None, minute_days: float = 31):
         self.ftl = ftl
         self.cfg = cfg
         self.hourly_domain_hours = hourly_domain_hours
+        # Callable, so that a reloaded classifier (rule change) is picked up.
+        self.classifier = classifier
+        self.minute_days = minute_days
+        self.rebuild: dict | None = None      # {"cursor", "from", "to"}: FTL ids still to re-read for minutes
+        self.minutes_fp: str | None = None
         self.own_ips = list(own_ips)
         self.last_id: int | None = None
         self.last_ts: float | None = None
@@ -110,6 +131,8 @@ class DnsIngestor:
         st = get_setting(conn, STATE_KEY, None) or {}
         self.last_id = st.get("last_id")
         self.last_ts = st.get("last_ts")
+        self.rebuild = st.get("rebuild")
+        self.minutes_fp = st.get("minutes_fp")
         self.history = IpHistory(since=st.get("history_since"))
         self.history.load(tuple(r) for r in conn.execute(
             "SELECT ip, first_seen, mac, last_seen FROM dns_ip_history"))
@@ -145,23 +168,12 @@ class DnsIngestor:
         last_ts = self.last_ts if newest is None else max(newest, self.last_ts or newest)
         b = Batch(last_id=rows[-1].id if rows else last_id, last_ts=last_ts,
                   rows=len(rows), more=len(rows) == limit, history=changed,
-                  history_since=self.history.since)
+                  history_since=self.history.since, rebuild=self.rebuild, minutes_fp=self.minutes_fp)
+        clf = self.classifier() if self.classifier else None
         cache: dict[tuple, Attribution] = {}
         day_cache: dict[int, int] = {}
         for q in rows:
-            ck = resolver.cache_key(q.client, q.ts)
-            att = cache.get(ck)
-            if att is None:
-                att = cache[ck] = resolver.resolve(q.client, q.ts)
-            c = b.clients.get(att.key)
-            if c is None:
-                b.clients[att.key] = [att, q.ts, q.ts]
-            else:
-                if q.ts < c[1]:
-                    c[1] = q.ts
-                if q.ts >= c[2]:
-                    c[2] = q.ts
-                    c[0] = att          # most recent IP/name wins
+            att = self._attribute(b, resolver, cache, q)
             hour = int(q.ts) // 3600 * 3600
             h = b.hourly.setdefault((att.key, hour), [0, 0, 0])
             oc = q.outcome
@@ -172,6 +184,8 @@ class DnsIngestor:
             blocked = oc == "blocked"
             if blocked:
                 h[1] += 1
+            if clf is not None:
+                self._add_minute(b, clf, att.key, q, blocked)
             # All real time zone offsets are multiples of 15 minutes, so a quarter
             # hour never spans two local days.
             qh = int(q.ts) // 900
@@ -189,8 +203,84 @@ class DnsIngestor:
                         d[2] = int(q.ts)
                     if q.ts > d[3]:
                         d[3] = int(q.ts)
+        # The rebuild only runs once the regular log is caught up: new queries first.
+        if self.rebuild and clf is not None and allow_backfill and not b.more:
+            self._rebuild_step(b, clf, resolver, limit)
         self.status["backlog"] = max(0, max_id - b.last_id)
         return b
+
+    def _attribute(self, b: Batch, resolver: ClientResolver, cache: dict, q: DnsQuery) -> Attribution:
+        ck = resolver.cache_key(q.client, q.ts)
+        att = cache.get(ck)
+        if att is None:
+            att = cache[ck] = resolver.resolve(q.client, q.ts)
+        c = b.clients.get(att.key)
+        if c is None:
+            b.clients[att.key] = [att, q.ts, q.ts]
+        else:
+            if q.ts < c[1]:
+                c[1] = q.ts
+            if q.ts >= c[2]:
+                c[2] = q.ts
+                c[0] = att          # most recent IP/name wins
+        return att
+
+    @staticmethod
+    def _add_minute(b: Batch, clf, key: str, q: DnsQuery, blocked: bool) -> None:
+        c = clf.classify(q.domain)
+        # Lookups without a service are only ever summed up, never turned into
+        # phases - per hour is enough for them. Per minute they were most of the
+        # table on the Pi (CDNs, unknown names, devices polling in a loop).
+        if c.service:
+            k = (key, int(q.ts) // 60 * 60, c.service)
+        else:
+            k = (key, int(q.ts) // 3600 * 3600, f"~{c.primary}")
+        m = b.minutes.get(k)
+        if m is None:
+            b.minutes[k] = [1, int(blocked)]
+        else:
+            m[0] += 1
+            m[1] += blocked
+
+    # -------------------------------------------------------------- rebuild
+    def plan_rebuild(self, fingerprint: str, now: float) -> dict:
+        """Activity minutes depend on the category rules. After a rule change the
+        retained range is re-read from the Pi-hole log, in the background."""
+        if self.last_id is None:
+            # Nothing ingested yet: the first backfill builds the minutes anyway.
+            return {"rebuild": None, "minutes_fp": fingerprint}
+        start = self.ftl.id_before(now - self.minute_days * 86400)
+        rb = {"cursor": start, "from": start, "to": self.last_id} if self.last_id > start else None
+        return {"rebuild": rb, "minutes_fp": fingerprint}
+
+    def write_rebuild(self, conn, plan: dict) -> None:
+        conn.execute("DELETE FROM dns_service_minutes")
+        st = get_setting(conn, STATE_KEY, None) or {}
+        st.update(plan)
+        set_setting(conn, STATE_KEY, st)
+
+    def applied_rebuild(self, plan: dict) -> None:
+        self.rebuild = plan["rebuild"]
+        self.minutes_fp = plan["minutes_fp"]
+        self._rebuild_status()
+
+    def _rebuild_step(self, b: Batch, clf, resolver: ClientResolver, limit: int) -> None:
+        rb = dict(self.rebuild)
+        rows = [q for q in self.ftl.read_since(rb["cursor"], limit) if q.id <= rb["to"]]
+        cache: dict[tuple, Attribution] = {}
+        for q in rows:
+            att = self._attribute(b, resolver, cache, q)
+            oc = q.outcome
+            if oc != "duplicate":
+                self._add_minute(b, clf, att.key, q, oc == "blocked")
+        rb["cursor"] = rows[-1].id if rows else rb["to"]
+        b.rebuild = None if rb["cursor"] >= rb["to"] else rb
+        b.more = b.more or b.rebuild is not None
+
+    def _rebuild_status(self) -> None:
+        rb = self.rebuild
+        self.status["rebuild"] = None if not rb else {
+            "done": round((rb["cursor"] - rb["from"]) / max(1, rb["to"] - rb["from"]), 3)}
 
     def resolver(self) -> ClientResolver:
         with self._lock:
@@ -236,15 +326,27 @@ class DnsIngestor:
             conn.executemany(UPSERT_HOURLY_DOMAIN, [(hour, ids[k], dom_ids[dom], q, bl, f, la)
                                                     for (k, hour, dom), (q, bl, f, la) in b.hourly_domains.items()
                                                     if hour + 3600 > cut])
+            if b.minutes:
+                skeys = list({s for (_k, _m, s) in b.minutes})
+                conn.executemany("INSERT OR IGNORE INTO dns_services(key) VALUES (?)", [(s,) for s in skeys])
+                sids = {r[1]: r[0] for r in conn.execute(
+                    f"SELECT id, key FROM dns_services WHERE key IN ({','.join('?' * len(skeys))})", skeys)}
+                mcut = (time.time() if now is None else now) - self.minute_days * 86400
+                conn.executemany(UPSERT_MINUTE, [(ids[k], minute, sids[s], q, bl)
+                                                 for (k, minute, s), (q, bl) in b.minutes.items()
+                                                 if minute + 60 > mcut])
         if b.history:
             conn.executemany(UPSERT_HISTORY, [(ip, int(first), mac, int(last)) for ip, first, mac, last in b.history])
         set_setting(conn, STATE_KEY, {"last_id": b.last_id, "last_ts": b.last_ts,
-                                      "history_since": b.history_since})
+                                      "history_since": b.history_since, "rebuild": b.rebuild,
+                                      "minutes_fp": b.minutes_fp})
 
     def applied(self, b: Batch) -> None:
         """Called after commit() went through - only then does the position move on."""
         self.last_id = b.last_id
         self.last_ts = b.last_ts
+        self.rebuild = b.rebuild
+        self._rebuild_status()
         self.status.update(ok=True, message="Reading Pi-hole query log" if b.more else "Up to date",
                            last_id=b.last_id, last_ts=b.last_ts, history_since=b.history_since)
 

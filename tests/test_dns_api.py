@@ -70,7 +70,9 @@ def test_dns_client_summary_domains_and_filters(client):
     s = client.get(f"/api/dns/clients/{pc['id']}/summary").json()
     assert s["totals"]["queries"] == pc["queries"]
     assert s["comparison"] is not None            # demo data covers the previous 24 h too
-    d = client.get(f"/api/dns/clients/{pc['id']}/domains?status=blocked").json()
+    # demo data is random: take whichever client had blocked lookups
+    blk = max(cl, key=lambda c: c["blocked"])
+    d = client.get(f"/api/dns/clients/{blk['id']}/domains?status=blocked").json()
     assert d["total"] > 0 and all(x["blocked"] > 0 for x in d["domains"])
     g = client.get(f"/api/dns/clients/{pc['id']}/domains?category=gaming").json()
     assert all(x["category"] == "gaming" for x in g["domains"])
@@ -123,3 +125,27 @@ def test_domain_lists_fall_back_to_days_where_hourly_counters_are_missing(client
     o = client.get("/api/dns/overview").json()
     assert o["domains_resolution"] == "day" and o["top_domains"]
     assert client.get(f"/api/dns/overview?start={time.time() - 3600}").json()["domains_resolution"] == "hour"
+
+
+def test_activity_phases_are_estimated_and_labelled_as_such(client):
+    _wait_for_dns_demo(client)
+    cl = client.get("/api/dns/clients").json()["clients"]
+    phone = next(c for c in cl if c["mac"] == "02:00:00:00:00:42")
+    r = client.get(f"/api/dns/clients/{phone['id']}/activity?start={time.time() - 3 * 86400}").json()
+    assert "not verified" in r["note"] and r["explanation"]
+    assert r["services"], "demo phone uses several services"
+    for s in r["services"]:
+        assert s["confidence"] in (None, "low", "medium")
+        assert (s["estimate_seconds"] is None) == (s["confidence"] is None)
+        total = sum(p["seconds"] for p in s["phases"])
+        if s["estimate_seconds"] is not None:
+            assert s["estimate_seconds"] == total
+    narrow = client.get(f"/api/dns/clients/{phone['id']}/activity?start={time.time() - 3 * 86400}&gap=1").json()
+    assert sum(s["phase_count"] for s in narrow["services"]) >= sum(s["phase_count"] for s in r["services"])
+
+
+def test_activity_range_is_limited(client):
+    cl = client.get("/api/dns/clients").json()["clients"]
+    r = client.get(f"/api/dns/clients/{cl[0]['id']}/activity?start={time.time() - 40 * 86400}")
+    assert r.status_code == 400 and "limited" in r.json()["detail"]
+    assert client.get(f"/api/dns/clients/{cl[0]['id']}/activity?gap=0").status_code == 422

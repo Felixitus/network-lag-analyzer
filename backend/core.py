@@ -16,7 +16,7 @@ from . import __version__
 from .analysis import bufferbloat, daily
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report
-from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day
+from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
 from .analysis.events import EVENT_LABELS, Event, EventEngine
 from .analysis.gaming import ICMP_GIVE_UP_PROBES, GamingDetector, GamingSession, pick_server, summarize_session
 from .analysis.metrics import MetricsHub, TargetInfo
@@ -273,7 +273,9 @@ class Core:
         path = os.path.join(self.cfg.data_dir, "demo-pihole-FTL.db")
         build_demo_ftl(path, time.time())
         self.dns_usage = DnsIngestor(FtlQueryLog(path), self.cfg.dns_usage.model_copy(update={"backfill_days": 8}),
-                                     hourly_domain_hours=self.cfg.retention.dns_domain_hourly_hours)
+                                     hourly_domain_hours=self.cfg.retention.dns_domain_hourly_hours,
+                                     classifier=lambda: self.classifier,
+                                     minute_days=self.cfg.retention.dns_minute_days)
         self.dns_usage_status = self.dns_usage.status
         self.dns_usage_status["demo"] = True
         self.tasks.append(asyncio.create_task(self._dns_usage_loop(self.dns_usage), name="dns-usage"))
@@ -290,7 +292,8 @@ class Core:
         own = [a["address"] for i in netinfo.interface_addresses().values() for a in i["ipv4"]]
         own += [a for i in netinfo.interface_addresses().values() for a in i["ipv6"]]
         self.dns_usage = DnsIngestor(FtlQueryLog(cfg.pihole.ftl_db), cfg.dns_usage, own_ips=own,
-                                     hourly_domain_hours=cfg.retention.dns_domain_hourly_hours)
+                                     hourly_domain_hours=cfg.retention.dns_domain_hourly_hours,
+                                     classifier=lambda: self.classifier, minute_days=cfg.retention.dns_minute_days)
         self.dns_usage_status = self.dns_usage.status
         self.tasks.append(asyncio.create_task(self._dns_usage_loop(self.dns_usage), name="dns-usage"))
 
@@ -305,6 +308,13 @@ class Core:
                 ing.status.update(message=f"Paused (load guard level {level})")
             else:
                 try:
+                    fp = minutes_key(self.classifier.fingerprint)
+                    if ing.minutes_fp != fp:
+                        plan = await asyncio.to_thread(ing.plan_rebuild, fp, time.time())
+                        await self.db.write(lambda c: ing.write_rebuild(c, plan))
+                        ing.applied_rebuild(plan)
+                        if plan["rebuild"]:
+                            log.info("DNS usage: category rules changed, rebuilding activity minutes")
                     b = await asyncio.to_thread(ing.step, time.time(), level == 0)
                     await self.db.write(lambda c: ing.commit(c, b))
                     ing.applied(b)

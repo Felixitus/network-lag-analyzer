@@ -15,7 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from ..analysis import dns_usage as usage
+from ..analysis import activity, dns_usage as usage
 from ..analysis.categories import normalize_domain, valid_domain
 from ..database import repository as repo
 
@@ -272,6 +272,44 @@ async def client_domains(request: Request, cid: int, start: float | None = Query
     return {"client": client, "resolution": res, "range": meta, "total": len(sel), "limit": limit,
             "offset": offset, "domains": [_domain_out(r) for r in sel[offset:offset + limit]],
             "resolution_note": _resolution_note(res), "note": NOTE}
+
+
+@router.get("/clients/{cid}/activity")
+async def client_activity(request: Request, cid: int, start: float | None = Query(None),
+                          end: float | None = Query(None), gap: float | None = Query(None, ge=1, le=120)):
+    """Estimated activity phases per service, built from the activity minutes."""
+    core = core_of(request)
+    client = await _client(core, cid)
+    start, end = _range(start, end)
+    max_days = core.cfg.retention.dns_minute_days
+    if end - start > max_days * 86400 + 3600:
+        raise HTTPException(400, f"Activity phases are limited to {max_days:g} days "
+                                 "(activity minutes are kept that long, see retention settings).")
+
+    def q(c):
+        rows = [(r[0], r[1], r[2], r[3]) for r in c.execute(
+            """SELECT m.ts, s.key, m.queries, m.blocked FROM dns_service_minutes m
+               JOIN dns_services s ON s.id = m.service
+               WHERE m.client = ? AND m.ts >= ? AND m.ts < ? ORDER BY m.ts""", (cid, int(start), int(end)))]
+        first = c.execute("SELECT MIN(ts) FROM dns_service_minutes").fetchone()[0]
+        return rows, first
+
+    async def build():
+        rows, first = await core.db.read(q)
+        return {**activity.build(rows, core.classifier, core.cfg.dns_usage.phase_gap_minutes, gap),
+                "minutes_from": first}
+    data = await _cached(("activity", cid, round(start), round(end), gap), build)
+    rebuild = (core.dns_usage_status or {}).get("rebuild")
+    first = data["minutes_from"]
+    return {"client": client, "start": start, "end": end, "gap_minutes": gap,
+            "default_gap_minutes": core.cfg.dns_usage.phase_gap_minutes, **data,
+            "coverage_note": (f"Activity minutes exist from {time.strftime('%Y-%m-%d %H:%M', time.localtime(first))}; "
+                              "earlier parts of the range have no data.") if first and first > start + 60 else
+                             ("No activity minutes recorded yet." if not first else None),
+            "rebuild_note": (f"The category rules changed - activity minutes are being rebuilt from the Pi-hole log "
+                             f"({100 * rebuild['done']:.0f} % done). Phases are incomplete until then.") if rebuild else None,
+            "note": "Estimated DNS activity - not verified screen or app usage time. "
+                    "The estimate is the sum of the phases; pauses between phases are not counted."}
 
 
 # ===================================================================== categories

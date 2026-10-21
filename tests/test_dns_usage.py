@@ -78,7 +78,7 @@ def test_existing_v3_database_gets_the_dns_tables(tmp_path):
     version = d.read_sync(lambda c: c.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0])
     d.close()
     assert {"dns_clients", "dns_domain_daily", "dns_ip_history"} <= names
-    assert int(version) == SCHEMA_VERSION == 4
+    assert int(version) == SCHEMA_VERSION
 
 
 # --- ingestion -----------------------------------------------------------------

@@ -144,6 +144,9 @@ class DnsUsageCfg(BaseModel):
     batch_rows: int = Field(20_000, ge=1_000, le=200_000)
     # Completed days keep the busiest domains per device; the rest is summed up.
     top_domains_per_day: int = Field(300, ge=20, le=5_000)
+    # Activity phases: a pause longer than this ends a phase (services may define
+    # their own gap in the category rules).
+    phase_gap_minutes: float = Field(5, ge=1, le=120)
 
 
 class RetentionCfg(BaseModel):
@@ -157,6 +160,9 @@ class RetentionCfg(BaseModel):
     dns_hourly_days: float = Field(400, ge=7, le=3650)
     dns_domain_days: float = Field(180, ge=7, le=3650)
     dns_domain_hourly_hours: float = Field(48, ge=24, le=24 * 31)
+    # Activity minutes per device and service (~60 KB per day); also the longest
+    # range for activity phases.
+    dns_minute_days: float = Field(31, ge=1, le=91)
     # Individual ICMP probes. No evaluation reads them, but they cost about 14 MB
     # of writes to the SD card per day. Only enable for troubleshooting.
     ping_samples: bool = False

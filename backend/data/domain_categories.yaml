@@ -15,6 +15,11 @@
 #             medium = mostly this service, but also embedded elsewhere (SDKs, widgets)
 #             low    = shared infrastructure
 #
+# phase_gap_minutes (optional): inactivity gap that ends an activity phase of this
+# service, instead of the default from the settings. Longer for services that look
+# up few names while in use (video players buffer minutes ahead, games talk to
+# servers by IP address).
+#
 # Overrides without editing this file: `domain_categories.local.yaml` in the data
 # directory (same format, wins over this file) or the manual rules in the web UI
 # (win over everything).
@@ -178,23 +183,28 @@ services:
   youtube:
     name: YouTube
     categories: [streaming]
+    phase_gap_minutes: 10
     domains: [youtube.com, googlevideo.com, ytimg.com, youtu.be, youtube-nocookie.com, youtubei.googleapis.com,
               yt3.ggpht.com]
   twitch:
     name: Twitch
     categories: [streaming, gaming]
+    phase_gap_minutes: 10
     domains: [twitch.tv, ttvnw.net, jtvnw.net, twitchcdn.net, twitchsvc.net, ext-twitch.tv]
   netflix:
     name: Netflix
     categories: [streaming]
+    phase_gap_minutes: 10
     domains: [netflix.com, netflix.net, nflxvideo.net, nflximg.net, nflxext.com, nflxso.net]
   disneyplus:
     name: Disney+
     categories: [streaming]
+    phase_gap_minutes: 10
     domains: [disneyplus.com, disney-plus.net, dssott.com, bamgrid.com]
   primevideo:
     name: Prime Video
     categories: [streaming]
+    phase_gap_minutes: 10
     domains: [primevideo.com, aiv-cdn.net, aiv-delivery.net, amazonvideo.com, atv-ps.amazon.com, atv-ext.amazon.com]
   appletv:
     name: Apple TV+
@@ -237,6 +247,7 @@ services:
   spotify:
     name: Spotify
     categories: [music]
+    phase_gap_minutes: 10
     domains: [spotify.com, scdn.co, spotifycdn.com]
   applemusic:
     name: Apple Music
@@ -263,19 +274,23 @@ services:
   steam:
     name: Steam
     categories: [gaming]
+    phase_gap_minutes: 15
     domains: [steampowered.com, steamcommunity.com, steamcontent.com, steamstatic.com, steamserver.net,
               steamusercontent.com, valvesoftware.com, steamgames.com]
   epic:
     name: Epic Games / Fortnite
     categories: [gaming]
+    phase_gap_minutes: 15
     domains: [epicgames.com, epicgames.dev, fortnite.com, unrealengine.com]
   playstation:
     name: PlayStation Network
     categories: [gaming]
+    phase_gap_minutes: 15
     domains: [playstation.com, playstation.net, sonyentertainmentnetwork.com]
   xbox:
     name: Xbox
     categories: [gaming]
+    phase_gap_minutes: 15
     domains: [xboxlive.com, xbox.com]
   nintendo:
     name: Nintendo
@@ -284,10 +299,12 @@ services:
   riot:
     name: Riot Games
     categories: [gaming]
+    phase_gap_minutes: 15
     domains: [riotgames.com, leagueoflegends.com, riotcdn.net, playvalorant.com]
   battlenet:
     name: Battle.net
     categories: [gaming]
+    phase_gap_minutes: 15
     domains: [battle.net, blizzard.com]
   ea:
     name: EA

@@ -56,6 +56,23 @@ versions follow [SemVer](https://semver.org/).
   whole local days and say so.
 - Dev mode: the DNS pages run the real ingestion pipeline against a generated
   demo FTL log (demo devices only).
+- **Activity phases (estimated)** on the client detail page, per service:
+  DNS queries, phases, estimated activity and confidence, a timeline of the
+  phases, and an explanation of the known sources of error.
+  - A phase runs from the first to the last lookup of a service. A pause longer
+    than the gap ends it (default 5 min, selectable in the UI; some services
+    have their own gap in the rules). Pauses are never counted.
+  - Confidence is at most "medium". Background and shared services, too few
+    lookups and devices looking up names almost around the clock (TVs in
+    standby) show "Not reliably determinable" instead of a number. Messengers,
+    cloud sync, activity at night and many active hours per day lower it.
+  - Blocked lookups are counted but form no phases.
+  - Based on a new compact table of activity minutes per device and service
+    (schema version 5, `retention.dns_minute_days` = 31, about 250 KB per day on
+    the Pi). Reading the Pi-hole log for this took ~20 s of full CPU per request
+    for 31 days; now 0.4 s. After a change of the category rules the table is
+    rebuilt from the Pi-hole log in the background (about 3 minutes on the Pi).
+  - Named manual rules define a service of their own, with phases.
 
 ### Changed
 - The whole project is now in English: web UI, analysis texts and

@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -277,6 +277,25 @@ CREATE TABLE IF NOT EXISTS dns_domain_hourly (
     first_ts  INTEGER NOT NULL,
     last_ts   INTEGER NOT NULL,
     PRIMARY KEY (client, ts, domain)
+) WITHOUT ROWID;
+
+-- ---- Activity phases (version 5) ------------------------------------------------
+-- Minutes in which a device looked up names of a service. Phases are built from
+-- these on request with any gap the user picks; reading the Pi-hole log for that
+-- instead took ~20 s of full CPU for 31 days on the Pi. Built with the category
+-- rules of the time; when the rules change, the retained range is rebuilt from
+-- the Pi-hole log (dns_ingest.DnsIngestor.start_rebuild).
+CREATE TABLE IF NOT EXISTS dns_services (
+    id  INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE                 -- service id, or "~<category>" without a service
+);
+CREATE TABLE IF NOT EXISTS dns_service_minutes (
+    client   INTEGER NOT NULL,               -- dns_clients.id
+    ts       INTEGER NOT NULL,               -- start of the minute (of the hour for "~<category>")
+    service  INTEGER NOT NULL,               -- dns_services.id
+    queries  INTEGER NOT NULL,               -- without retries/duplicates
+    blocked  INTEGER NOT NULL,
+    PRIMARY KEY (client, ts, service)
 ) WITHOUT ROWID;
 
 -- Recorded by us, because FTL's network table only knows the current owner of an IP.

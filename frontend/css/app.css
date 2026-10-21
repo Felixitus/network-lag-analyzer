@@ -301,6 +301,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .badge.cat { font-weight: 500; }
 .badge.cat-low { border-style: dashed; }
 .pager { margin-top: 12px; }
+.phase-lanes { display: grid; gap: 6px; }
+.phase-lane { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: center; }
+.phase-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.phase-track { position: relative; height: 14px; background: var(--surface-2); border-radius: 3px; }
+.phase-bar { position: absolute; top: 0; bottom: 0; border-radius: 2px; opacity: .9; }
+.phase-axis { display: flex; justify-content: space-between; }
+@media (max-width: 560px) { .phase-lane { grid-template-columns: 80px minmax(0, 1fr); } }
 
 @media (max-width: 1200px) {
   .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
