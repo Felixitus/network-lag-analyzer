@@ -301,6 +301,15 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .badge.cat { font-weight: 500; }
 .badge.cat-low { border-style: dashed; }
 .pager { margin-top: 12px; }
+.export-menu { position: relative; }
+.export-menu > summary { list-style: none; }
+.export-menu > summary::-webkit-details-marker { display: none; }
+.export-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 300px; max-width: calc(100vw - 32px);
+  display: grid; gap: 4px; padding: 10px; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow); }
+.export-item { display: flex; gap: 8px; align-items: center; text-align: left; padding: 7px 8px; border: 0;
+  background: none; border-radius: 8px; cursor: pointer; }
+.export-item:hover { background: var(--surface-2); }
 .phase-lanes { display: grid; gap: 6px; }
 .phase-lane { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: center; }
 .phase-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }

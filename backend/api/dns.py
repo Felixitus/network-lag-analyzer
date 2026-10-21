@@ -107,6 +107,22 @@ async def _domains(core, start: float, end: float, client: dict | None) -> tuple
     return usage.classify_rows(rows, core.classifier), meta["resolution"], meta
 
 
+def filter_domains(rows: list[dict], status: str = "all", category: str | None = None, q: str | None = None,
+                   sort: str = "queries") -> list[dict]:
+    """The domain filters of the client page - shared with the export so both show the same rows."""
+    needle = normalize_domain(q) if q else None
+    sel = [r for r in rows
+           if (status != "blocked" or r["blocked"] > 0)
+           and (status != "allowed" or r["queries"] > r["blocked"])
+           and (category is None or r["category"] == category)
+           and (needle is None or (r["name"] is not None and needle in r["name"]))]
+    key = {"queries": lambda r: (-r["queries"], r["name"] or "~"),
+           "last_seen": lambda r: (-(r["last_seen"] or 0), r["name"] or "~"),
+           "domain": lambda r: (r["name"] is None, r["name"] or "")}[sort]
+    sel.sort(key=key)
+    return sel
+
+
 def _domain_out(r: dict) -> dict:
     return {"domain": r["name"], "other": r["name"] is None, "queries": r["queries"], "blocked": r["blocked"],
             "first_seen": r["first_seen"], "last_seen": r["last_seen"], "category": r["category"],
@@ -259,16 +275,7 @@ async def client_domains(request: Request, cid: int, start: float | None = Query
         status = "blocked"
     rows, res, meta = await _cached(("domains", cid, round(start), round(end)),
                                     lambda: _domains(core, start, end, client))
-    needle = normalize_domain(q) if q else None
-    sel = [r for r in rows
-           if (status != "blocked" or r["blocked"] > 0)
-           and (status != "allowed" or r["queries"] > r["blocked"])
-           and (category is None or r["category"] == category)
-           and (needle is None or (r["name"] is not None and needle in r["name"]))]
-    key = {"queries": lambda r: (-r["queries"], r["name"] or "~"),
-           "last_seen": lambda r: (-(r["last_seen"] or 0), r["name"] or "~"),
-           "domain": lambda r: (r["name"] is None, r["name"] or "")}[sort]
-    sel.sort(key=key)
+    sel = filter_domains(rows, status, category, q, sort)
     return {"client": client, "resolution": res, "range": meta, "total": len(sel), "limit": limit,
             "offset": offset, "domains": [_domain_out(r) for r in sel[offset:offset + limit]],
             "resolution_note": _resolution_note(res), "note": NOTE}

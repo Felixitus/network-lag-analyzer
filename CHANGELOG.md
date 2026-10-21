@@ -73,6 +73,20 @@ versions follow [SemVer](https://semver.org/).
     for 31 days; now 0.4 s. After a change of the category rules the table is
     rebuilt from the Pi-hole log in the background (about 3 minutes on the Pi).
   - Named manual rules define a service of their own, with phases.
+- **Export** on the DNS overview and the client detail page, always with the
+  range and filters on screen:
+  - CSV: clients, domain list, category statistics, blocked domains, time series
+    and activity phases. Default is German Excel (UTF-8 with BOM, semicolon,
+    decimal comma); a comma/point variant is selectable.
+  - XLSX with one sheet per table: the whole network, or a single client
+    including summary, comparison and activity phases. Written without
+    additional packages.
+  - Every file starts with export time, range, client, filters, data source and
+    method.
+  - Text cells starting with `=`, `+`, `-`, `@`, tab or carriage return get a
+    leading apostrophe, so domain names and device names cannot inject
+    spreadsheet formulas.
+  - Files are only created on request and streamed; nothing is stored on the Pi.
 
 ### Changed
 - The whole project is now in English: web UI, analysis texts and

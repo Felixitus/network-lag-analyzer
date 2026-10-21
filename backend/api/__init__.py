@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import dashboard, devices, dns, incidents, sessions, system
+from . import dashboard, devices, dns, dns_export, incidents, sessions, system
 from .security import SecurityMiddleware, SessionSigner
 
 FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
@@ -28,7 +28,8 @@ def create_app(core) -> FastAPI:
     app.state.core = core
     app.state.signer = SessionSigner(core.cfg.data_dir)
     app.add_middleware(SecurityMiddleware, core=core, signer=app.state.signer)
-    for r in (dashboard.router, incidents.router, devices.router, dns.router, sessions.router, system.router):
+    for r in (dashboard.router, incidents.router, devices.router, dns.router, dns_export.router, sessions.router,
+              system.router):
         app.include_router(r)
 
     @app.get("/", include_in_schema=False)

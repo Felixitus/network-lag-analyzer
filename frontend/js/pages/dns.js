@@ -138,6 +138,35 @@ export async function mount(main, ctx) {
   return mountOverview(main);
 }
 
+// ------------------------------------------------------------------ export
+let csvLocale = 'de';
+try { csvLocale = localStorage.getItem('nla-csv-locale') || 'de'; } catch { /* */ }
+
+/** Export menu. `items`: [label, format, kind, extraParams()] - params are read at click time,
+ *  so the file always has the range and filters that are on screen right now. */
+function exportMenu(items) {
+  const loc = h('select', { 'aria-label': 'CSV format' },
+    h('option', { value: 'de', selected: csvLocale === 'de' }, 'CSV for German Excel (;)'),
+    h('option', { value: 'en', selected: csvLocale === 'en' }, 'CSV international (,)'));
+  loc.addEventListener('change', () => { csvLocale = loc.value; try { localStorage.setItem('nla-csv-locale', csvLocale); } catch { /* */ } });
+  const menu = h('details', { class: 'export-menu' }, h('summary', { class: 'btn' }, 'Export ▾'),
+    h('div', { class: 'export-list' },
+      items.map(([label, format, kind, extra]) => {
+        const b = h('button', { type: 'button', class: 'export-item' }, h('span', { class: 'badge' }, format.toUpperCase()), label);
+        b.addEventListener('click', () => {
+          const p = new URLSearchParams({ kind, format, locale: csvLocale });
+          for (const [k, v] of Object.entries(extra ? extra() : {})) if (v !== null && v !== undefined && v !== '' && v !== 0) p.set(k, v);
+          menu.open = false;
+          toast('Preparing the export…');
+          window.location.href = `api/dns/export?${qs()}&${p}`;
+        });
+        return b;
+      }),
+      loc,
+      h('div', { class: 'small muted' }, 'Uses the selected range and filters. Each file states the export time, range and method.')));
+  return menu;
+}
+
 function pageHead(title, sub, ...right) {
   return h('div', { class: 'page-head' },
     h('div', null, h('h1', null, title), h('p', null, sub)), h('span', { class: 'spacer' }), ...right);
@@ -148,7 +177,14 @@ async function mountOverview(main) {
   const body = h('div', { class: 'stack' });
   main.append(pageHead('DNS usage',
     'Which device looked up which names, counted from the Pi-hole query log. DNS lookups show activity - not usage time and not data volume.',
-    h('a', { class: 'btn', href: '#/dns/rules' }, 'Category rules')),
+    h('div', { class: 'row' }, exportMenu([
+      ['Whole network (all tables)', 'xlsx', 'network'],
+      ['Clients', 'csv', 'clients'],
+      ['Domain list', 'csv', 'domains'],
+      ['Category statistics', 'csv', 'categories'],
+      ['Blocked domains', 'csv', 'blocked'],
+      ['Time series (per hour)', 'csv', 'timeseries'],
+    ]), h('a', { class: 'btn', href: '#/dns/rules' }, 'Category rules'))),
   h('div', { class: 'card' }, rangePicker(load)), h('div', { style: { height: '16px' } }), body);
 
   async function load() {
@@ -312,6 +348,14 @@ async function mountClient(main, cid) {
           c.online === null ? h('span', { class: 'muted' }, 'Online status: Not available') : h('span', { class: `badge${c.online ? ' good' : ''}` }, c.online ? 'Online' : 'Offline'),
           h('span', { class: 'muted' }, `First query ${fmtDateTime(c.first_seen)} · last ${ago(c.last_seen)}`))),
       h('span', { class: 'spacer' }),
+      exportMenu([
+        ['This client (all tables)', 'xlsx', 'client', () => ({ client: cid, gap: phaseGap })],
+        ['Domain list (current filters)', 'csv', 'domains', () => ({ client: cid, status: filt.status, category: filt.category, q: filt.q, sort: filt.sort })],
+        ['Category statistics', 'csv', 'categories', () => ({ client: cid })],
+        ['Blocked domains', 'csv', 'blocked', () => ({ client: cid })],
+        ['Time series (per hour)', 'csv', 'timeseries', () => ({ client: cid })],
+        ['Activity phases', 'csv', 'phases', () => ({ client: cid, gap: phaseGap })],
+      ]),
       c.mac ? h('div', { class: 'row' }, aliasInput, save)
         : h('div', { class: 'small muted', style: { maxWidth: '260px' } }, `${blabel}: an alias needs a MAC address - an IP alone can belong to different devices over time.`)));
   }

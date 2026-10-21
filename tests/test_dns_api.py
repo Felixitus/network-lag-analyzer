@@ -149,3 +149,62 @@ def test_activity_range_is_limited(client):
     r = client.get(f"/api/dns/clients/{cl[0]['id']}/activity?start={time.time() - 40 * 86400}")
     assert r.status_code == 400 and "limited" in r.json()["detail"]
     assert client.get(f"/api/dns/clients/{cl[0]['id']}/activity?gap=0").status_code == 422
+
+
+def _csv_rows(text):
+    import csv
+    import io
+    rows = list(csv.reader(io.StringIO(text.lstrip("﻿")), delimiter=";"))
+    blank = rows.index([])
+    return {r[0]: r[1] for r in rows[:blank] if len(r) > 1}, rows[blank + 1], rows[blank + 2:]
+
+
+def test_csv_export_has_metadata_and_the_same_rows_as_the_page(client):
+    _wait_for_dns_demo(client)
+    cl = client.get("/api/dns/clients").json()["clients"]
+    pc = next(c for c in cl if c["mac"] == "02:00:00:00:00:20")
+    page = client.get(f"/api/dns/clients/{pc['id']}/domains?status=allowed&limit=1000").json()
+    r = client.get(f"/api/dns/export?kind=domains&format=csv&client={pc['id']}&status=allowed")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers["content-disposition"] and ".csv" in r.headers["content-disposition"]
+    meta, header, rows = _csv_rows(r.content.decode("utf-8"))
+    assert {"Exported at", "Range from", "Range to", "Client", "Method", "Filter: status"} <= set(meta)
+    assert meta["Filter: status"] == "allowed" and "not how long" in meta["Method"]
+    assert header[0] == "Domain" and len(rows) == page["total"]
+    assert [x[0] for x in rows] == [d["domain"] if not d["other"] else "(other domains, folded)" for d in page["domains"]]
+
+
+def test_alias_starting_with_a_formula_character_is_neutralized_in_the_export(client):
+    _wait_for_dns_demo(client)
+    mac = "02:00:00:00:00:51"
+    assert client.patch(f"/api/devices/{mac}", json={"custom_name": "+49 TV"}, headers=csrf(client)).status_code == 200
+    _meta, header, rows = _csv_rows(client.get("/api/dns/export?kind=clients&format=csv").content.decode("utf-8"))
+    names = [r[header.index("Client")] for r in rows]
+    assert "'+49 TV" in names and "+49 TV" not in names
+
+
+def test_xlsx_exports_have_one_sheet_per_table(client):
+    import io
+    import zipfile
+    from xml.etree import ElementTree as ET
+    _wait_for_dns_demo(client)
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+
+    def sheets(url):
+        r = client.get(url)
+        assert r.status_code == 200 and r.headers["content-type"].endswith("spreadsheetml.sheet")
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        return [s.get("name") for s in ET.fromstring(z.read("xl/workbook.xml")).find("m:sheets", ns)]
+    assert sheets("/api/dns/export?kind=network&format=xlsx") == \
+        ["About", "Clients", "Categories", "Domains", "Blocked", "Time series"]
+    cid = client.get("/api/dns/clients").json()["clients"][0]["id"]
+    assert sheets(f"/api/dns/export?kind=client&format=xlsx&client={cid}") == \
+        ["About", "Summary", "Categories", "Domains", "Blocked", "Time series", "Activity (estimated)", "Activity phases"]
+
+
+def test_export_rejects_combinations_that_make_no_sense(client):
+    assert client.get("/api/dns/export?kind=network&format=csv").status_code == 400
+    assert client.get("/api/dns/export?kind=phases&format=csv").status_code == 400
+    assert client.get("/api/dns/export?kind=clients&format=csv&client=1").status_code == 400
+    assert client.get("/api/dns/export?kind=nope&format=csv").status_code == 422
+    assert client.get("/api/dns/export?kind=clients&format=pdf").status_code == 422
