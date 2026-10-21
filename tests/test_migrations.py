@@ -147,5 +147,13 @@ def test_compact_format_is_much_smaller(tmp_path):
     db = Database(p)
     db.init_sync()
     db.close()
-    size_after = os.path.getsize(p)
-    assert size_after < size_before * 0.6, f"only {100 - size_after / size_before * 100:.0f} % saved"
+    # Compare the data, not the fixed cost of empty tables: every new table adds
+    # a few pages that have nothing to do with the storage format.
+    empty_v2 = str(tmp_path / "empty_v2.sqlite3")
+    make_v2(empty_v2, seconds=0)
+    empty = Database(str(tmp_path / "empty.sqlite3"))
+    empty.init_sync()
+    empty.close()
+    before = size_before - os.path.getsize(empty_v2)
+    after = os.path.getsize(p) - os.path.getsize(str(tmp_path / "empty.sqlite3"))
+    assert after < before * 0.6, f"only {100 - after / before * 100:.0f} % saved"

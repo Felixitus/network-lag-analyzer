@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -214,6 +214,64 @@ CREATE TABLE IF NOT EXISTS dns_queries (
     blocked     INTEGER NOT NULL,
     top_domains TEXT,                    -- JSON
     PRIMARY KEY (ts, client_ip)
+) WITHOUT ROWID;
+
+-- ---- DNS usage module (version 4) ------------------------------------------------
+-- Pi-hole stays the source of the individual queries (91 days there). These tables
+-- hold only what Pi-hole does not have: who held an IP when, and compact counters
+-- that make 7/30-day views affordable (a 30-day scan of the FTL log takes minutes
+-- on the Pi). Counts only - DNS queries are NOT a measure of usage or bandwidth.
+
+-- One row per attribution key. A MAC client and an "IP only" client are different
+-- rows on purpose: merging them would claim knowledge the data does not have.
+CREATE TABLE IF NOT EXISTS dns_clients (
+    id          INTEGER PRIMARY KEY,
+    key         TEXT NOT NULL UNIQUE,    -- mac:<mac> | ip:<ip> | local
+    basis       TEXT NOT NULL,           -- mac | ip | local
+    mac         TEXT,
+    ip          TEXT,                    -- most recent IP
+    name        TEXT,                    -- host name according to Pi-hole
+    first_seen  INTEGER NOT NULL,
+    last_seen   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dns_domains (
+    id   INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS dns_client_hourly (
+    ts         INTEGER NOT NULL,         -- start of the hour
+    client     INTEGER NOT NULL,         -- dns_clients.id
+    queries    INTEGER NOT NULL,         -- without retries/duplicates
+    blocked    INTEGER NOT NULL,
+    duplicates INTEGER NOT NULL,
+    PRIMARY KEY (client, ts)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS ix_dns_client_hourly_ts ON dns_client_hourly(ts);
+
+-- Per client, local day and domain. Completed days keep only the top N domains;
+-- the rest is folded into domain 0 so that the day's totals stay exact.
+CREATE TABLE IF NOT EXISTS dns_domain_daily (
+    day       INTEGER NOT NULL,          -- local midnight
+    client    INTEGER NOT NULL,
+    domain    INTEGER NOT NULL,          -- dns_domains.id, 0 = all other domains
+    queries   INTEGER NOT NULL,
+    blocked   INTEGER NOT NULL,
+    first_ts  INTEGER NOT NULL,
+    last_ts   INTEGER NOT NULL,
+    PRIMARY KEY (client, day, domain)
+) WITHOUT ROWID;
+-- No index on `day`: on the Pi it was half the size of the table and only served
+-- the hourly retention DELETE, for which a scan is cheap.
+
+-- Recorded by us, because FTL's network table only knows the current owner of an IP.
+CREATE TABLE IF NOT EXISTS dns_ip_history (
+    ip         TEXT NOT NULL,
+    first_seen INTEGER NOT NULL,
+    mac        TEXT NOT NULL,
+    last_seen  INTEGER NOT NULL,
+    PRIMARY KEY (ip, first_seen)
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS gaming_sessions (

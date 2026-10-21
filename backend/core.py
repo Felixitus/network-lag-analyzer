@@ -15,6 +15,7 @@ from typing import Any
 from . import __version__
 from .analysis import bufferbloat, daily
 from .analysis.correlation import Correlator, Incident, analyze_user_report
+from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day
 from .analysis.events import EVENT_LABELS, Event, EventEngine
 from .analysis.gaming import ICMP_GIVE_UP_PROBES, GamingDetector, GamingSession, pick_server, summarize_session
 from .analysis.metrics import MetricsHub, TargetInfo
@@ -22,6 +23,7 @@ from .analysis.root_cause import CATEGORY_LABELS, Window
 from .collectors.devices import DeviceRegistry
 from .collectors.dns import DnsProber
 from .collectors.fritzbox import FritzClient, FritzError
+from .collectors.ftl_queries import FtlQueryLog
 from .collectors.pihole import PiholeReader
 from .collectors.ping import IcmpProber, ProbeScheduler, ProbeTarget
 from .config import Config, build_config, fritz_target, load_yaml
@@ -81,6 +83,8 @@ class Core:
         self.fritz_status: dict = {"enabled": False}
         self.pihole: PiholeReader | None = None
         self.pihole_status: dict = {"enabled": False}
+        self.dns_usage: DnsIngestor | None = None
+        self.dns_usage_status: dict = {"enabled": False, "ok": None, "message": "Not available: disabled"}
         self.capture_proc: mp.Process | None = None
         self.capture_ctrl: Any = None
         self.capture_out: Any = None
@@ -146,6 +150,8 @@ class Core:
         if self.cfg.dev_mode:
             from .simulation import LiveSimulator
             self.simulator = LiveSimulator(self)
+            self.dns_usage_status = {"enabled": False, "ok": None,
+                                     "message": "Not available: dev mode has no Pi-hole query log"}
             self.tasks.append(asyncio.create_task(self.simulator.run(), name="simulator"))
         else:
             await self._start_collectors()
@@ -237,6 +243,7 @@ class Core:
         if self.pihole:
             pihole_ok, msg = await asyncio.to_thread(self.pihole.check)
             self.pihole_status = {"enabled": True, "ok": pihole_ok, "message": msg}
+        self._start_dns_usage(pihole_ok)
         if cfg.dns_probe.enabled:
             self.dns = DnsProber(cfg.dns_probe.servers, cfg.dns_probe.query_name, cfg.dns_probe.interval,
                                  cfg.dns_probe.timeout, self.hub.add_dns,
@@ -252,6 +259,42 @@ class Core:
                 self.fritz_status = {"enabled": True, "host": host, "ok": None}
                 self.tasks.append(asyncio.create_task(self._fritz_loop(), name="fritz"))
         self._start_capture()
+
+    def _start_dns_usage(self, pihole_ok: bool) -> None:
+        cfg = self.cfg
+        if not cfg.dns_usage.enabled:
+            self.dns_usage_status = {"enabled": False, "ok": None, "message": "Not available: disabled"}
+            return
+        if self.pihole is None or not pihole_ok:
+            reason = self.pihole_status.get("message") or "Pi-hole integration disabled"
+            self.dns_usage_status = {"enabled": True, "ok": False, "message": f"Not available: {reason}"}
+            return
+        own = [a["address"] for i in netinfo.interface_addresses().values() for a in i["ipv4"]]
+        own += [a for i in netinfo.interface_addresses().values() for a in i["ipv6"]]
+        self.dns_usage = DnsIngestor(FtlQueryLog(cfg.pihole.ftl_db), cfg.dns_usage, own_ips=own)
+        self.dns_usage_status = self.dns_usage.status
+        self.tasks.append(asyncio.create_task(self._dns_usage_loop(self.dns_usage), name="dns-usage"))
+
+    async def _dns_usage_loop(self, ing: DnsIngestor) -> None:
+        """Feed DNS usage counters. Pi-hole and the measurements take precedence:
+        the backfill only runs at load level 0, everything pauses from level 2."""
+        await self.db.read(ing.load)
+        while True:
+            pause = self.cfg.dns_usage.interval
+            level = self.loadguard.level
+            if level >= 2:
+                ing.status.update(message=f"Paused (load guard level {level})")
+            else:
+                try:
+                    b = await asyncio.to_thread(ing.step, time.time(), level == 0)
+                    await self.db.write(lambda c: ing.commit(c, b))
+                    ing.applied(b)
+                    if b.more:
+                        pause = 2.0       # backfill: small steps with breathing room
+                except Exception as e:
+                    log.exception("DNS usage step failed")
+                    ing.status.update(ok=False, message=f"Error reading the Pi-hole query log: {e}")
+            await asyncio.sleep(pause)
 
     async def _stop_collectors(self) -> None:
         if self.scheduler:
@@ -888,11 +931,25 @@ class Core:
                     log.info("Retention: %s", {k: v for k, v in deleted.items() if v})
                     await self._cleanup_pcaps()
                     await self._write_daily()
+                    await self._dns_usage_maintenance()
                     await self._check_db_size()
                     last_ret = time.time()
             except Exception:
                 log.exception("Maintenance failed")
             await asyncio.sleep(60)
+
+    async def _dns_usage_maintenance(self) -> None:
+        ing = self.dns_usage
+        if ing is None or ing.last_ts is None:
+            return
+        # Only days that are over AND fully read: FTL writes with up to a minute of
+        # delay, and during the backfill "today" of the reader is weeks ago.
+        until = min(local_day(time.time()), local_day(ing.last_ts - 3600))
+        top = self.cfg.dns_usage.top_domains_per_day
+        folded = await self.db.write(lambda c: fold_completed_days(c, top, until))
+        dropped = await self.db.write(delete_unused_domains)
+        if folded or dropped:
+            log.info("DNS usage: folded %s domain rows, removed %s unused domain names", folded, dropped)
 
     async def _write_daily(self) -> None:
         """Backfill completed days into `daily_stats` (about 200 bytes per day)."""
@@ -1129,11 +1186,12 @@ class Core:
 
     async def restart_collectors(self) -> None:
         await self._stop_collectors()
-        for t in [t for t in self.tasks if t.get_name() == "fritz"]:
+        for t in [t for t in self.tasks if t.get_name() in ("fritz", "dns-usage")]:
             t.cancel()
             self.tasks.remove(t)
         self.fritz = None
         self.fritz_status = {"enabled": False}
+        self.dns_usage = None
         self._init_network()
         await self._start_collectors()
 
@@ -1157,6 +1215,7 @@ class Core:
             "capture": self.capture_status,
             "fritzbox": {k: v for k, v in self.fritz_status.items()},
             "pihole": self.pihole_status,
+            "dns_usage": self.dns_usage_status,
             "dns": self.dns.last if self.dns else {},
             "capacity": {"down_bps": cd, "up_bps": cu, "source": csrc},
             "system": self.loadguard.last,

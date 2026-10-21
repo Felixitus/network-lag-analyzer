@@ -13,8 +13,11 @@ So an attribution is only as good as its basis, and the basis travels with it:
             made up.
 * `local`   The Pi itself (loopback or its own address). Not a household device.
 
-Known gap: two long-known devices that swap IPs are not detected from FTL data
-alone; that needs an own IP history (planned in the data model phase).
+From the moment the service records its own `IpHistory`, that history decides
+instead: a query is given to the MAC that held the IP at that time, or stays
+"IP only" when nobody is known to have held it. Before the history starts, two
+long-known devices that swapped IPs cannot be told apart - FTL alone does not
+keep that information.
 """
 from __future__ import annotations
 
@@ -46,16 +49,93 @@ class Attribution:
     reason: str | None = None   # why it is not "mac"
 
 
+NOT_COVERED = object()   # sentinel: the history has no say
+
+
+class IpHistory:
+    """Which MAC held which IP when, as observed by this service.
+
+    Intervals are only ever extended by evidence (FTL's `lastSeen` of the IP) and
+    a new owner starts at the first evidence for it - never back-dated to the end
+    of the previous owner, because the moment of the handover is not known.
+    """
+
+    def __init__(self, since: float | None = None):
+        self.since = since                       # first observation; earlier → not covered
+        self.refreshed_at: float | None = None
+        self.by_ip: dict[str, list[list]] = {}   # ip → [[mac, first, last], …] sorted by first
+
+    def load(self, rows: Iterable[tuple[str, float, str, float]]) -> None:
+        for ip, first, mac, last in sorted(rows, key=lambda r: (r[0], r[1])):
+            self.by_ip.setdefault(ip, []).append([mac, first, last])
+
+    def observe(self, addresses: Iterable[NetworkAddress], now: float) -> list[tuple]:
+        """Update from FTL's network table. Returns changed rows (ip, first, mac, last)."""
+        if self.since is None:
+            self.since = now
+        changed = []
+        for a in addresses:
+            if a.mac is None:
+                continue
+            seen = min(a.ip_last_seen or now, now)
+            lst = self.by_ip.setdefault(a.ip, [])
+            cur = lst[-1] if lst else None
+            if cur is not None and cur[0] == a.mac:
+                if seen > cur[2]:
+                    cur[2] = seen
+                    changed.append((a.ip, cur[1], cur[0], cur[2]))
+            elif cur is None or seen > cur[2]:
+                # New owner. Evidence older than the previous owner's last sighting
+                # is a stale row in the network table, not a handover.
+                lst.append([a.mac, seen, seen])
+                changed.append((a.ip, seen, a.mac, seen))
+        self.refreshed_at = now
+        return changed
+
+    def slot(self, ip: str, ts: float) -> int | object | None:
+        """Index of the interval holding `ts`, None if nobody held the IP, NOT_COVERED
+        if the history has no say (before it started, or newer than its last refresh)."""
+        # Evidence first: an interval may reach back before `since` (FTL's lastSeen
+        # of an IP is older than our first look at the network table).
+        for i, (_mac, first, last) in enumerate(self.by_ip.get(ip, ())):
+            if first - FIRST_SEEN_SLACK <= ts <= last + FIRST_SEEN_SLACK:
+                return i
+        if self.since is None or ts < self.since - FIRST_SEEN_SLACK:
+            return NOT_COVERED
+        if self.refreshed_at is not None and ts > self.refreshed_at - FIRST_SEEN_SLACK:
+            # Newer than what the last refresh could have seen: FTL may already know
+            # the owner although our history does not yet.
+            return NOT_COVERED
+        return None
+
+    def owner(self, ip: str, ts: float) -> str | object | None:
+        i = self.slot(ip, ts)
+        if i is NOT_COVERED:
+            return NOT_COVERED
+        return None if i is None else self.by_ip[ip][i][0]
+
+
 class ClientResolver:
-    def __init__(self, addresses: Iterable[NetworkAddress], own_ips: Iterable[str] = ()):
+    def __init__(self, addresses: Iterable[NetworkAddress], own_ips: Iterable[str] = (),
+                 history: IpHistory | None = None):
         self.by_ip: dict[str, NetworkAddress] = {a.ip: a for a in addresses}
         self.local = LOOPBACK | {n for n in (normalize_ip(ip) for ip in own_ips) if n}
+        self.history = history
 
     def resolve(self, ip: str, ts: float | None = None) -> Attribution:
         ip = normalize_ip(ip) or ip
         if ip in self.local:
             return Attribution(key="local", basis="local", ip=ip, name="This Pi")
         a = self.by_ip.get(ip)
+        if self.history is not None and ts is not None:
+            mac = self.history.owner(ip, ts)
+            if mac is None:
+                return Attribution(key=f"ip:{ip}", basis="ip", ip=ip,
+                                   reason="no device is known to have held this IP at that time")
+            if mac is not NOT_COVERED:
+                same = a is not None and a.mac == mac
+                return Attribution(key=f"mac:{mac}", basis="mac", ip=ip, mac=mac,
+                                   name=a.name if same else None, vendor=a.vendor if same else None)
         if a is None:
             return Attribution(key=f"ip:{ip}", basis="ip", ip=ip, reason="IP unknown to Pi-hole's network table")
         if a.mac is None:
@@ -66,8 +146,13 @@ class ClientResolver:
                                reason="query is older than the device now using this IP")
         return Attribution(key=f"mac:{a.mac}", basis="mac", ip=ip, mac=a.mac, name=a.name, vendor=a.vendor)
 
-    def cache_key(self, ip: str, ts: float) -> tuple[str, bool]:
-        """Key under which `resolve(ip, ts)` can be cached: same IP, same side of the first-seen line."""
+    def cache_key(self, ip: str, ts: float) -> tuple:
+        """Key under which `resolve(ip, ts)` can be cached: same IP, same history interval,
+        same side of the first-seen line."""
+        if self.history is not None:
+            slot = self.history.slot(ip, ts)
+            if slot is not NOT_COVERED:
+                return ip, "h", slot
         a = self.by_ip.get(ip)
         before = bool(a and a.mac and a.device_first_seen is not None
                       and ts < a.device_first_seen - FIRST_SEEN_SLACK)

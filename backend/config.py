@@ -132,12 +132,30 @@ class PiholeCfg(BaseModel):
     poll_interval: float = Field(15, ge=5, le=600)
 
 
+class DnsUsageCfg(BaseModel):
+    """DNS usage per device, read from Pi-hole's query log (see backend/analysis/dns_ingest.py)."""
+    enabled: bool = True
+    interval: float = Field(30, ge=10, le=600)
+    # How far back to read on the first start. Pi-hole keeps 91 days by default;
+    # older data does not exist there anyway.
+    backfill_days: float = Field(91, ge=0, le=365)
+    # Rows per step. The backfill runs in many small steps so that FTL and the
+    # per-second pipeline are never blocked for long.
+    batch_rows: int = Field(20_000, ge=1_000, le=200_000)
+    # Completed days keep the busiest domains per device; the rest is summed up.
+    top_domains_per_day: int = Field(300, ge=20, le=5_000)
+
+
 class RetentionCfg(BaseModel):
     raw_days: float = Field(1, ge=0.1, le=30)          # 1 s values
     detailed_days: float = Field(7, ge=1, le=90)       # 10 s aggregates
     aggregate_days: float = Field(30, ge=1, le=730)    # 60 s aggregates
     flow_days: float = Field(7, ge=1, le=90)
     event_days: float = Field(90, ge=1, le=3650)
+    # DNS usage: hourly totals per device are tiny (~15 KB per day), domain lists
+    # per device and day are larger (~140 KB per day on the Pi), hence the shorter default.
+    dns_hourly_days: float = Field(400, ge=7, le=3650)
+    dns_domain_days: float = Field(180, ge=7, le=3650)
     # Individual ICMP probes. No evaluation reads them, but they cost about 14 MB
     # of writes to the SD card per day. Only enable for troubleshooting.
     ping_samples: bool = False
@@ -208,6 +226,7 @@ class Config(BaseModel):
     fritzbox: FritzCfg = FritzCfg()
     capture: CaptureCfg = CaptureCfg()
     pihole: PiholeCfg = PiholeCfg()
+    dns_usage: DnsUsageCfg = DnsUsageCfg()
     retention: RetentionCfg = RetentionCfg()
     deep_capture: DeepCaptureCfg = DeepCaptureCfg()
     load_guard: LoadGuardCfg = LoadGuardCfg()
@@ -242,11 +261,11 @@ def fritz_target(cfg: Config) -> tuple[str, str | None]:
 # Fields that may be changed via the web UI (top-level keys).
 EDITABLE_SECTIONS = {
     "gateway", "targets", "probe", "dns_probe", "gaming_pc", "gaming", "thresholds",
-    "capacity", "fritzbox", "capture", "pihole", "retention", "deep_capture",
+    "capacity", "fritzbox", "capture", "pihole", "dns_usage", "retention", "deep_capture",
     "load_guard", "local_networks",
 }
 # Changes to these sections require a restart of the collectors.
-RESTART_SECTIONS = {"fritzbox", "capture", "pihole", "server"}
+RESTART_SECTIONS = {"fritzbox", "capture", "pihole", "dns_usage", "server"}
 
 
 def deep_merge(base: dict, override: dict) -> dict:

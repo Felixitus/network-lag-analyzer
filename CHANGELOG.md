@@ -16,6 +16,18 @@ versions follow [SemVer](https://semver.org/).
 - `python -m backend.dns_mapping_report`: shows how much of the DNS log can be
   attributed to individual devices, and warns when everything comes from one
   router or forwarder address.
+- DNS usage data model (schema version 4): the Pi-hole query log is read
+  incrementally into hourly totals and daily domain counts per device, with an
+  own record of which device held which IP. Single queries are not copied.
+  The position is written in the same transaction as the counters, so restarts
+  and power cuts neither lose nor double-count queries. On the first start the
+  last 91 days are read in small steps; the backfill only runs while the load
+  guard is at level 0 and pauses from level 2. On the Pi: 30 days (4 million
+  queries) in 4.5 minutes at low priority, about 150 KB per day.
+- New settings `dns_usage` (interval, backfill days, batch size, domains kept per
+  device and day) and `retention.dns_hourly_days` (400) / `dns_domain_days` (180).
+- API: `/api/dns/status`, `/api/dns/clients`, `/api/dns/clients/{id}/hourly`,
+  `/api/dns/clients/{id}/domains` (paginated, optionally blocked only).
 
 ### Changed
 - The whole project is now in English: web UI, analysis texts and

@@ -153,6 +153,21 @@ class FtlQueryLog:
             r = c.execute(f"SELECT MIN(timestamp), MAX(timestamp) FROM {self._table()}").fetchone()
         return (r[0], r[1]) if r else (None, None)
 
+    def max_id(self) -> int:
+        with self.connect() as c:
+            return c.execute(f"SELECT MAX(id) FROM {self._table()}").fetchone()[0] or 0
+
+    def id_before(self, ts: float) -> int:
+        """Largest id that is safe as `last_id` to start reading at timestamp `ts`.
+
+        Uses the timestamp index (MIN(id) over a range), not a scan by id.
+        """
+        with self.connect() as c:
+            r = c.execute(f"SELECT MIN(id) FROM {self._table()} WHERE timestamp >= ?", (ts,)).fetchone()[0]
+            if r is None:
+                return c.execute(f"SELECT MAX(id) FROM {self._table()}").fetchone()[0] or 0
+            return r - 1
+
     def client_ids(self, ips: Iterable[str]) -> list[int]:
         """All `client_by_id` ids for these IPs. One IP has several ids when its name changed."""
         want = {normalize_ip(ip) for ip in ips}
