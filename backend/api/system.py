@@ -6,14 +6,13 @@ import shutil
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from .. import setup_wizard
 from ..analysis import daily
 from ..config import EDITABLE_SECTIONS
 from ..database import repository as repo
-from .security import SESSION_COOKIE, hash_password, verify_password
 
 router = APIRouter(prefix="/api")
 
@@ -187,90 +186,3 @@ async def daily_stats(request: Request, days: int = Query(90, ge=1, le=3650)):
     """Daily summary for long-term comparison."""
     core = core_of(request)
     return {"days": await core.db.read(lambda c: daily.read(c, days))}
-
-
-# ------------------------------------------------------------------ Login
-class LoginBody(BaseModel):
-    password: str = Field(..., min_length=1, max_length=256)
-
-
-class AuthSetup(BaseModel):
-    enabled: bool
-    password: str | None = Field(None, min_length=8, max_length=256)
-    current_password: str | None = None
-
-
-@router.get("/auth/state")
-async def auth_state(request: Request):
-    core = core_of(request)
-    sec = core.cfg.security
-    signer = request.app.state.signer
-    return {"login_enabled": bool(sec.login_enabled and sec.password_hash),
-            "logged_in": signer.valid(request.cookies.get(SESSION_COOKIE))}
-
-
-LOGIN_MAX_FAILS = 5
-LOGIN_WINDOW = 15 * 60
-_login_fails: dict[str, list[float]] = {}
-
-
-def _recent_fails(ip: str, now: float) -> list[float]:
-    fails = [t for t in _login_fails.get(ip, []) if now - t < LOGIN_WINDOW]
-    if fails:
-        _login_fails[ip] = fails
-    else:
-        _login_fails.pop(ip, None)                     # otherwise the dict grows with every IP
-    return fails
-
-
-@router.post("/auth/login")
-async def login(request: Request, body: LoginBody, response: Response):
-    core = core_of(request)
-    sec = core.cfg.security
-    if not (sec.login_enabled and sec.password_hash):
-        return {"ok": True}
-    # Brake against guessing from the LAN: after 5 failed attempts per address
-    # a 15-minute pause. In memory is enough - a restart takes longer than an attempt.
-    ip = request.client.host if request.client else "?"
-    now = time.time()
-    if len(_recent_fails(ip, now)) >= LOGIN_MAX_FAILS:
-        raise HTTPException(429, "Too many failed attempts - please try again later")
-    if not verify_password(body.password, sec.password_hash):
-        _login_fails.setdefault(ip, []).append(now)
-        raise HTTPException(401, "Wrong password")
-    _login_fails.pop(ip, None)
-    token = request.app.state.signer.sign(sec.session_hours)
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict", max_age=sec.session_hours * 3600)
-    return {"ok": True}
-
-
-@router.post("/auth/logout")
-async def logout(response: Response):
-    response.delete_cookie(SESSION_COOKIE)
-    return {"ok": True}
-
-
-@router.post("/auth/setup")
-async def auth_setup(request: Request, body: AuthSetup, response: Response):
-    """Enable/disable login or change the password."""
-    core = core_of(request)
-    sec = core.cfg.security
-    if sec.password_hash and not verify_password(body.current_password or "", sec.password_hash):
-        raise HTTPException(403, "Current password is wrong")
-    new_hash = hash_password(body.password) if body.password else sec.password_hash
-    if body.enabled and not new_hash:
-        raise HTTPException(400, "Password (at least 8 characters) required")
-
-    def _save(c):
-        o = repo.get_setting(c, "config_overrides", {})
-        o["security"] = {"login_enabled": body.enabled, "password_hash": new_hash if body.enabled else ""}
-        repo.set_setting(c, "config_overrides", o)
-    await core.db.write(_save)
-    from ..config import build_config
-    overrides = await core.db.read(lambda c: repo.get_setting(c, "config_overrides", {}))
-    core.cfg = build_config(core.yaml_data, overrides)
-    if body.enabled:
-        token = request.app.state.signer.sign(core.cfg.security.session_hours)
-        response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict",
-                            max_age=core.cfg.security.session_hours * 3600)
-    return {"ok": True, "login_enabled": body.enabled}

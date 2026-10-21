@@ -404,18 +404,43 @@ export async function mount(main, { refreshStatus }) {
 
   main.append(h('div', { style: { height: '16px' } }), databaseCard());
 
-  // ---------------------------------------------------------------- login
-  const en = h('input', { type: 'checkbox', checked: cfg.security.login_enabled && cfg.security.password_set });
-  const pw = h('input', { type: 'password', placeholder: 'New password (min. 8 characters)', autocomplete: 'new-password' });
-  const curPw = h('input', { type: 'password', placeholder: 'Current password', autocomplete: 'current-password' });
-  const saveLogin = h('button', { class: 'btn primary', type: 'button' }, 'Save');
-  saveLogin.addEventListener('click', async () => {
+  // ---------------------------------------------------------------- account
+  main.append(h('div', { style: { height: '16px' } }), await accountCard());
+}
+
+async function accountCard() {
+  const st = await api('api/auth/state');
+  const card = h('div', { class: 'card stack' }, h('h3', null, 'Account & sessions'));
+  if (!st.login_required) {
+    card.append(h('p', { class: 'small muted' }, 'Login is switched off (dev mode or security.require_login: false).'));
+    return card;
+  }
+  const cur = h('input', { type: 'password', placeholder: 'Current password', autocomplete: 'current-password', 'aria-label': 'Current password' });
+  const user = h('input', { type: 'text', value: st.username || '', maxlength: '64', autocomplete: 'username', 'aria-label': 'Username' });
+  const pw1 = h('input', { type: 'password', placeholder: 'New password (min. 10 characters)', autocomplete: 'new-password', 'aria-label': 'New password' });
+  const pw2 = h('input', { type: 'password', placeholder: 'Repeat new password', autocomplete: 'new-password', 'aria-label': 'Repeat new password' });
+  const save = h('button', { class: 'btn primary', type: 'button' }, 'Change password');
+  save.addEventListener('click', async () => {
+    if (pw1.value !== pw2.value) { toast('The new passwords do not match'); return; }
     try {
-      await api('api/auth/setup', { method: 'POST', body: { enabled: en.checked, password: pw.value || null, current_password: curPw.value || null } });
-      toast('Login setting saved'); pw.value = ''; curPw.value = '';
+      await api('api/auth/password', { method: 'POST', body: { current_password: cur.value, new_password: pw1.value, new_username: user.value } });
+      toast('Saved - all other sessions were signed out', 5000); cur.value = pw1.value = pw2.value = '';
     } catch (e) { toast(e.message, 5000); }
   });
-  main.append(h('div', { style: { height: '16px' } }), h('div', { class: 'card stack' }, h('h3', null, 'Access protection'),
-    h('p', { class: 'small muted' }, 'Recommended as soon as guests or untrusted devices are on the network: without a login, any device on the LAN can change settings and delete data.'),
-    h('div', { class: 'form-grid' }, h('label', { class: 'check' }, en, 'Enable login'), pw, cfg.security.password_set ? curPw : null), h('div', { class: 'row' }, saveLogin)));
+  const all = h('button', { class: 'btn', type: 'button' }, 'Sign out everywhere');
+  all.addEventListener('click', async () => {
+    if (!confirm('Sign out all browsers, including this one?')) return;
+    await api('api/auth/logout', { method: 'POST', body: { everywhere: true } }).catch(() => null);
+    location.reload();
+  });
+  card.append(
+    h('p', { class: 'small muted' }, 'Signed in as ' + st.username + '. Changing the password signs out every other browser. ',
+      'A forgotten password can only be reset on the Raspberry Pi (python -m backend.account set, see README).'),
+    h('div', { class: 'form-grid' },
+      h('div', { class: 'field' }, h('label', null, 'Username'), user),
+      h('div', { class: 'field' }, h('label', null, 'Current password'), cur),
+      h('div', { class: 'field' }, h('label', null, 'New password'), pw1),
+      h('div', { class: 'field' }, h('label', null, 'Repeat'), pw2)),
+    h('div', { class: 'row' }, save, all));
+  return card;
 }

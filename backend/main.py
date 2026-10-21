@@ -7,6 +7,27 @@ import os
 import sys
 
 
+def bind_address(configured: str, dev_mode: bool) -> str:
+    """Resolve server.host. "auto" = the LAN address only, never every interface by accident.
+
+    Without a LAN address yet (boot, no default route) the service exits with an
+    error instead of guessing: "0.0.0.0" would be unsafe, "127.0.0.1" would stay
+    unreachable for good. systemd (Restart=on-failure) tries again a few seconds later.
+    """
+    if configured != "auto":
+        return configured
+    if dev_mode:
+        return "127.0.0.1"
+    from .util import netinfo
+    route = netinfo.default_route()
+    ip = netinfo.primary_ipv4(route.interface) if route else None
+    if ip:
+        return ip
+    logging.getLogger("nla").error("server.host is 'auto', but no LAN address is available yet - exiting, "
+                                   "systemd will retry. Set server.host in config.yaml to bind elsewhere.")
+    raise SystemExit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Network Lag Analyzer")
     parser.add_argument("--config", default=os.environ.get("NLA_CONFIG"), help="Path to config.yaml")
@@ -34,7 +55,9 @@ def main() -> None:
 
     core = Core(args.config)
     app = create_app(core)
-    uvicorn.run(app, host=core.cfg.server.host, port=core.cfg.server.port, log_level="warning",
+    host = bind_address(core.cfg.server.host, core.cfg.dev_mode)
+    logging.getLogger("nla").info("Web UI listening on %s:%s", host, core.cfg.server.port)
+    uvicorn.run(app, host=host, port=core.cfg.server.port, log_level="warning",
                 access_log=False, proxy_headers=False, timeout_graceful_shutdown=5)
 
 

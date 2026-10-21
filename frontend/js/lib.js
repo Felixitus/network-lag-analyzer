@@ -82,7 +82,9 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
   if (!r.ok) {
     let msg = `${r.status}`;
     try { const j = await r.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* */ }
-    if (r.status === 401) window.dispatchEvent(new CustomEvent('nla-login'));
+    // Not for the login call itself: re-rendering the form would wipe its error message.
+    if (r.status === 401 && !path.startsWith('api/auth/')) window.dispatchEvent(new CustomEvent('nla-login'));
+    if (r.status === 403 && msg.includes('No account set up')) window.dispatchEvent(new CustomEvent('nla-setup'));
     throw new ApiError(r.status, msg);
   }
   return r.json();

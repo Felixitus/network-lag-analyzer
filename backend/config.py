@@ -47,7 +47,9 @@ class Target(BaseModel):
 
 
 class ServerCfg(BaseModel):
-    host: str = "0.0.0.0"
+    # "auto": the IPv4 address of the interface with the default route, i.e. only
+    # the LAN - not every interface of the Pi. "0.0.0.0" listens everywhere.
+    host: str = "auto"
     port: int = Field(8088, ge=1, le=65535)
 
 
@@ -202,9 +204,17 @@ class LoadGuardCfg(BaseModel):
 
 
 class SecurityCfg(BaseModel):
+    # Login is mandatory. `require_login: false` is only meant for an own,
+    # authenticating reverse proxy in front of the service.
+    require_login: bool = True
+    # Dev mode shows demo data only and runs without login unless this is set.
+    require_login_in_dev: bool = False
+    session_hours: int = Field(24 * 7, ge=1, le=24 * 90)     # absolute lifetime of a session
+    idle_hours: float = Field(24, ge=0.25, le=24 * 30)       # ends after this long without requests
+    # Before mandatory login: optional password without a username. Migrated to
+    # the account "admin" on start (api/security.migrate_legacy).
     login_enabled: bool = False
     password_hash: str = ""            # scrypt$<salt-hex>$<hash-hex>
-    session_hours: int = 24 * 7
 
 
 class GamingCfg(BaseModel):

@@ -113,25 +113,51 @@ function initTheme() {
 // ------------------------------------------------------------------ login
 function showLogin() {
   const main = clear(document.getElementById('main'));
-  const pw = h('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password' });
+  const user = h('input', { type: 'text', placeholder: 'Username', autocomplete: 'username', 'aria-label': 'Username', required: true });
+  const pw = h('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password', 'aria-label': 'Password', required: true });
+  const err = h('div', { class: 'small', role: 'alert', style: { color: 'var(--critical-ink)' } });
   const form = h('form', { class: 'card', style: { maxWidth: '360px', margin: '60px auto' } },
     h('h3', null, 'Sign in'), h('p', { class: 'muted' }, 'Access to the Network Lag Analyzer is protected.'),
-    h('div', { class: 'stack' }, pw, h('button', { class: 'btn primary', type: 'submit' }, 'Sign in')));
+    h('div', { class: 'stack' }, user, pw, err, h('button', { class: 'btn primary', type: 'submit' }, 'Sign in')));
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
-    try { await api('api/auth/login', { method: 'POST', body: { password: pw.value } }); location.reload(); }
-    catch (e) { toast(e.message); }
+    err.textContent = '';
+    try { await api('api/auth/login', { method: 'POST', body: { username: user.value.trim(), password: pw.value } }); location.reload(); }
+    catch (e) { err.textContent = e.message; pw.value = ''; pw.focus(); }
   });
   main.append(form);
-  pw.focus();
+  user.focus();
 }
 window.addEventListener('nla-login', showLogin);
+
+function showSetupRequired() {
+  const main = clear(document.getElementById('main'));
+  main.append(h('div', { class: 'card stack', style: { maxWidth: '640px', margin: '60px auto' } },
+    h('h3', null, 'No account set up yet'),
+    h('p', null, 'For safety the account can only be created on the Raspberry Pi itself - otherwise anybody on the network could claim it first. Run there:'),
+    h('pre', { class: 'mono', style: { whiteSpace: 'pre-wrap' } },
+      'sudo -u nla /opt/network-lag-analyzer/venv/bin/python -m backend.account set --username admin'),
+    h('p', { class: 'small muted' }, 'Then reload this page.')));
+}
+window.addEventListener('nla-setup', showSetupRequired);
+
+function addLogout(username) {
+  const btn = h('button', { class: 'icon-btn', type: 'button', title: 'Sign out (' + username + ')', 'aria-label': 'Sign out',
+    style: { width: 'auto', padding: '0 10px' } }, 'Sign out');
+  btn.addEventListener('click', async () => {
+    await api('api/auth/logout', { method: 'POST', body: {} }).catch(() => null);
+    location.reload();
+  });
+  document.querySelector('.topbar-right').append(btn);
+}
 
 async function boot() {
   initTheme();
   try {
     const st = await api('api/auth/state');
-    if (st.login_enabled && !st.logged_in) { showLogin(); return; }
+    if (st.login_required && !st.account_exists) { showSetupRequired(); return; }
+    if (st.login_required && !st.logged_in) { showLogin(); return; }
+    if (st.logged_in) addLogout(st.username);
   } catch { /* */ }
   await refreshStatus();
   connect();

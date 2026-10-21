@@ -135,6 +135,9 @@ class Core:
                 log.error("Stored settings invalid, ignoring them: %s", e)
         self.setup_done = await self.db.read(lambda c: repo.get_setting(c, "setup_done", False))
         self.reload_classifier(await self.db.read(lambda c: repo.get_setting(c, "dns_category_overrides", {})))
+        from .api.security import migrate_legacy
+        if await self.db.write(lambda c: migrate_legacy(c, self.cfg.security.password_hash)):
+            log.warning("Login: the previous password now belongs to the user 'admin' (usernames are new)")
         await self.db.read(self._load_state)
         self._init_network()
 
@@ -261,6 +264,11 @@ class Core:
                 self.fritz_status = {"enabled": True, "host": host, "ok": None}
                 self.tasks.append(asyncio.create_task(self._fritz_loop(), name="fritz"))
         self._start_capture()
+
+    @property
+    def login_required(self) -> bool:
+        sec = self.cfg.security
+        return sec.require_login_in_dev if self.cfg.dev_mode else sec.require_login
 
     def reload_classifier(self, overrides: dict) -> None:
         self.classifier = Classifier.load(self.cfg.data_dir, overrides)

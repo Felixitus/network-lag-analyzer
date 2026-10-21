@@ -4,7 +4,8 @@
 # are stored in the database and take precedence over this file.
 
 server:
-  host: 0.0.0.0        # reachable on the LAN only (do not forward the port in the router)
+  host: auto           # auto = only the LAN address of the Pi; 0.0.0.0 = every interface
+                       # (never forward this port in the router - use a VPN for remote access)
   port: 8088           # Pi-hole uses 80/443
 
 gateway: auto          # or e.g. 192.168.178.1

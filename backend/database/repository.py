@@ -415,7 +415,7 @@ TIME_TABLES: dict[str, tuple[str, str]] = {
     "bufferbloat": ("ts", "Latency under load (10-minute windows)"),
     "gaming_sessions": ("ts_start", "Gaming Sessions"),
 }
-PROTECTED_TABLES = ("daily_stats", "devices", "targets", "settings", "meta")
+PROTECTED_TABLES = ("daily_stats", "devices", "targets", "settings", "meta", "auth_sessions")
 
 
 def table_sizes(conn: sqlite3.Connection) -> list[dict]:

@@ -94,6 +94,21 @@ chmod 0640 "$CONF_DIR/config.yaml"      # may contain the FRITZ!Box password
 chown -R "$SVC_USER":"$SVC_USER" "$DATA_DIR"
 chmod 0750 "$DATA_DIR"
 
+# Older versions shipped "host: 0.0.0.0" (every interface). Offer the new default.
+if grep -Eq '^[[:space:]]+host:[[:space:]]+0\.0\.0\.0' "$CONF_DIR/config.yaml"; then
+  warn "server.host is 0.0.0.0 - the web UI listens on every interface of the Pi."
+  if [[ -t 0 ]]; then
+    read -r -p "  Listen on the LAN address only (server.host: auto)? [Y/n] " ans
+    if [[ ! "$ans" =~ ^[Nn] ]]; then
+      cp -p "$CONF_DIR/config.yaml" "$CONF_DIR/config.yaml.bak"
+      sed -i -E '0,/^([[:space:]]+)host:[[:space:]]+0\.0\.0\.0.*/s//\1host: auto           # only the LAN address of the Pi/' "$CONF_DIR/config.yaml"
+      info "server.host set to auto (backup: $CONF_DIR/config.yaml.bak)"
+    fi
+  else
+    warn "Set 'server.host: auto' in $CONF_DIR/config.yaml to listen on the LAN only."
+  fi
+fi
+
 # ------------------------------------------------------------------ check port
 PORT=$(awk '/^server:/{s=1} s&&/port:/{print $2; exit}' "$CONF_DIR/config.yaml")
 PORT=${PORT:-8088}
@@ -116,6 +131,22 @@ else
   warn "Service did not start. Log: journalctl -u $SERVICE -n 50"
 fi
 
+# ------------------------------------------------------------------ login account
+# The account can only be created here on the Pi - never through the web UI,
+# so that nobody on the network can claim a fresh installation first.
+ACCOUNT_CMD=(sudo -u "$SVC_USER" env NLA_CONFIG="$CONF_DIR/config.yaml" "$APP_DIR/venv/bin/python" -m backend.account)
+if (cd "$APP_DIR" && "${ACCOUNT_CMD[@]}" show 2>/dev/null) | grep -q "No account"; then
+  if [[ -t 0 ]]; then
+    info "Create the login account for the web UI"
+    read -r -p "  Username [admin]: " NLA_USER
+    (cd "$APP_DIR" && "${ACCOUNT_CMD[@]}" set --username "${NLA_USER:-admin}") \
+      || warn "No account created. Later: cd $APP_DIR && ${ACCOUNT_CMD[*]} set"
+  else
+    warn "No login account yet - the web UI stays locked until you run:"
+    warn "  cd $APP_DIR && ${ACCOUNT_CMD[*]} set --username admin"
+  fi
+fi
+
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 cat <<EOF
 
@@ -126,8 +157,8 @@ cat <<EOF
   Configuration:  $CONF_DIR/config.yaml
   Data:           $DATA_DIR
 
-  Next step: in the web UI under "Setup", enter the FRITZ!Box credentials
-  and run the diagnosis. If other people use your network, enable the login
-  under "Setup -> Access protection".
+  Next step: sign in, then enter the FRITZ!Box credentials under "Setup"
+  and run the diagnosis.
+  Forgotten password:  cd $APP_DIR && ${ACCOUNT_CMD[*]} set
 
 EOF

@@ -88,6 +88,28 @@ versions follow [SemVer](https://semver.org/).
     spreadsheet formulas.
   - Files are only created on request and streamed; nothing is stored on the Pi.
 
+### Security
+- **Login is mandatory.** Username and password (scrypt). The account is created
+  on the Pi only: `python -m backend.account set` (install.sh asks for it). There
+  is no way to create it through the web UI, so nobody on the network can claim a
+  fresh installation first. Until it exists, the API answers only `/api/health`
+  and `/api/auth/state`.
+- An existing login password keeps working: it becomes the user `admin`.
+- Server-side sessions: random 256-bit tokens, stored only as SHA-256. Logout ends
+  the session on the server, a password change ends all other sessions, "Sign out
+  everywhere" and `python -m backend.account logout-all` end all of them. Sessions
+  expire after `security.session_hours` (7 days) and after `security.idle_hours`
+  (24 h) without requests.
+- Login throttling also across addresses (30 failed attempts in 15 minutes in
+  total), the same answer for a wrong username and a wrong password.
+- The web UI listens on the LAN address only (`server.host: auto`, new default).
+  Without a LAN address at start the service exits and systemd retries, instead
+  of listening on every interface. install.sh offers to switch an existing
+  `host: 0.0.0.0`.
+- API responses are sent with `Cache-Control: no-store`; stricter
+  Content-Security-Policy and a Permissions-Policy.
+- New `/api/health` for monitoring; it reveals nothing but up/down.
+
 ### Changed
 - The whole project is now in English: web UI, analysis texts and
   recommendations, log messages, API errors, comments, tests and documentation.

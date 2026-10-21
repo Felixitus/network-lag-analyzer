@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -297,6 +297,18 @@ CREATE TABLE IF NOT EXISTS dns_service_minutes (
     blocked  INTEGER NOT NULL,
     PRIMARY KEY (client, ts, service)
 ) WITHOUT ROWID;
+
+-- ---- Login sessions (version 6) --------------------------------------------------
+-- Only the SHA-256 of a session token is stored: a database backup must not
+-- contain usable sessions.
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id         TEXT PRIMARY KEY,         -- sha256(token)
+    username   TEXT NOT NULL,
+    created    REAL NOT NULL,
+    expires    REAL NOT NULL,
+    last_seen  REAL NOT NULL,
+    ip         TEXT
+);
 
 -- Recorded by us, because FTL's network table only knows the current owner of an IP.
 CREATE TABLE IF NOT EXISTS dns_ip_history (
