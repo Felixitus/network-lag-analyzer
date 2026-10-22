@@ -101,3 +101,26 @@ def test_refresh_button_restores_current_names_and_keeps_aliases(client):
     assert core.devices.by_mac[laptop].custom_name == "Work laptop"
     assert "demo devices" in res["sources"]
     assert client.post("/api/devices/refresh-names", json={}).status_code == 403     # CSRF
+
+
+class _BrokenFritz:
+    def host_list(self):
+        raise ConnectionError("FRITZ!Box not reachable")
+
+
+def test_fritzbox_outage_does_not_break_refresh_or_identification(client):
+    hdr = {"X-CSRF-Token": client.cookies.get("nla_csrf")}
+    core = client.app.state.core
+    saved = (core.fritz, core.fritz_status, core.fritz_hosts, core.fritz_hosts_at)
+    core.fritz = _BrokenFritz()
+    core.fritz_status = {"enabled": True, "ok": False, "error": "ConnectError: FRITZ!Box not reachable"}
+    core.fritz_hosts, core.fritz_hosts_at = [], None
+    try:
+        r = client.post("/api/devices/refresh-names", json={}, headers=hdr)
+        assert r.status_code == 200 and "FRITZ!Box" not in r.json()["sources"]
+        assert core.devices.by_mac["02:00:00:00:00:20"].hostname == "Gaming-PC (Demo)"   # other sources still count
+        ident = client.get("/api/dns/identification").json()
+        assert ident["fritz_available"] is False and "not reachable" in ident["fritz_note"]
+        assert ident["rows"] == []                                                       # nothing invented
+    finally:
+        core.fritz, core.fritz_status, core.fritz_hosts, core.fritz_hosts_at = saved

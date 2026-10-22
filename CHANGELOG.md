@@ -5,7 +5,14 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-22
+
+DNS usage per device (Pi-hole), mandatory login. Method and limits: `docs/dns-usage.md`.
+
 ### Added
+- Documentation of the DNS usage module (`docs/dns-usage.md`), backup and
+  restore instructions, uninstall details and the new settings in
+  `config.example.yaml`.
 - Groundwork for the DNS usage module: read-only access to Pi-hole's DNS query
   log (normalized v6 schema and the older v5 `queries` table), streamed per time
   range and client on the indexed columns only.

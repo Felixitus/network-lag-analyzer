@@ -39,15 +39,16 @@ Everything runs locally. No cloud, no telemetry, no payload storage.
 7. [Port mirroring](#port-mirroring)
 8. [Raspberry Pi as gateway](#raspberry-pi-as-gateway)
 9. [Pi-hole integration](#pi-hole-integration)
-10. [Usage](#usage)
-11. [Root cause analysis - how it decides](#root-cause-analysis---how-it-decides)
-12. [Configuration](#configuration)
-13. [Database & backup](#database--backup)
-14. [Security](#security)
-15. [Performance & load guard](#performance--load-guard)
-16. [Troubleshooting](#troubleshooting)
-17. [Development & tests](#development--tests)
-18. [License](#license)
+10. [DNS usage per device](#dns-usage-per-device)
+11. [Usage](#usage)
+12. [Root cause analysis - how it decides](#root-cause-analysis---how-it-decides)
+13. [Configuration](#configuration)
+14. [Database & backup](#database--backup)
+15. [Security](#security)
+16. [Performance & load guard](#performance--load-guard)
+17. [Troubleshooting](#troubleshooting)
+18. [Development & tests](#development--tests)
+19. [License](#license)
 
 ---
 
@@ -146,9 +147,21 @@ The installer:
 3. copies the program to `/opt/network-lag-analyzer` and creates a venv there,
 4. creates `/etc/network-lag-analyzer/config.yaml` (an existing one is kept),
 5. creates `/var/lib/network-lag-analyzer` (database, PCAPs),
-6. installs and starts `network-lag-analyzer.service`.
+6. installs and starts `network-lag-analyzer.service` (enabled: starts again after a reboot),
+7. asks for the **login account** (username + password) if none exists yet.
 
-Then open in a browser (e.g. from your PC):
+The account can only be created on the Pi - there is no sign-up page, so nobody on the
+network can claim a fresh installation first. Create or reset it later with:
+
+```bash
+cd /opt/network-lag-analyzer
+sudo -u nla env NLA_CONFIG=/etc/network-lag-analyzer/config.yaml venv/bin/python -m backend.account set --username admin
+```
+
+`... -m backend.account show` shows the account and open sessions, `logout-all` ends all
+sessions. An optional password from versions before 1.2 becomes the user `admin`.
+
+Then open in a browser (e.g. from your PC) and sign in:
 
 ```
 http://raspberrypi:8088      or      http://PI-IP-ADDRESS:8088
@@ -156,8 +169,20 @@ http://raspberrypi:8088      or      http://PI-IP-ADDRESS:8088
 
 On first use go to **Setup**, run the diagnosis and enter the FRITZ!Box access.
 
-Update: `git pull && sudo ./install.sh` in the cloned directory - configuration and data are kept.
-Uninstall: `sudo ./install.sh --uninstall`.
+**Update:** `git pull && sudo ./install.sh` in the cloned directory - configuration and
+data are kept; schema changes are migrated on start (with a backup copy before tables
+are rebuilt).
+
+**Uninstall:** `sudo ./install.sh --uninstall` stops and removes the service, the program
+in `/opt/network-lag-analyzer` and the systemd unit. Data (`/var/lib/network-lag-analyzer`)
+and configuration (`/etc/network-lag-analyzer`) are kept; to remove them as well:
+
+```bash
+sudo rm -rf /var/lib/network-lag-analyzer /etc/network-lag-analyzer
+sudo userdel nla
+```
+
+Pi-hole is not touched by either.
 
 **Pi-hole is not modified.** The installer touches neither `/etc/pihole`, dnsmasq/FTL nor
 the Pi-hole web server. The default port 8088 does not collide with Pi-hole (80/443).
@@ -262,6 +287,31 @@ FRITZ!Box capture or port mirroring provide the same view without this risk.
   to ~60 s. That does not matter for the lag analysis.
 * In addition, a dedicated DNS prober measures Pi-hole (127.0.0.1) and an upstream
   resolver every 5 s. This detects a DNS outage and distinguishes it from real lag.
+* `/etc/pihole/dhcp.leases` (read-only) gives the host names of the current DHCP leases
+  where Pi-hole is the DHCP server. Host name priority: DHCP lease, Pi-hole, FRITZ!Box.
+  **Refresh host names** (devices page) asks all sources again right away; own names stay.
+
+---
+
+## DNS usage per device
+
+The page **DNS usage** shows per device which names it looked up through Pi-hole -
+queries, blocked queries, domains, categories, a timeline, an estimate of activity phases
+per service, and CSV/XLSX export. Method, storage and limits: **[docs/dns-usage.md](docs/dns-usage.md)**.
+
+In short:
+
+* Source is Pi-hole's query log, read incrementally and read-only; only compact counters
+  are stored (about 400 KB per day on the test Pi, all of it subject to retention).
+* Queries are attributed to devices by MAC only where that is sound (own IP history,
+  FRITZ!Box cross-check); otherwise they stay "IP only".
+* Categories are local rules (~400 domains of known services, own rules, optional UT1
+  lists). CDNs and shared platforms are never attributed to a service.
+* Activity phases are **estimated DNS activity, not usage time** - confidence at most
+  "medium", "Not reliably determinable" where the data does not allow an estimate.
+* Lookups that bypass Pi-hole (DNS over HTTPS, iCloud Private Relay, VPN, fixed DNS
+  servers) are missing; the client identification check on the page lists devices that
+  never ask Pi-hole.
 
 ---
 
@@ -429,13 +479,49 @@ SQLite in WAL mode: `/var/lib/network-lag-analyzer/nla.sqlite3`.
 | `network_flows` | finished flows (metadata only) |
 | `devices` | devices incl. custom names |
 | `events`, `incidents` | detected events, incidents incl. analysis (JSON) |
-| `dns_queries` | DNS activity per client and minute (from Pi-hole) |
+| `dns_queries` | DNS activity per client and minute (lag context) |
+| `dns_clients`, `dns_client_hourly`, `dns_domain_daily`, `dns_domain_hourly`, `dns_service_minutes`, `dns_ip_history` | DNS usage counters ([docs/dns-usage.md](docs/dns-usage.md)) |
+| `auth_sessions` | login sessions (SHA-256 of the token only) |
 | `gaming_sessions` | sessions incl. summary |
 | `pcap_files` | Deep Capture files |
 | `settings` | overrides from the web UI |
 
 Aggregation every minute: 1 s → 10 s → 1 min (peaks are kept via `rtt_max`).
 Retention hourly according to the configuration.
+
+### Backup and restore
+
+The database contains the settings (including the FRITZ!Box password), the login account
+(as a hash) and the DNS statistics - keep backups as private as the Pi itself. Pi-hole's
+own data is not part of it (use Pi-hole's Teleporter for that).
+
+Backup, while the service runs (SQLite's online backup is consistent; needs the
+`sqlite3` package):
+
+```bash
+sudo apt install -y sqlite3        # once
+B=/var/lib/network-lag-analyzer/backup-$(date +%F)
+sudo -u nla sqlite3 /var/lib/network-lag-analyzer/nla.sqlite3 ".backup $B.sqlite3"
+sudo cp -p /etc/network-lag-analyzer/config.yaml $B.config.yaml
+sudo -u nla sqlite3 "file:$B.sqlite3?mode=ro" "PRAGMA integrity_check"     # must print: ok
+```
+
+Copy the two files off the Pi (e.g. `scp`) if the backup should survive a broken SD card.
+
+Restore:
+
+```bash
+sudo systemctl stop network-lag-analyzer
+D=/var/lib/network-lag-analyzer
+sudo rm -f $D/nla.sqlite3-wal $D/nla.sqlite3-shm
+sudo install -o nla -g nla -m 0640 /path/to/backup.sqlite3 $D/nla.sqlite3
+sudo install -o root -g nla -m 0640 /path/to/backup.config.yaml /etc/network-lag-analyzer/config.yaml
+sudo systemctl start network-lag-analyzer
+journalctl -u network-lag-analyzer -n 20      # "started", migrations if the backup is older
+```
+
+A backup from an older version is migrated on start. The DNS counters continue where the
+backup ended: queries that Pi-hole still has are read again, nothing is counted twice.
 
 ### Storage format
 
@@ -527,14 +613,22 @@ Restore: stop the service, copy the file back (`chown nla:nla`), start the servi
 * CSRF protection for all writing requests (double-submit token), origin check.
 * Security headers (CSP without inline scripts, `X-Frame-Options: DENY`, `nosniff`).
 * Host names from the network are only ever rendered as text in the browser (no `innerHTML`).
-* Optional login (Setup → Access protection): scrypt hash, HttpOnly session cookie,
-  locked for 15 minutes after 5 failed attempts per address. **Recommended** as soon as
-  guests or untrusted devices are on your Wi-Fi - without login, every device on the LAN
-  can do everything.
+* **Mandatory login** (username + password, scrypt). The account is created on the Pi
+  only (`python -m backend.account set`, see Installation). Sessions are random 256-bit
+  tokens in an HttpOnly, SameSite=Strict cookie; the database stores only their SHA-256.
+  Logout ends the session on the server, a password change ends all other sessions.
+  Sessions expire after 7 days and after 24 h without requests. Throttling: 5 failed
+  attempts per address and 30 in total per 15 minutes. The cookie cannot be `Secure`
+  because the UI is plain HTTP inside the LAN.
+* The web UI listens on the **LAN address only** (`server.host: auto`); `0.0.0.0` would
+  listen on every interface of the Pi.
+* `/api/health` is the only data-free endpoint without login (for monitoring).
 * The FRITZ!Box password is never returned by the API and only sent to the address it was
   entered for. `config.yaml` has mode 0640 (root:nla).
 * Pi-hole database read-only. Payloads are never stored (snaplen, headers only).
-* Meant for the LAN only - do **not** forward the port in the router.
+* Meant for the LAN only - do **not** forward the port in the router. For remote access
+  use a VPN (e.g. the FRITZ!Box's WireGuard VPN), then the page is reached like at home.
+* Exports (CSV/XLSX) neutralize cells that a spreadsheet would evaluate as formulas.
 
 Threat model and how to report vulnerabilities: [SECURITY.md](SECURITY.md).
 
@@ -626,6 +720,20 @@ DNS outage, game server problem and normal operation without false alarms.
 | 10 | Load guard, PCAP ring, systemd, installer, README | `test_misc.py` |
 | 11 | Security hardening (FRITZ!Box password binding, login throttle) | `test_security.py` |
 
+DNS usage module (spec: per-device DNS statistics on Pi-hole):
+
+| Phase | Content | Tests |
+|---|---|---|
+| 1 | System analysis of the Pi (read-only) | – |
+| 2 | Read-only FTL query log access, client attribution | `test_dns_clients.py` |
+| 3 | Data model, incremental ingestion, IP history | `test_dns_usage.py` |
+| 4 | Dashboard, client detail, filters, categories | `test_categories.py`, `test_dns_api.py` |
+| 5 | Estimated activity phases | `test_activity.py` |
+| 6 | CSV/XLSX export | `test_export.py` |
+| 7 | Mandatory login, sessions, bind address | `test_security.py` |
+| 8 | FRITZ!Box cross-check, host name fixes | `test_client_match.py`, `test_device_names.py` |
+| 9 | Documentation, backup/restore, deployment checks | – |
+
 ### Known limitations
 
 * ICMP targets IPv4 only; IPv6 traffic is still counted per device in the capture (via the MAC).
@@ -634,6 +742,10 @@ DNS outage, game server problem and normal operation without false alarms.
 * Game servers that block ICMP are only assessed via packet gaps in the game flow.
 * Retransmissions are detected heuristically (like Wireshark: sequence ≤ already seen).
   Reordered packets count as well.
+* DNS usage: lookups are not usage time. Queries older than Pi-hole's network table
+  (or before the own IP history started) cannot always be attributed to a device and
+  stay "IP only". Behind mesh access points the FRITZ!Box reports every device as
+  cable-connected, so Wi-Fi vs. LAN is not available. Details: [docs/dns-usage.md](docs/dns-usage.md).
 
 ---
 

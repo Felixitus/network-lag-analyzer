@@ -57,7 +57,24 @@ capture:
 
 pihole:
   enabled: true
-  ftl_db: /etc/pihole/pihole-FTL.db
+  ftl_db: /etc/pihole/pihole-FTL.db          # read-only
+  dhcp_leases: /etc/pihole/dhcp.leases       # read-only, host names of current leases
+
+# DNS usage per device (page "DNS usage", see docs/dns-usage.md).
+dns_usage:
+  enabled: true
+  interval: 30           # seconds between reads of the Pi-hole log
+  backfill_days: 91      # first start: how far back to read (Pi-hole keeps 91 days)
+  batch_rows: 20000      # rows per step; small steps keep FTL and the measurements responsive
+  top_domains_per_day: 300
+  phase_gap_minutes: 5   # activity phases: a longer pause ends a phase
+
+# Login is mandatory. Create the account on the Pi:
+#   cd /opt/network-lag-analyzer && sudo -u nla env NLA_CONFIG=/etc/network-lag-analyzer/config.yaml \
+#     venv/bin/python -m backend.account set --username admin
+security:
+  session_hours: 168     # absolute lifetime of a login session
+  idle_hours: 24         # session ends after this long without requests
 
 # Name resolution: two probes that tell different things.
 dns_probe:
@@ -83,6 +100,11 @@ retention:
   # Emergency brake against a full memory card. If the limit is exceeded, raw
   # data is deleted first, then 1 s values, then 10 s values. 0 = no limit.
   max_db_mb: 1024
+  # DNS usage counters (docs/dns-usage.md)
+  dns_hourly_days: 400          # queries per device and hour
+  dns_domain_days: 180          # domains per device and day
+  dns_domain_hourly_hours: 48   # domains per device and hour, for exact short ranges
+  dns_minute_days: 31           # activity minutes; also the longest range for activity phases
 # The daily summary (daily_stats) is exempt from retention:
 # about 200 bytes per day, and in return the long-term comparison stays possible for years.
 
