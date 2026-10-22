@@ -87,6 +87,34 @@ versions follow [SemVer](https://semver.org/).
     leading apostrophe, so domain names and device names cannot inject
     spreadsheet formulas.
   - Files are only created on request and streamed; nothing is stored on the Pi.
+- **Client identification** on the DNS overview: the FRITZ!Box host list
+  (TR-064, read-only, as before) compared with Pi-hole's view of the network.
+  - Per device: consistent, IP differs, IP conflict, FRITZ!Box only, Pi-hole only.
+  - Active devices that never asked Pi-hole are listed: they resolve names
+    elsewhere (fixed DNS, DNS over HTTPS, VPN) and are missing from the DNS
+    statistics.
+  - Warns when the router forwards all DNS to Pi-hole and hides the devices,
+    and when mesh access points make every device look cable-connected.
+  - Nothing is merged or guessed from the comparison.
+  - Measured on the Pi: all 30 devices of the FRITZ!Box are known to Pi-hole
+    with the same IP, no conflicts.
+- The client list shows the connection type as reported by the FRITZ!Box.
+- **"Refresh host names"** on the devices page and the DNS page: forgets the
+  learned host names and IPs and asks Pi-hole, its DHCP leases and the
+  FRITZ!Box again right away. Own names (aliases) stay. The result shows what
+  changed.
+
+### Fixed
+- Device host names flipped between sources: whichever of FRITZ!Box (every
+  2 min) and Pi-hole (every minute) reported last won. Now a fixed priority
+  applies: Pi-hole DHCP lease, then Pi-hole, then FRITZ!Box.
+- Devices got old IPs and names from Pi-hole: FTL keeps every IP a device ever
+  had (on the Pi up to 34 per device) and the last row read won. Now only the
+  newest IPv4 and the newest name per device are used.
+- A wrong host name could never be cleared from the database (the update kept
+  the old value when the new one was empty).
+- The DNS pages showed Pi-hole's host name from the time of the first queries
+  instead of the name on the devices page.
 
 ### Security
 - **Login is mandatory.** Username and password (scrypt). The account is created

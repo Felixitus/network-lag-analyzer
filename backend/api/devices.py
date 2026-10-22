@@ -55,6 +55,18 @@ async def devices(request: Request):
     return {"devices": items, "traffic_available": core.hub.capture_active()}
 
 
+@router.post("/devices/refresh-names")
+async def refresh_names(request: Request):
+    """Forget learned host names and IPs and ask Pi-hole, its DHCP leases and the
+    FRITZ!Box again right away. User aliases are kept."""
+    core = core_of(request)
+    res = await core.refresh_device_names()
+    for ch in res["changed"]:
+        dev = core.devices.by_mac.get(ch["mac"])
+        ch["alias"] = dev.custom_name if dev else None
+    return res
+
+
 @router.patch("/devices/{mac}")
 async def patch_device(request: Request, mac: str, body: DevicePatch):
     core = core_of(request)

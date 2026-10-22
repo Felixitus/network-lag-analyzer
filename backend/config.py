@@ -131,6 +131,7 @@ class CaptureCfg(BaseModel):
 class PiholeCfg(BaseModel):
     enabled: bool = True
     ftl_db: str = "/etc/pihole/pihole-FTL.db"
+    dhcp_leases: str = "/etc/pihole/dhcp.leases"     # read-only; host names of the current leases
     poll_interval: float = Field(15, ge=5, le=600)
 
 

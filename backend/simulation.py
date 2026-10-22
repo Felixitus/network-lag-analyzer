@@ -158,7 +158,8 @@ class LiveSimulator:
         core = self.core
         core.link_capacity = (CAP_DOWN, CAP_UP)
         core.capture_status = {"state": "running", "source": "simulated", "pps": 0, "lag_s": 0, "level": 0}
-        core.fritz_status = {"enabled": False, "note": "dev mode"}
+        core.fritz_status = {"enabled": True, "ok": True, "note": "dev mode (simulated host list)"}
+        core.fritz_hosts, core.fritz_hosts_at = demo_fritz_hosts(), time.time()
         core.pihole_status = {"enabled": False, "note": "dev mode"}
         core.hub.dns_primary = "127.0.0.1"
         gw = [tid for tid, t in core.targets.items() if t["kind"] == "gateway"]
@@ -294,3 +295,18 @@ def build_demo_ftl(path: str, now: float, days: float = 8) -> None:
         c.commit()
     finally:
         c.close()
+
+
+DEMO_NO_PIHOLE = ("02:00:00:00:00:77", "192.0.2.77", "Smart-Speaker (Demo)")
+
+
+def demo_fritz_hosts() -> list:
+    """FRITZ!Box host list for dev mode: the demo devices, plus one active device that
+    never asks Pi-hole - so the identification check has something to find."""
+    from .collectors.fritzbox import HostEntry
+    hosts = [HostEntry(ip=ip, mac=mac, name=name, active=True,
+                       interface="802.11" if mac == MAC_IPHONE else "Ethernet")
+             for mac, (ip, name) in DEMO_DEVICES.items()]
+    mac, ip, name = DEMO_NO_PIHOLE
+    hosts.append(HostEntry(ip=ip, mac=mac, name=name, active=True, interface="802.11"))
+    return hosts

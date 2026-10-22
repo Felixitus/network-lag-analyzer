@@ -15,7 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from ..analysis import activity, dns_usage as usage
+from ..analysis import activity, client_match, dns_usage as usage
 from ..analysis.categories import normalize_domain, valid_domain
 from ..database import repository as repo
 
@@ -69,12 +69,16 @@ def _client_row(core, r) -> dict:
     # The device registry is the live source of aliases; the devices table may lag
     # behind it by one persist cycle.
     alias = dev.custom_name if dev else r["custom_name"]
+    # Same host name as the devices page: the registry picks it by source priority.
+    hostname = (dev.hostname if dev else None) or r["name"]
     return {"id": r["id"], "key": r["key"], "basis": r["basis"], "mac": r["mac"], "ip": r["ip"],
-            "hostname": r["name"], "alias": alias,
-            "name": alias or r["name"] or r["ip"] or r["mac"],
+            "hostname": hostname, "alias": alias,
+            "name": alias or hostname or r["ip"] or r["mac"],
             "vendor": dev.vendor if dev else None,
             # Online according to FRITZ!Box/ARP/Pi-hole; None = not determinable (no MAC).
             "online": dev.active if dev else None,
+            "connection": dev.interface if dev else None,       # as the FRITZ!Box reports it
+            "sources": sorted(dev.sources) if dev else [],
             "first_seen": r["first_seen"], "last_seen": r["last_seen"]}
 
 
@@ -317,6 +321,33 @@ async def client_activity(request: Request, cid: int, start: float | None = Quer
                              f"({100 * rebuild['done']:.0f} % done). Phases are incomplete until then.") if rebuild else None,
             "note": "Estimated DNS activity - not verified screen or app usage time. "
                     "The estimate is the sum of the phases; pauses between phases are not counted."}
+
+
+@router.get("/identification")
+async def identification(request: Request):
+    """Do FRITZ!Box and Pi-hole identify the same clients? (see analysis/client_match.py)"""
+    core = core_of(request)
+    ing = core.dns_usage
+    fritz_ok = bool(core.fritz_status.get("enabled")) and core.fritz_hosts_at is not None
+    pihole = await asyncio.to_thread(ing.ftl.network) if ing is not None else []
+    since = int(time.time()) - 86400
+
+    def q(c):
+        return {r[0]: r[1] for r in c.execute(
+            """SELECT k.ip, SUM(h.queries) FROM dns_client_hourly h JOIN dns_clients k ON k.id = h.client
+               WHERE h.ts >= ? AND k.basis != 'local' AND k.ip IS NOT NULL GROUP BY k.ip""", (since,))}
+    by_ip = await core.db.read(q)
+    res = client_match.compare(core.fritz_hosts if fritz_ok else [], pihole, core.gateway, by_ip)
+    if not fritz_ok:
+        res["rows"] = []
+        res["consistent_share"] = None
+    return {**res, "fritz_available": fritz_ok, "fritz_hosts_at": core.fritz_hosts_at,
+            "pihole_available": ing is not None,
+            "fritz_note": None if fritz_ok else
+            ("Not available: FRITZ!Box integration is off - only Pi-hole's own view is checked."
+             if not core.fritz_status.get("enabled") else
+             f"Not available yet: {core.fritz_status.get('error') or 'waiting for the first host list'}"),
+            "note": "A comparison of two independent views of the network. Nothing is merged or guessed from it."}
 
 
 # ===================================================================== categories

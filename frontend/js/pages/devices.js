@@ -4,7 +4,8 @@ import { segmented } from './common.js';
 
 export async function mount(main) {
   main.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Devices'),
-    h('p', null, 'Detected automatically via the FRITZ!Box host list, Pi-hole, ARP and the traffic capture. Names can be chosen freely.'))));
+    h('p', null, 'Detected automatically via the FRITZ!Box host list, Pi-hole, ARP and the traffic capture. Names can be chosen freely.')),
+  h('span', { class: 'spacer' }), refreshNamesButton(() => loadList())));
   const listCard = h('div', { class: 'card' });
   const histCard = h('div', { class: 'card' });
   const dnsCard = h('div', { class: 'card', style: { display: 'none' } });
@@ -88,4 +89,22 @@ export async function mount(main) {
     h('div', { class: 'small muted' }, 'Rates in Mbit/s.')));
   }
   await Promise.all([loadList(), loadHist()]);
+}
+
+/** Re-read host names and IPs from all sources. Shared with the DNS page. */
+export function refreshNamesButton(after) {
+  const btn = h('button', { class: 'btn', type: 'button', title: 'Forget learned host names and IPs and ask Pi-hole (incl. DHCP leases) and the FRITZ!Box again. Your own names stay.' }, 'Refresh host names');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Refreshing…';
+    try {
+      const r = await api('api/devices/refresh-names', { method: 'POST', body: {} });
+      const n = r.changed.length;
+      toast(n ? n + ' device(s) changed (sources: ' + r.sources.join(', ') + ')' : 'All host names were already current', 5000);
+      if (after) await after(r);
+    } catch (e) { toast(e.message, 5000); }
+    btn.disabled = false;
+    btn.textContent = 'Refresh host names';
+  });
+  return btn;
 }

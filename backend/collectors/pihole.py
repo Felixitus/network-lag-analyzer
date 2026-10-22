@@ -63,25 +63,60 @@ class PiholeReader:
             return False, f"FTL database not readable: {e} (user in group 'pihole'?)"
 
     def hosts(self) -> list[PiholeHost]:
+        """One entry per device: its newest IPv4 and its newest host name.
+
+        FTL keeps every IP a device ever had (one device here had 34 rows). Reading
+        all of them let whichever row came last set the device's IP and name - often
+        an address from weeks ago.
+        """
         out: list[PiholeHost] = []
         try:
             with self._conn() as c:
                 rows = c.execute(
                     "SELECT n.hwaddr AS mac, n.macVendor AS vendor, n.lastQuery AS lastq, "
-                    "a.ip AS ip, a.name AS name FROM network n "
-                    "JOIN network_addresses a ON a.network_id = n.id"
+                    "a.ip AS ip, a.name AS name, a.lastSeen AS seen FROM network n "
+                    "JOIN network_addresses a ON a.network_id = n.id ORDER BY a.lastSeen"
                 ).fetchall()
             self.error = None
         except sqlite3.Error as e:
             self.error = str(e)
             return out
-        for r in rows:
+        newest: dict[str, dict] = {}
+        for r in rows:                                  # ordered by lastSeen: later rows win
             mac = (r["mac"] or "").lower()
             if not mac or mac.startswith("ip-") or ":" not in mac:  # Pi-hole uses "ip-..." for clients without a MAC
-                mac = None
-            out.append(PiholeHost(mac=mac, ip=r["ip"], name=r["name"] or None,
-                                  vendor=r["vendor"] or None, last_query=r["lastq"] or None))
+                out.append(PiholeHost(mac=None, ip=r["ip"], name=r["name"] or None, vendor=None,
+                                      last_query=r["lastq"] or None))
+                continue
+            e = newest.setdefault(mac, {"ip": None, "name": None, "vendor": r["vendor"], "lastq": r["lastq"]})
+            if ":" not in (r["ip"] or ":"):
+                e["ip"] = r["ip"]
+            if r["name"]:
+                e["name"] = r["name"]
+        for mac, e in newest.items():
+            out.append(PiholeHost(mac=mac, ip=e["ip"], name=e["name"], vendor=e["vendor"] or None,
+                                  last_query=e["lastq"] or None))
         return out
+
+
+def read_dhcp_leases(path: str) -> list[PiholeHost]:
+    """Pi-hole's (dnsmasq's) current DHCP leases: `expiry mac ip hostname client-id`.
+
+    Read-only, and only meaningful where Pi-hole is the DHCP server. A missing or
+    unreadable file simply yields nothing.
+    """
+    out: list[PiholeHost] = []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                p = line.split()
+                if len(p) < 4 or p[1].count(":") != 5:
+                    continue                            # DHCPv6 lines (duid) have no MAC
+                out.append(PiholeHost(mac=p[1].lower(), ip=p[2], name=None if p[3] == "*" else p[3],
+                                      vendor=None, last_query=None))
+    except OSError:
+        pass
+    return out
 
     def poll_queries(self, max_rows: int = 50000) -> list[tuple]:
         """Reads new DNS queries and returns dns_queries rows (ts, client, n, blocked, top_json)."""

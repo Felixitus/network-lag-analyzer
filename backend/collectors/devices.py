@@ -13,6 +13,11 @@ from dataclasses import dataclass, field
 from ..util.netinfo import normalize_mac
 
 ACTIVE_SECONDS = 300
+# Which source's host name wins. Before, the last source to report won, so names
+# flipped between the FRITZ!Box list (every 2 min) and Pi-hole (every minute).
+# Pi-hole's DHCP leases come first: where Pi-hole is the DHCP server they are the
+# name the device announced for its current lease.
+NAME_PRIORITY = ("dhcp", "pihole", "fritzbox", "simulated", "arp", "capture")
 
 
 def is_randomized_mac(mac: str) -> bool:
@@ -36,6 +41,7 @@ class Device:
     first_seen: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     fritz_active: bool | None = None
+    names: dict[str, str] = field(default_factory=dict)   # source → host name, this run only
     dirty: bool = True
 
     @property
@@ -100,7 +106,9 @@ class DeviceRegistry:
     UPSERT = (
         "INSERT INTO devices(id, mac, ip, hostname, vendor, sources, interface, first_seen, last_seen, active) "
         "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(mac) DO UPDATE SET ip=excluded.ip, "
-        "hostname=COALESCE(excluded.hostname, devices.hostname), vendor=COALESCE(excluded.vendor, devices.vendor), "
+        # The registry holds the full state (loaded from this table), so its host
+        # name is taken as is - COALESCE here made a wrong name impossible to clear.
+        "hostname=excluded.hostname, vendor=COALESCE(excluded.vendor, devices.vendor), "
         "sources=excluded.sources, interface=COALESCE(excluded.interface, devices.interface), "
         "last_seen=MAX(excluded.last_seen, devices.last_seen), active=excluded.active"
     )
@@ -136,8 +144,11 @@ class DeviceRegistry:
         changed = False
         if ip and ":" not in ip and d.ip != ip:
             d.ip, changed = ip, True
-        if hostname and hostname != d.hostname and not _is_placeholder_name(hostname):
-            d.hostname, changed = hostname, True
+        if hostname and not _is_placeholder_name(hostname):
+            d.names[source] = hostname
+            best = _best_name(d.names)
+            if best != d.hostname:
+                d.hostname, changed = best, True
         if vendor and vendor != d.vendor:
             d.vendor, changed = vendor, True
         if interface and interface != d.interface:
@@ -152,6 +163,15 @@ class DeviceRegistry:
         if changed:
             d.dirty = True
         return d
+
+    def forget_names(self) -> None:
+        """Drop all automatically learned host names and IPs (aliases stay) - the next
+        observations of every source fill them in again, with the priority above."""
+        for d in self.by_mac.values():
+            d.names.clear()
+            d.hostname = None
+            d.ip = None
+            d.dirty = True
 
     def rename(self, mac: str, name: str | None) -> Device | None:
         mac = normalize_mac(mac) or ""
@@ -186,6 +206,13 @@ class DeviceRegistry:
     def all(self) -> list[dict]:
         return sorted((d.to_dict() for d in self.by_mac.values()),
                       key=lambda x: (not x["active"], _ip_sort(x["ip"])))
+
+
+def _best_name(names: dict[str, str]) -> str | None:
+    for src in NAME_PRIORITY:
+        if names.get(src):
+            return names[src]
+    return next(iter(names.values()), None)
 
 
 def _is_placeholder_name(name: str) -> bool:

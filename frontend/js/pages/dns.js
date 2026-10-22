@@ -3,6 +3,7 @@
 import { api, clear, fmtDate, fmtDateTime, fmtTime, h, ago, toast, cssVar, NA } from '../lib.js';
 import { timeChart } from '../charts.js';
 import { naBox, segmented } from './common.js';
+import { refreshNamesButton } from './devices.js';
 
 const RANGES = [['1h', '1 H'], ['24h', '24 H'], ['7d', '7 D'], ['30d', '30 D'], ['custom', 'Custom']];
 const SPAN = { '1h': 3600, '24h': 86400, '7d': 7 * 86400, '30d': 30 * 86400 };
@@ -202,6 +203,8 @@ async function mountOverview(main) {
       src.dns_usage && src.dns_usage.backlog ? h('div', { class: 'small muted', style: { marginTop: '8px' } },
         `Still reading the Pi-hole log: ${n(src.dns_usage.backlog)} queries to go. Older ranges fill in over the next minutes.`) : null));
 
+    body.append(identificationCard());
+
     const tiles = h('div', { class: 'tiles tiles-4', role: 'list' },
       tile('Known clients', n(t.known_clients), 'seen by Pi-hole since recording started'),
       tile('Active clients', n(t.active_clients), 'with queries in this range'),
@@ -229,11 +232,56 @@ async function mountOverview(main) {
   await load();
 }
 
+const ID_STATUS = {
+  consistent: ['Consistent', 'good', 'Same device and IP in FRITZ!Box and Pi-hole.'],
+  ip_mismatch: ['IP differs', 'warning', 'Same device, different IP - usually a stale entry on one side.'],
+  ip_conflict: ['IP conflict', 'critical', 'This IP belongs to different devices in the two sources.'],
+  not_using_pihole: ['Not using Pi-hole', 'critical', 'Active in the FRITZ!Box, but never asked Pi-hole - resolves names elsewhere.'],
+  fritz_only_inactive: ['FRITZ!Box only', '', 'Known to the FRITZ!Box, currently inactive, never seen by Pi-hole.'],
+  pihole_only: ['Pi-hole only', '', 'Known to Pi-hole only (older device, or no longer listed by the FRITZ!Box).'],
+};
+
+/** FRITZ!Box vs Pi-hole: can the per-device numbers be trusted? */
+function identificationCard() {
+  const card = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Client identification'),
+    h('span', { class: 'sub' }, 'FRITZ!Box host list compared with Pi-hole')), h('div', { class: 'skeleton' }, 'Comparing…'));
+  api('api/dns/identification').then(r => {
+    clear(card).append(h('div', { class: 'card-head' }, h('h2', null, 'Client identification'),
+      h('span', { class: 'sub' }, r.fritz_hosts_at ? 'FRITZ!Box list from ' + ago(r.fritz_hosts_at) : 'FRITZ!Box host list compared with Pi-hole')));
+    if (r.fritz_note) card.append(h('div', { class: 'small muted' }, r.fritz_note));
+    if (r.fritz_available) {
+      card.append(h('div', { class: 'row small' },
+        h('b', null, r.consistent_share === null ? NA : (100 * r.consistent_share).toFixed(0) + ' % consistent'),
+        h('span', { class: 'muted' }, 'of ' + r.in_both + ' devices known to both · FRITZ!Box ' + r.fritz_devices + ' · Pi-hole ' + r.pihole_devices)));
+    }
+    for (const f of r.findings) card.append(h('div', { class: 'banner warn', style: { marginTop: '8px' } }, h('span', null, f)));
+    if (!r.rows.length) return;
+    const order = ['not_using_pihole', 'ip_conflict', 'ip_mismatch', 'consistent', 'fritz_only_inactive', 'pihole_only'];
+    const rows = [...r.rows].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
+    card.append(h('details', { style: { marginTop: '10px' } }, h('summary', { class: 'small' }, 'Show all ' + rows.length + ' devices'),
+      h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
+        h('thead', null, h('tr', null, h('th', null, 'Status'), h('th', null, 'Name (FRITZ!Box / Pi-hole)'), h('th', null, 'MAC'),
+          h('th', null, 'IP FRITZ!Box'), h('th', null, 'IPs Pi-hole'), h('th', null, 'Connection'))),
+        h('tbody', null, rows.map(x => {
+          const [label, cls, title] = ID_STATUS[x.status] || [x.status, '', ''];
+          return h('tr', null,
+            h('td', null, h('span', { class: 'badge ' + cls, title }, label)),
+            h('td', null, x.fritz_name || '–', h('div', { class: 'small muted' }, x.pihole_name || '–')),
+            h('td', { class: 'mono' }, x.mac, x.randomized ? h('div', { class: 'small muted' }, 'randomized') : null),
+            h('td', { class: 'mono' }, x.fritz_ip || '–'),
+            h('td', { class: 'mono' }, x.pihole_ips.join(', ') || '–'),
+            h('td', { class: 'small' }, x.interface || '–', x.active === false ? h('div', { class: 'muted' }, 'inactive') : null));
+        }))))));
+  }).catch(e => { clear(card).append(naBox('Not available - ' + e.message)); });
+  return card;
+}
+
 function clientsCard(cl) {
   const search = h('input', { type: 'search', placeholder: 'Search name, IP or MAC…', 'aria-label': 'Search clients', style: { minWidth: '220px' } });
   const tbody = h('tbody');
   const card = h('div', { class: 'card' },
-    h('div', { class: 'card-head' }, h('h2', null, `Clients (${cl.clients.length})`), search),
+    h('div', { class: 'card-head' }, h('h2', null, `Clients (${cl.clients.length})`),
+      h('div', { class: 'row' }, search, refreshNamesButton(() => window.dispatchEvent(new HashChangeEvent('hashchange'))))),
     h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
       h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'Client'), h('th', { class: 'num' }, 'Queries'),
         h('th', { class: 'num' }, 'Blocked'), h('th', { class: 'num' }, 'Domains'))), tbody)),
@@ -248,7 +296,8 @@ function clientsCard(cl) {
       const tr = h('tr', { class: 'click', tabindex: '0' },
         h('td', null, h('span', { class: `dot ${c.online === true ? 'good' : 'muted'}`, title: c.online === null ? 'Online status: Not available' : c.online ? 'Online' : 'Offline' })),
         h('td', null, h('div', null, c.name, ' ', c.basis !== 'mac' ? basisBadge(c.basis) : null),
-          h('div', { class: 'small mono muted' }, [c.ip, c.mac].filter(Boolean).join(' · '), c.vendor ? ` · ${c.vendor}` : '')),
+          h('div', { class: 'small mono muted' }, [c.ip, c.mac].filter(Boolean).join(' · '), c.vendor ? ` · ${c.vendor}` : '',
+            c.connection ? ' · ' + c.connection : '')),
         h('td', { class: 'num' }, n(c.queries)), h('td', { class: 'num' }, n(c.blocked)),
         h('td', { class: 'num' }, n(c.domains)));
       const go = () => { location.hash = `#/dns/client/${c.id}`; };

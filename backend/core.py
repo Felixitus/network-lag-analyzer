@@ -25,7 +25,7 @@ from .collectors.devices import DeviceRegistry
 from .collectors.dns import DnsProber
 from .collectors.fritzbox import FritzClient, FritzError
 from .collectors.ftl_queries import FtlQueryLog
-from .collectors.pihole import PiholeReader
+from .collectors.pihole import PiholeReader, read_dhcp_leases
 from .collectors.ping import IcmpProber, ProbeScheduler, ProbeTarget
 from .config import Config, build_config, fritz_target, load_yaml
 from .database import repository as repo
@@ -82,6 +82,9 @@ class Core:
         self.dns: DnsProber | None = None
         self.fritz: FritzClient | None = None
         self.fritz_status: dict = {"enabled": False}
+        # Last FRITZ!Box host list, for the client identification check of the DNS pages.
+        self.fritz_hosts: list = []
+        self.fritz_hosts_at: float | None = None
         self.pihole: PiholeReader | None = None
         self.pihole_status: dict = {"enabled": False}
         self.dns_usage: DnsIngestor | None = None
@@ -547,6 +550,7 @@ class Core:
                 self.hub.add_wan_rate(time.time(), down, up)
                 if now - last_hosts > self.cfg.fritzbox.hostlist_interval:
                     hosts = await asyncio.to_thread(fb.host_list)
+                    self.fritz_hosts, self.fritz_hosts_at = hosts, now
                     for h in hosts:
                         self.devices.observe(h.mac, ip=h.ip, hostname=h.name, interface=h.interface, source="fritzbox",
                                              seen=now if h.active else None, fritz_active=h.active)
@@ -573,10 +577,7 @@ class Core:
                 last_arp = now
             if self.pihole is not None and self.pihole_status.get("ok"):
                 if now - last_ph_hosts > 60:
-                    hosts = await asyncio.to_thread(self.pihole.hosts)
-                    for h in hosts:
-                        self.devices.observe(h.mac, ip=h.ip, hostname=h.name, vendor=h.vendor, source="pihole",
-                                             seen=h.last_query)
+                    await self._observe_pihole_hosts()
                     last_ph_hosts = now
                 rows = await asyncio.to_thread(self.pihole.poll_queries)
                 if rows:
@@ -588,6 +589,56 @@ class Core:
             self._persist_devices()
             self._sync_gaming_mac()
             await asyncio.sleep(self.cfg.pihole.poll_interval if self.pihole else 30)
+
+    async def _observe_pihole_hosts(self) -> None:
+        hosts = await asyncio.to_thread(self.pihole.hosts)
+        for h in hosts:
+            self.devices.observe(h.mac, ip=h.ip, hostname=h.name, vendor=h.vendor, source="pihole",
+                                 seen=h.last_query)
+        for h in await asyncio.to_thread(read_dhcp_leases, self.cfg.pihole.dhcp_leases):
+            self.devices.observe(h.mac, ip=h.ip, hostname=h.name, source="dhcp")
+
+    async def refresh_device_names(self) -> dict:
+        """Forget all learned host names and IPs and ask every source again, now.
+
+        Aliases set by the user stay. Returns what changed, for the UI.
+        """
+        before = {m: (d.hostname, d.ip) for m, d in self.devices.by_mac.items()}
+        self.devices.forget_names()
+        asked = []
+        if self.pihole is not None:
+            await self._observe_pihole_hosts()
+            asked += ["Pi-hole", "DHCP leases"]
+        if self.fritz is not None:
+            try:
+                hosts = await asyncio.to_thread(self.fritz.host_list)
+                self.fritz_hosts, self.fritz_hosts_at = hosts, time.time()
+                asked.append("FRITZ!Box")
+            except Exception as e:           # noqa: BLE001 - the other sources still count
+                log.warning("Refreshing names: FRITZ!Box host list failed: %s", e)
+                hosts = self.fritz_hosts
+            for h in hosts:
+                self.devices.observe(h.mac, ip=h.ip, hostname=h.name, interface=h.interface, source="fritzbox",
+                                     fritz_active=h.active)
+        if self.simulator is not None:
+            from .simulation import DEMO_DEVICES
+            for mac, (ip, name) in DEMO_DEVICES.items():
+                self.devices.observe(mac, ip=ip, hostname=name, source="simulated")
+            asked.append("demo devices")
+        for ip, mac in netinfo.arp_table().items():
+            self.devices.observe(mac, ip=ip, source="arp")
+        changes = [{"mac": m, "before": before.get(m, (None, None))[0], "after": d.hostname,
+                    "ip_before": before.get(m, (None, None))[1], "ip_after": d.ip}
+                   for m, d in self.devices.by_mac.items()
+                   if before.get(m, (None, None)) != (d.hostname, d.ip)]
+        self._persist_devices()
+        # The DNS pages keep their own copy of name and IP per client (dns_clients).
+        rows = [(d.hostname, d.ip, f"mac:{m}") for m, d in self.devices.by_mac.items()]
+        await self.db.write(lambda c: c.executemany(
+            "UPDATE dns_clients SET name = ?, ip = COALESCE(?, ip) WHERE key = ?", rows))
+        await self.db.flush()
+        log.info("Device names refreshed from %s: %d changed", ", ".join(asked) or "no source", len(changes))
+        return {"sources": asked, "changed": changes, "devices": len(self.devices.by_mac)}
 
     def _persist_devices(self) -> None:
         rows = self.devices.dirty_rows()

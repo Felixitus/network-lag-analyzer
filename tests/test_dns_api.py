@@ -208,3 +208,20 @@ def test_export_rejects_combinations_that_make_no_sense(client):
     assert client.get("/api/dns/export?kind=clients&format=csv&client=1").status_code == 400
     assert client.get("/api/dns/export?kind=nope&format=csv").status_code == 422
     assert client.get("/api/dns/export?kind=clients&format=pdf").status_code == 422
+
+
+def test_identification_compares_fritzbox_and_pihole_and_finds_the_bypassing_device(client):
+    _wait_for_dns_demo(client)
+    r = client.get("/api/dns/identification").json()
+    assert r["fritz_available"] is True and r["pihole_available"] is True
+    by = {x["mac"]: x["status"] for x in r["rows"]}
+    assert by["02:00:00:00:00:77"] == "not_using_pihole"            # demo smart speaker
+    assert by["02:00:00:00:00:20"] == "consistent"
+    assert any("never asked Pi-hole" in f for f in r["findings"])
+    assert "Nothing is merged" in r["note"]
+
+
+def test_client_list_carries_connection_and_sources(client):
+    _wait_for_dns_demo(client)
+    phone = next(c for c in client.get("/api/dns/clients").json()["clients"] if c["mac"] == "02:00:00:00:00:42")
+    assert "simulated" in phone["sources"]
