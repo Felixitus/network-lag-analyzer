@@ -19,6 +19,9 @@ def client(tmp_path_factory):
     from backend.api import create_app
     from backend.core import Core
     core = Core()
+    # The load guard measures the host, not the app: a busy CI runner reached level 2
+    # and paused the demo ingestion for good (it only steps down after 60 s of calm).
+    core.loadguard.evaluate = lambda: 0
     with TestClient(create_app(core)) as c:
         c.get("/")   # CSRF cookie
         yield c
