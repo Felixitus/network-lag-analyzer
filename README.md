@@ -47,8 +47,7 @@ Everything runs locally. No cloud, no telemetry, no payload storage.
 15. [Security](#security)
 16. [Performance & load guard](#performance--load-guard)
 17. [Troubleshooting](#troubleshooting)
-18. [Development & tests](#development--tests)
-19. [License](#license)
+18. [License](#license)
 
 ---
 
@@ -684,49 +683,6 @@ The current level is shown as a banner in the UI.
 API overview: `http://PI:8088/api/docs`.
 
 ---
-
-## Development & tests
-
-```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt
-python -m pytest -q                       # unit, scenario and API tests
-python -m backend.main --dev --data-dir /tmp/nla --port 8099   # demo with simulated data
-```
-
-Git workflow, commit rules and releases: [CONTRIBUTING.md](CONTRIBUTING.md).
-Changes per version: [CHANGELOG.md](CHANGELOG.md).
-
-Simulated test scenarios (`tests/test_scenarios.py`): upload saturation, download
-saturation, ISP packet loss, local gateway problem, only one target server affected,
-DNS outage, game server problem and normal operation without false alarms.
-
-### Implementation by phases
-
-| Phase | Content | Tests |
-|---|---|---|
-| 1–3 | Requirements analysis, environment, [ARCHITECTURE.md](ARCHITECTURE.md) | – |
-| 4–5 | Base project, SQLite schema, ICMP/jitter/loss, dashboard, SSE | `test_metrics.py` |
-| 6 | Device discovery (FRITZ!Box, Pi-hole, ARP, capture), Pi-hole | `test_api.py` |
-| 7 | FRITZ!Box capture, pcap/pcapng parser, flows, retransmissions | `test_capture.py` |
-| 8 | Event detection, incident correlation, cause rules | `test_scenarios.py` |
-| 9 | Gaming Mode, "I JUST HAD LAG" | `test_scenarios.py`, `test_misc.py` |
-| 10 | Load guard, PCAP ring, systemd, installer, README | `test_misc.py` |
-| 11 | Security hardening (FRITZ!Box password binding, login throttle) | `test_security.py` |
-
-DNS usage module (spec: per-device DNS statistics on Pi-hole):
-
-| Phase | Content | Tests |
-|---|---|---|
-| 1 | System analysis of the Pi (read-only) | – |
-| 2 | Read-only FTL query log access, client attribution | `test_dns_clients.py` |
-| 3 | Data model, incremental ingestion, IP history | `test_dns_usage.py` |
-| 4 | Dashboard, client detail, filters, categories | `test_categories.py`, `test_dns_api.py` |
-| 5 | Estimated activity phases | `test_activity.py` |
-| 6 | CSV/XLSX export | `test_export.py` |
-| 7 | Mandatory login, sessions, bind address | `test_security.py` |
-| 8 | FRITZ!Box cross-check, host name fixes | `test_client_match.py`, `test_device_names.py` |
-| 9 | Documentation, backup/restore, deployment checks | – |
 
 ### Known limitations
 
