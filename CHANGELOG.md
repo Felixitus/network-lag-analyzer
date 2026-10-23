@@ -11,6 +11,12 @@ versions follow [SemVer](https://semver.org/).
   brute-force the password offline. Older FRITZ!OS versions now get a clear error.
 
 ### Fixed
+- FRITZ!OS 8 (seen on a FRITZ!Box 7690 with 8.02) no longer offers the TR-064 action
+  `GetAddonInfos`. The WAN rate now comes from the link utilization of
+  `GetCommonLinkProperties` on such boxes. Before, the failing call also stopped the
+  host list, so the client identification on the DNS page stayed "Not available".
+- A failing FRITZ!Box request no longer stops the others; the status shows the UPnP
+  error code instead of a bare "HTTP 500".
 - Code scanning findings: a misread character range in the XLSX writer's
   regular expression and a false "clear-text logging" alert in the account CLI.
 

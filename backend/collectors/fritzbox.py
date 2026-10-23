@@ -44,6 +44,10 @@ class FritzError(Exception):
     pass
 
 
+class FritzActionUnsupported(FritzError):
+    """The FRITZ!Box does not offer this TR-064 action (UPnP error 401 "Invalid Action")."""
+
+
 def compute_login_response(challenge: str, password: str) -> str:
     """Response to the PBKDF2 login challenge (FRITZ!OS 7.24 and newer).
 
@@ -55,6 +59,19 @@ def compute_login_response(challenge: str, password: str) -> str:
     h1 = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt1), int(it1))
     h2 = hashlib.pbkdf2_hmac("sha256", h1, bytes.fromhex(salt2), int(it2))
     return f"{salt2}${h2.hex()}"
+
+
+def _xml_fault(content: bytes) -> tuple[str | None, str]:
+    try:
+        root = _strip_ns(ET.fromstring(content))
+    except ET.ParseError:
+        return None, ""
+    return _xml_text(root, "errorCode"), _xml_text(root, "errorDescription") or ""
+
+
+def _newest_rate(history: str | None) -> float | None:
+    first = (history or "").split(",")[0].strip()
+    return float(first) if first.isdigit() else None
 
 
 def _xml_text(root: ET.Element, tag: str) -> str | None:
@@ -99,6 +116,7 @@ class FritzClient:
         self._http = httpx.Client(timeout=timeout)
         self.model: str | None = None
         self.firmware: str | None = None
+        self._addon_infos = True     # False once the box said it does not know GetAddonInfos
 
     def close(self) -> None:
         self._http.close()
@@ -190,7 +208,14 @@ class FritzClient:
         if r.status_code == 401:
             raise FritzError("TR-064: login rejected (401)")
         if r.status_code >= 400:
-            raise FritzError(f"TR-064 {action}: HTTP {r.status_code}")
+            # SOAP faults come as HTTP 500; the UPnP error code says what actually went wrong
+            code, desc = _xml_fault(r.content)
+            msg = f"TR-064 {action}: HTTP {r.status_code}"
+            if code:
+                msg += f" (UPnP error {code} {desc})" if desc else f" (UPnP error {code})"
+            if code == "401":
+                raise FritzActionUnsupported(msg)
+            raise FritzError(msg)
         root = _strip_ns(ET.fromstring(r.content))
         resp = root.find(f".//{action}Response")
         if resp is None:
@@ -205,10 +230,22 @@ class FritzClient:
 
     def wan_rates(self) -> tuple[float, float]:
         """(download_bps, upload_bps) - total rate averaged by the FRITZ!Box."""
-        d = self.soap(SVC_WAN_COMMON, "GetAddonInfos")
-        down = float(d.get("NewByteReceiveRate") or 0) * 8
-        up = float(d.get("NewByteSendRate") or 0) * 8
-        return down, up
+        if self._addon_infos:
+            try:
+                d = self.soap(SVC_WAN_COMMON, "GetAddonInfos")
+                return float(d.get("NewByteReceiveRate") or 0) * 8, float(d.get("NewByteSendRate") or 0) * 8
+            except FritzActionUnsupported:
+                # FRITZ!OS 8 dropped GetAddonInfos from TR-064 (HTTP 500, "Invalid Action").
+                log.info("FRITZ!Box has no GetAddonInfos, using the utilization of GetCommonLinkProperties")
+                self._addon_infos = False
+        # Same numbers, other place: the newest entry of the utilization history (bytes/s,
+        # one value per 5 s, newest first) equals GetAddonInfos' byte rate.
+        d = self.soap(SVC_WAN_COMMON, "GetCommonLinkProperties")
+        down = _newest_rate(d.get("NewX_AVM-DE_DownstreamCurrentUtilization"))
+        up = _newest_rate(d.get("NewX_AVM-DE_UpstreamCurrentUtilization"))
+        if down is None or up is None:
+            raise FritzError("WAN rate not available: neither GetAddonInfos nor the link utilization")
+        return down * 8, up * 8
 
     def link_capacity(self) -> tuple[float | None, float | None]:
         """(down_bps, up_bps) sync/link rate of the WAN line."""

@@ -536,6 +536,9 @@ class Core:
         last_hosts = last_cap = 0.0
         while True:
             now = time.time()
+            # Each part on its own: one action the box does not offer (FRITZ!OS 8 dropped
+            # GetAddonInfos) must not take the host list and the client identification with it.
+            errors = []
             try:
                 if not self.fritz_status.get("model"):
                     info = await asyncio.to_thread(fb.device_info)
@@ -548,17 +551,23 @@ class Core:
                 # gap; the exact per-device values are patched in later.
                 down, up = await asyncio.to_thread(fb.wan_rates)
                 self.hub.add_wan_rate(time.time(), down, up)
-                if now - last_hosts > self.cfg.fritzbox.hostlist_interval:
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{type(e).__name__}: {e}")
+            if now - last_hosts > self.cfg.fritzbox.hostlist_interval:
+                try:
                     hosts = await asyncio.to_thread(fb.host_list)
                     self.fritz_hosts, self.fritz_hosts_at = hosts, now
                     for h in hosts:
                         self.devices.observe(h.mac, ip=h.ip, hostname=h.name, interface=h.interface, source="fritzbox",
                                              seen=now if h.active else None, fritz_active=h.active)
                     last_hosts = now
-                self.fritz_status.update(ok=True, error=None, last_ok=now)
-            except (FritzError, Exception) as e:  # noqa: BLE001
-                self.fritz_status.update(ok=False, error=f"{type(e).__name__}: {e}")
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"{type(e).__name__}: {e}")
+            if errors:
+                self.fritz_status.update(ok=False, error="; ".join(errors))
                 await asyncio.sleep(10)
+            else:
+                self.fritz_status.update(ok=True, error=None, last_ok=now)
             await asyncio.sleep(self.cfg.fritzbox.poll_interval)
 
     # ------------------------------------------------------------------ devices / Pi-hole
