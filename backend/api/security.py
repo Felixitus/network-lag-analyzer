@@ -64,7 +64,7 @@ def verify_password(pw: str, stored: str) -> bool:
 _DUMMY_HASH = hash_password(secrets.token_hex(16))
 
 
-def check_new_credentials(username: str, password: str) -> str | None:
+def account_input_problem(username: str, password: str) -> str | None:
     """Error message, or None if acceptable."""
     if not USERNAME_RE.match(username or ""):
         return "Username: 1-64 characters, letters, digits and . _ @ - only"
@@ -85,7 +85,7 @@ def get_account(conn) -> dict | None:
 
 def set_account(conn, username: str, password: str, keep_session: str | None = None) -> None:
     """Create or replace the account. Ends every session except `keep_session` (a token)."""
-    err = check_new_credentials(username, password)
+    err = account_input_problem(username, password)
     if err:
         raise ValueError(err)
     set_setting(conn, ACCOUNT_KEY, {"username": username, "password_hash": hash_password(password),

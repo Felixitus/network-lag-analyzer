@@ -5,7 +5,7 @@ import pytest
 
 from backend.analysis.correlation import analyze_user_report, compress_timeline
 from backend.api.security import hash_password, verify_password
-from backend.collectors.fritzbox import compute_login_response
+from backend.collectors.fritzbox import FritzError, compute_login_response
 from backend.config import RetentionCfg, build_config
 from backend.database import repository as repo
 from backend.database.repository import Database
@@ -19,10 +19,9 @@ def test_fritz_pbkdf2_login_response_avm_example():
         "5A1722$1798a1672bca7c6463d6b245f82b53703b0f50813401b03e4045a5861e689adb"
 
 
-def test_fritz_md5_login_response():
-    r = compute_login_response("1234567z", "äbc")
-    assert r.startswith("1234567z-") and len(r) == 9 + 32
-    assert r == "1234567z-9e224a41eeefa284df7bb0f26c2913e2"
+def test_fritz_md5_login_is_refused_instead_of_answered():
+    with pytest.raises(FritzError, match="7.24"):
+        compute_login_response("1234567z", "äbc")
 
 
 def test_password_hash_roundtrip():

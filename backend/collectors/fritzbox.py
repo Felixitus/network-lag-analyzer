@@ -45,16 +45,16 @@ class FritzError(Exception):
 
 
 def compute_login_response(challenge: str, password: str) -> str:
-    """Response to the login challenge (PBKDF2 from FRITZ!OS 7.24, MD5 otherwise)."""
-    if challenge.startswith("2$"):
-        _, it1, salt1, it2, salt2 = challenge.split("$")
-        h1 = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt1), int(it1))
-        h2 = hashlib.pbkdf2_hmac("sha256", h1, bytes.fromhex(salt2), int(it2))
-        return f"{salt2}${h2.hex()}"
-    # Old scheme: non-Latin-1 characters are replaced by "."
-    pw = "".join(c if ord(c) < 256 else "." for c in password)
-    md5 = hashlib.md5(f"{challenge}-{pw}".encode("utf-16le")).hexdigest()
-    return f"{challenge}-{md5}"
+    """Response to the PBKDF2 login challenge (FRITZ!OS 7.24 and newer).
+
+    The older MD5 scheme is deliberately not supported: anyone on the LAN who sees one
+    MD5 challenge and response can brute-force the password offline."""
+    if not challenge.startswith("2$"):
+        raise FritzError("FRITZ!OS older than 7.24 (MD5 login only) is not supported - please update the FRITZ!Box")
+    _, it1, salt1, it2, salt2 = challenge.split("$")
+    h1 = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt1), int(it1))
+    h2 = hashlib.pbkdf2_hmac("sha256", h1, bytes.fromhex(salt2), int(it2))
+    return f"{salt2}${h2.hex()}"
 
 
 def _xml_text(root: ET.Element, tag: str) -> str | None:

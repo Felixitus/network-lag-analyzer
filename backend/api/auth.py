@@ -130,7 +130,7 @@ async def change_password(request: Request, body: PasswordBody):
         await asyncio.sleep(FAIL_DELAY)
         raise HTTPException(403, "Current password is wrong")
     username = (body.new_username or "").strip() or account["username"]
-    err = s.check_new_credentials(username, body.new_password)
+    err = s.account_input_problem(username, body.new_password)
     if err:
         raise HTTPException(400, err)
     token = request.cookies.get(s.SESSION_COOKIE)

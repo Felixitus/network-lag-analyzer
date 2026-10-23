@@ -5,6 +5,15 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- The FRITZ!Box login no longer falls back to the old MD5 challenge scheme
+  (FRITZ!OS before 7.24). Anyone on the LAN who saw one MD5 login could
+  brute-force the password offline. Older FRITZ!OS versions now get a clear error.
+
+### Fixed
+- Code scanning findings: a misread character range in the XLSX writer's
+  regular expression and a false "clear-text logging" alert in the account CLI.
+
 ## [1.2.0] - 2026-10-22
 
 DNS usage per device (Pi-hole), mandatory login. Method and limits: `docs/dns-usage.md`.

@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             if getpass.getpass("Repeat it: ") != password:
                 print("The passwords do not match - nothing changed.", file=sys.stderr)
                 return 2
-        err = s.check_new_credentials(username, password)
+        err = s.account_input_problem(username, password)
         if err:
             print(f"{err} - nothing changed.", file=sys.stderr)
             return 2

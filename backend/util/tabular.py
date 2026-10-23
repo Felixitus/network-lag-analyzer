@@ -23,7 +23,7 @@ from xml.sax.saxutils import escape
 
 DANGEROUS_START = ("=", "+", "-", "@", "\t", "\r")
 # Characters XML 1.0 does not allow at all - a DNS name can contain anything.
-_XML_INVALID = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+_XML_INVALID = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
 
 def safe_text(v: str) -> str:
