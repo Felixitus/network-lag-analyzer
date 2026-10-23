@@ -210,12 +210,6 @@ The **setup wizard** checks this actively (among other things it listens on the 
 for 2 s to see whether foreign unicast frames arrive) and shows the capability matrix. If a
 source is missing, the UI says so - and the root cause analysis then names **no device**.
 
-### Recommendation for a home network with FRITZ!Box + Deco (AP mode)
-
-The FRITZ!Box packet capture is the best solution without extra hardware. The Deco in
-access point mode bridges; all clients (including Wi-Fi clients on the Deco) have their own
-IP/MAC in the FRITZ!Box network, and their internet traffic passes through its LAN bridge.
-
 ---
 
 ## Setting up the FRITZ!Box (recommended)
