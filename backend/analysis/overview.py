@@ -118,7 +118,25 @@ def pi_light(core) -> dict:
     return _light("pi", "Raspberry Pi", level, value, " · ".join(p for p in parts if p), "#/settings")
 
 
-LIGHTS = [internet_light, router_light, dns_light, fritz_light, capture_light, pi_light]
+def line_light(core) -> dict:
+    ls = core.line_status or {}
+    if not ls.get("enabled"):
+        return _light("line", "Internet line", None, "Not available", "No FRITZ!Box access configured", "#/line")
+    dsl, wan = ls.get("dsl"), ls.get("wan")
+    if dsl is None and wan is None:
+        return _light("line", "Internet line", None, "Not available", ls.get("error") or "Waiting for the first values", "#/line")
+    if wan and (wan.get("status") or "").lower() not in ("connected", ""):
+        return _light("line", "Internet line", "critical", wan["status"], "Connection state of the FRITZ!Box", "#/line")
+    if dsl:
+        detail = f"{(dsl.get('down_kbit') or 0) / 1000:.0f}/{(dsl.get('up_kbit') or 0) / 1000:.0f} Mbit/s"
+        if dsl.get("down_snr_db") is not None:
+            detail += f" · margin {dsl['down_snr_db']:.0f} dB"
+        return _light("line", "Internet line", ls.get("level"), "DSL " + (dsl.get("status") or "?"),
+                      (ls.get("notes") or [detail])[0], "#/line")
+    return _light("line", "Internet line", "good", wan.get("status") or "?", "", "#/line")
+
+
+LIGHTS = [internet_light, router_light, line_light, dns_light, fritz_light, capture_light, pi_light]
 
 
 def lights(core) -> list[dict]:

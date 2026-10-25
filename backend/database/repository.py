@@ -251,6 +251,37 @@ def target_params(res: int, ts: int, target_id: int, v: dict) -> tuple:
             v.get("probes"), v.get("lost"))
 
 
+# ------------------------------------------------- internet line (FRITZ!Box)
+LINE_COLS = ("dsl_up", "down_kbit", "up_kbit", "down_max_kbit", "up_max_kbit", "down_snr", "up_snr",
+             "down_atten", "up_atten", "crc", "fec", "errored_secs", "severe_secs", "retrains",
+             "wan_connected", "wan_uptime")
+_LINE_DB = {"down_snr_db": "down_snr", "up_snr_db": "up_snr", "down_atten_db": "down_atten", "up_atten_db": "up_atten"}
+DECI = 10            # dB in 1/10 dB, as the FRITZ!Box reports it
+INSERT_LINE = f"INSERT OR REPLACE INTO line_stats(ts, {', '.join(LINE_COLS)}) VALUES ({', '.join('?' * (len(LINE_COLS) + 1))})"
+INSERT_FRITZ_EVENT = "INSERT OR IGNORE INTO fritz_events(ts, kind, grp, msg) VALUES (?,?,?,?)"
+
+
+def line_params(ts: int, dsl: dict | None, wan: dict | None) -> tuple:
+    """DSL values (dB, kbit/s, counters) and connection state → one line_stats row."""
+    dsl, wan = dsl or {}, wan or {}
+    v = {db: (None if dsl.get(k) is None else int(round(dsl[k] * DECI))) for k, db in _LINE_DB.items()}
+    v.update({k: (None if dsl.get(k) is None else int(dsl[k]))
+              for k in ("down_kbit", "up_kbit", "down_max_kbit", "up_max_kbit", "crc", "fec",
+                        "errored_secs", "severe_secs", "retrains")})
+    v["dsl_up"] = None if not dsl.get("status") else int(dsl["status"].lower() == "up")
+    v["wan_connected"] = None if not wan.get("status") else int(wan["status"].lower() == "connected")
+    v["wan_uptime"] = wan.get("uptime_s")
+    return (int(ts), *[v.get(c) for c in LINE_COLS])
+
+
+def decode_line(row) -> dict:
+    d = dict(row)
+    for k, db in _LINE_DB.items():
+        d[k] = None if d.get(db) is None else d.pop(db) / DECI
+        d.pop(db, None)
+    return d
+
+
 INSERT_BUFFERBLOAT = (
     "INSERT OR REPLACE INTO bufferbloat(ts, idle_ms, idle_secs, up_ms, up_worst_ms, up_secs, "
     "down_ms, down_worst_ms, down_secs) VALUES (?,?,?,?,?,?,?,?,?)"
@@ -383,6 +414,8 @@ def apply_retention(conn: sqlite3.Connection, now: float, ret: Any) -> dict[str,
         ("dns_minutes", "DELETE FROM dns_service_minutes WHERE ts < ?", now - ret.dns_minute_days * day),
         ("dns_ip_history", "DELETE FROM dns_ip_history WHERE last_seen < ?", now - ret.dns_hourly_days * day),
         ("events", "DELETE FROM events WHERE ts_start < ?", now - ret.event_days * day),
+        ("line_stats", "DELETE FROM line_stats WHERE ts < ?", now - ret.line_days * day),
+        ("fritz_events", "DELETE FROM fritz_events WHERE ts < ?", now - ret.line_days * day),
         ("incidents", "DELETE FROM incidents WHERE ts_start < ?", now - ret.event_days * day),
     ]
     for name, sql, cut in stmts:
@@ -411,6 +444,8 @@ TIME_TABLES: dict[str, tuple[str, str]] = {
     "dns_service_minutes": ("ts", "Activity minutes per device and service"),
     "dns_ip_history": ("last_seen", "Which device held which IP"),
     "events": ("ts_start", "Detected events"),
+    "line_stats": ("ts", "Internet line values (FRITZ!Box)"),
+    "fritz_events": ("ts", "FRITZ!Box event log"),
     "incidents": ("ts_start", "Incidents incl. analysis"),
     "bufferbloat": ("ts", "Latency under load (10-minute windows)"),
     "gaming_sessions": ("ts_start", "Gaming Sessions"),

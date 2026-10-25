@@ -105,6 +105,7 @@ retention:
   dns_domain_days: 180          # domains per device and day
   dns_domain_hourly_hours: 48   # domains per device and hour, for exact short ranges
   dns_minute_days: 31           # activity minutes; also the longest range for activity phases
+  line_days: 400                # internet line values and the FRITZ!Box event log
 # The daily summary (daily_stats) is exempt from retention:
 # about 200 bytes per day, and in return the long-term comparison stays possible for years.
 

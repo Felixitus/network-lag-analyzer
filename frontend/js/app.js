@@ -7,6 +7,7 @@ import * as timeline from './pages/timeline.js';
 import * as incidents from './pages/incidents.js';
 import * as devices from './pages/devices.js';
 import * as dns from './pages/dns.js';
+import * as line from './pages/line.js';
 import * as gaming from './pages/gaming.js';
 import * as settings from './pages/settings.js';
 
@@ -17,7 +18,7 @@ export const store = {
   emit(kind, data) { for (const fn of this.listeners) { try { fn(kind, data); } catch (e) { console.error(e); } } },
 };
 
-const routes = { overview, dashboard, timeline, incidents, incident: incidents, devices, dns, gaming, settings };
+const routes = { overview, dashboard, timeline, incidents, incident: incidents, devices, dns, line, gaming, settings };
 let current = null;
 
 function parseHash() {

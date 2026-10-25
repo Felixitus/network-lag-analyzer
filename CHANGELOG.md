@@ -11,6 +11,12 @@ versions follow [SemVer](https://semver.org/).
   hours or 7 days (internet, latency, link to router, DNS) from the stored per-minute
   values. Periods without measurements are hatched, never "OK". Incidents, service starts
   and Pi reboots are marked on it. The previous dashboard is now called **Live**.
+- **Internet line** page: DSL sync and attainable rate, noise margin, attenuation and line
+  errors (CRC, errored seconds, resyncs) from the FRITZ!Box every 5 minutes; its event log
+  (reconnects, DSL sync lost, firmware updates) kept for 400 days (`retention.line_days`);
+  outages measured by the Pi with the FRITZ!Box events around them, and an outage report
+  as CSV for the provider. Boxes without DSL show only the connection state. On the
+  overview: a light for the line, and its events on the timeline.
 
 ### Security
 - The FRITZ!Box login no longer falls back to the old MD5 challenge scheme

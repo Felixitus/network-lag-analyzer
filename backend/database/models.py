@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -205,6 +205,30 @@ CREATE TABLE IF NOT EXISTS incidents (
     pcap_protected INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_incidents_time ON incidents(ts_start);
+
+-- Internet line from the FRITZ!Box, every 5 minutes (schema 7). Noise margin and
+-- attenuation in 1/10 dB, rates in kbit/s; the error counters are cumulative since the
+-- last DSL synchronization, exactly as the box reports them. NULL = the box did not say.
+CREATE TABLE IF NOT EXISTS line_stats (
+    ts            INTEGER PRIMARY KEY,
+    dsl_up        INTEGER,                -- 1 = DSL synchronized
+    down_kbit     INTEGER, up_kbit INTEGER,
+    down_max_kbit INTEGER, up_max_kbit INTEGER,
+    down_snr      INTEGER, up_snr INTEGER,     -- 1/10 dB
+    down_atten    INTEGER, up_atten INTEGER,   -- 1/10 dB
+    crc           INTEGER, fec INTEGER, errored_secs INTEGER, severe_secs INTEGER, retrains INTEGER,
+    wan_connected INTEGER,
+    wan_uptime    INTEGER                 -- seconds since the last (re)connect
+);
+
+-- The FRITZ!Box event log, copied so that it outlives the box's own short log.
+CREATE TABLE IF NOT EXISTS fritz_events (
+    ts   INTEGER NOT NULL,
+    kind TEXT NOT NULL,                   -- see analysis/line.py
+    grp  TEXT,
+    msg  TEXT NOT NULL,
+    PRIMARY KEY (ts, msg)
+) WITHOUT ROWID;
 
 -- DNS activity per client and minute (from Pi-hole). NOT a traffic measure!
 CREATE TABLE IF NOT EXISTS dns_queries (
