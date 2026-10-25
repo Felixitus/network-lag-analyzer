@@ -45,6 +45,10 @@ function timelineView(data) {
     marks.append(h('span', { class: `otl-mark restart ${r.kind}`, style: { left: pos(r.ts) },
       title: `${fmtDate(r.ts)} ${fmtTime(r.ts, false)}: ${r.label}` }, r.kind === 'boot' ? '⏻' : '↻'));
   }
+  for (const e of data.line_events || []) {
+    marks.append(h('a', { class: 'otl-mark line', href: '#/line', style: { left: pos(e.ts) },
+      title: `${fmtDate(e.ts)} ${fmtTime(e.ts, false)}: FRITZ!Box - ${e.label}` }, '◆'));
+  }
   wrap.append(h('div', { class: 'otl-row' }, h('div', { class: 'otl-label' }, 'Events'), marks));
   // axis: 6 labels
   const axis = h('div', { class: 'otl-strip otl-axis' });
@@ -60,7 +64,7 @@ function legend() {
   const item = (cls, text) => h('span', { class: 'row small' }, h('span', { class: `otl-cell legend ${cls}` }), text);
   return h('div', { class: 'row small muted', style: { flexWrap: 'wrap', gap: '14px' } },
     item('lvl-good', 'OK'), item('lvl-warning', 'Warning'), item('lvl-critical', 'Problem'), item('na', 'Not measured'),
-    h('span', null, '▲ Incident'), h('span', null, '↻ Service started'), h('span', null, '⏻ Pi started'));
+    h('span', null, '▲ Incident'), h('span', null, '◆ FRITZ!Box event'), h('span', null, '↻ Service started'), h('span', null, '⏻ Pi started'));
 }
 
 function happenings(data) {

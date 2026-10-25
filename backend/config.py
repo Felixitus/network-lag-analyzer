@@ -166,6 +166,9 @@ class RetentionCfg(BaseModel):
     # Activity minutes per device and service (~60 KB per day); also the longest
     # range for activity phases.
     dns_minute_days: float = Field(31, ge=1, le=91)
+    # Internet line values every 5 minutes (~15 KB per day) and the FRITZ!Box event log:
+    # long enough to show a provider that a problem has been going on for months.
+    line_days: float = Field(400, ge=7, le=3650)
     # Individual ICMP probes. No evaluation reads them, but they cost about 14 MB
     # of writes to the SD card per day. Only enable for troubleshooting.
     ping_samples: bool = False

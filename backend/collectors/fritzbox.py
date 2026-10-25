@@ -32,10 +32,16 @@ SOAP_ENV = (
 SVC_WAN_COMMON = "urn:dslforum-org:service:WANCommonInterfaceConfig:1"
 SVC_HOSTS = "urn:dslforum-org:service:Hosts:1"
 SVC_DEVICEINFO = "urn:dslforum-org:service:DeviceInfo:1"
+SVC_DSL = "urn:dslforum-org:service:WANDSLInterfaceConfig:1"
+SVC_WAN_IP = "urn:dslforum-org:service:WANIPConnection:1"
+SVC_WAN_PPP = "urn:dslforum-org:service:WANPPPConnection:1"
 DEFAULT_CONTROL = {
     SVC_WAN_COMMON: "/upnp/control/wancommonifconfig1",
     SVC_HOSTS: "/upnp/control/hosts",
     SVC_DEVICEINFO: "/upnp/control/deviceinfo",
+    SVC_DSL: "/upnp/control/wandslifconfig1",
+    SVC_WAN_IP: "/upnp/control/wanipconnection1",
+    SVC_WAN_PPP: "/upnp/control/wanpppconn1",
 }
 IFACE_RE = re.compile(r"^[A-Za-z0-9_\-\.]{1,32}$")
 
@@ -253,6 +259,60 @@ class FritzClient:
         down = float(d.get("NewLayer1DownstreamMaxBitRate") or 0) or None
         up = float(d.get("NewLayer1UpstreamMaxBitRate") or 0) or None
         return down, up
+
+    # ----------------------------------------------------------------- line diagnostics
+    def dsl_info(self) -> dict | None:
+        """DSL line values, or None on boxes without DSL (cable, fibre, LTE).
+
+        Noise margin and attenuation come in 1/10 dB, rates in kbit/s. The error counters
+        are cumulative since the last synchronization."""
+        try:
+            info = self.soap(SVC_DSL, "GetInfo")
+        except FritzActionUnsupported:
+            return None
+        try:
+            stats = self.soap(SVC_DSL, "GetStatisticsTotal")
+        except FritzActionUnsupported:
+            stats = {}
+
+        def num(d: dict, k: str, scale: float = 1.0) -> float | None:
+            v = d.get(k)
+            return int(v) / scale if v not in (None, "") and v.lstrip("-").isdigit() else None
+        return {
+            "status": info.get("NewStatus") or None,
+            "down_kbit": num(info, "NewDownstreamCurrRate"), "up_kbit": num(info, "NewUpstreamCurrRate"),
+            "down_max_kbit": num(info, "NewDownstreamMaxRate"), "up_max_kbit": num(info, "NewUpstreamMaxRate"),
+            "down_snr_db": num(info, "NewDownstreamNoiseMargin", 10), "up_snr_db": num(info, "NewUpstreamNoiseMargin", 10),
+            "down_atten_db": num(info, "NewDownstreamAttenuation", 10), "up_atten_db": num(info, "NewUpstreamAttenuation", 10),
+            "crc": num(stats, "NewCRCErrors"), "fec": num(stats, "NewFECErrors"),
+            "errored_secs": num(stats, "NewErroredSecs"), "severe_secs": num(stats, "NewSeverelyErroredSecs"),
+            "retrains": num(stats, "NewLinkRetrain"),
+        }
+
+    def wan_status(self) -> dict:
+        """Internet connection state and uptime. FRITZ!OS 8 dropped the PPP actions, so the IP
+        connection comes first and PPP is only the fallback for older boxes."""
+        for svc in (SVC_WAN_IP, SVC_WAN_PPP):
+            try:
+                d = self.soap(svc, "GetStatusInfo")
+            except FritzActionUnsupported:
+                continue
+            up = d.get("NewUptime")
+            return {"status": d.get("NewConnectionStatus") or None,
+                    "uptime_s": int(up) if up and up.isdigit() else None,
+                    "last_error": d.get("NewLastConnectionError") or None}
+        raise FritzError("Connection state not available (neither WANIPConnection nor WANPPPConnection)")
+
+    def device_log(self) -> list[dict]:
+        """The FRITZ!Box event log as [{id, group, date, time, msg}], newest first."""
+        d = self.soap(SVC_DEVICEINFO, "X_AVM-DE_GetDeviceLogPath")
+        path = d.get("NewDeviceLogPath")
+        if not path:
+            raise FritzError("Event log not available")
+        r = self._http.get(f"http://{self.host}:{self.tr064_port}{path}")
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
+        return [{k: _xml_text(ev, k) for k in ("id", "group", "date", "time", "msg")} for ev in root.iter("Event")]
 
     def host_list(self) -> list[HostEntry]:
         d = self.soap(SVC_HOSTS, "X_AVM-DE_GetHostListPath")

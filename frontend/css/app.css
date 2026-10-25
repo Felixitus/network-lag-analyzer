@@ -371,6 +371,7 @@ a.light:hover { border-color: var(--accent); }
 .otl-mark.inc { color: var(--critical); }
 .otl-mark.inc.user { color: var(--warning-ink); }
 .otl-mark.restart { color: var(--text-secondary); }
+.otl-mark.line { color: var(--series-7); }
 .otl-axis { height: 16px; }
 .otl-axis span { position: absolute; transform: translateX(-50%); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 .otl-axis span:first-child { transform: none; }

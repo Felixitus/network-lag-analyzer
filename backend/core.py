@@ -13,7 +13,7 @@ from collections import deque
 from typing import Any
 
 from . import __version__
-from .analysis import bufferbloat, daily, overview
+from .analysis import bufferbloat, daily, line, overview
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
@@ -82,6 +82,7 @@ class Core:
         self.dns: DnsProber | None = None
         self.fritz: FritzClient | None = None
         self.fritz_status: dict = {"enabled": False}
+        self.line_status: dict = {"enabled": False}
         # Last FRITZ!Box host list, for the client identification check of the DNS pages.
         self.fritz_hosts: list = []
         self.fritz_hosts_at: float | None = None
@@ -162,6 +163,10 @@ class Core:
             self.simulator = LiveSimulator(self)
             self._start_demo_dns_usage()
             self.tasks.append(asyncio.create_task(self.simulator.run(), name="simulator"))
+            from .simulation import DemoLine, demo_line_history
+            rows = demo_line_history(time.time())
+            await self.db.write(lambda c: c.executemany(repo.INSERT_LINE, rows))
+            self.tasks.append(asyncio.create_task(self._line_loop(DemoLine()), name="line"))
         else:
             await self._start_collectors()
 
@@ -267,6 +272,7 @@ class Core:
                 self.fritz = FritzClient(host, cfg.fritzbox.username, cfg.fritzbox.password, cfg.fritzbox.tr064_port)
                 self.fritz_status = {"enabled": True, "host": host, "ok": None}
                 self.tasks.append(asyncio.create_task(self._fritz_loop(), name="fritz"))
+                self.tasks.append(asyncio.create_task(self._line_loop(self.fritz), name="line"))
         self._start_capture()
 
     def _log_start(self, c) -> None:
@@ -580,6 +586,43 @@ class Core:
             else:
                 self.fritz_status.update(ok=True, error=None, last_ok=now)
             await asyncio.sleep(self.cfg.fritzbox.poll_interval)
+
+    LINE_INTERVAL = 300      # DSL values: they change slowly, and every row is a write to the SD card
+    LOG_INTERVAL = 900       # the box keeps a few hundred entries, so 15 minutes lose nothing
+
+    async def _line_loop(self, src) -> None:
+        """Internet line values and the FRITZ!Box event log. Its own task: a box without DSL or
+        without some action must neither stop the host list nor the measurements."""
+        self.line_status = {"enabled": True, "ok": None}
+        last_log = 0.0
+        while True:
+            now = time.time()
+            errors = []
+            dsl = wan = None
+            try:
+                dsl = await asyncio.to_thread(src.dsl_info)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"DSL values: {type(e).__name__}: {e}")
+            try:
+                wan = await asyncio.to_thread(src.wan_status)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"Connection state: {type(e).__name__}: {e}")
+            if dsl is not None or wan is not None:
+                row = repo.line_params(int(now), dsl, wan)
+                await self.db.write(lambda c: c.execute(repo.INSERT_LINE, row))
+            if now - last_log >= self.LOG_INTERVAL:
+                try:
+                    evs = [e for e in (line.parse_event(x) for x in await asyncio.to_thread(src.device_log)) if e]
+                    await self.db.write(lambda c: c.executemany(
+                        repo.INSERT_FRITZ_EVENT, [(e["ts"], e["kind"], e["grp"], e["msg"]) for e in evs]))
+                    last_log = now
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"Event log: {type(e).__name__}: {e}")
+            level, notes = line.assess(dsl)
+            self.line_status = {"enabled": True, "ok": not errors, "error": "; ".join(errors) or None, "ts": now,
+                                "dsl": dsl, "wan": wan, "level": level, "notes": notes,
+                                "has_dsl": dsl is not None}
+            await asyncio.sleep(self.LINE_INTERVAL)
 
     # ------------------------------------------------------------------ devices / Pi-hole
     async def _devices_loop(self) -> None:
@@ -1322,6 +1365,7 @@ class Core:
             "targets": self.hub.target_health(),
             "capture": self.capture_status,
             "fritzbox": {k: v for k, v in self.fritz_status.items()},
+            "line": self.line_status,
             "pihole": self.pihole_status,
             "dns_usage": self.dns_usage_status,
             "dns": self.dns.last if self.dns else {},

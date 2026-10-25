@@ -6,7 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 
-from ..analysis import overview as ov
+from ..analysis import line, overview as ov
 from ..database import repository as repo
 
 router = APIRouter(prefix="/api")
@@ -29,9 +29,12 @@ async def overview(request: Request, range: Literal["24h", "7d"] = Query("24h"))
             """SELECT id, source, ts_start, ts_end, title, cause, category, confidence FROM incidents
                WHERE ts_start < ? AND COALESCE(ts_end, ts_start) >= ? ORDER BY ts_start""", (end, start))]
         log = repo.get_setting(c, ov.RESTART_LOG_KEY, [])
-        return tl, incidents, log
+        events = [{"ts": r[0], "kind": r[1], "label": line.KIND_LABELS.get(r[1], r[1])} for r in c.execute(
+            f"SELECT ts, kind FROM fritz_events WHERE ts>=? AND ts<? AND kind IN ({','.join('?' * len(line.LINE_KINDS))})",
+            (start, end, *line.LINE_KINDS))]
+        return tl, incidents, log, events
 
-    tl, incidents, log = await core.db.read(q)
+    tl, incidents, log, line_events = await core.db.read(q)
     return {"now": time.time(), "lights": ov.lights(core), "timeline": tl, "incidents": incidents,
-            "restarts": ov.restarts(log, start, end),
+            "restarts": ov.restarts(log, start, end), "line_events": line_events,
             "note": "Each cell sums the stored per-minute measurements. Hatched: nothing was measured."}

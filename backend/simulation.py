@@ -310,3 +310,60 @@ def demo_fritz_hosts() -> list:
     mac, ip, name = DEMO_NO_PIHOLE
     hosts.append(HostEntry(ip=ip, mac=mac, name=name, active=True, interface="802.11"))
     return hosts
+
+
+# ---------------------------------------------------------------------------- demo internet line
+class DemoLine:
+    """Dev mode: a VDSL line with slowly growing error counters, a resync now and then,
+    and a FRITZ!Box event log with the usual entries (documentation addresses only)."""
+
+    def __init__(self, seed: int = 7):
+        self.rng = random.Random(seed)
+        self.crc = self.fec = self.es = self.ses = 0
+        self.retrains = 1
+        self.synced_at = time.time() - 3 * 86400
+
+    def dsl_info(self) -> dict:
+        r = self.rng
+        if r.random() < 0.01:                       # resync: counters start again
+            self.crc = self.fec = self.es = self.ses = 0
+            self.retrains += 1
+            self.synced_at = time.time()
+        self.crc += r.randint(0, 3)
+        self.fec += r.randint(50, 400)
+        self.es += r.randint(0, 1)
+        self.ses += 1 if r.random() < 0.05 else 0
+        return {"status": "Up", "down_kbit": 54167, "up_kbit": 21926, "down_max_kbit": 56064, "up_max_kbit": 22797,
+                "down_snr_db": round(10.0 + r.uniform(-0.5, 0.5), 1), "up_snr_db": round(8.0 + r.uniform(-0.5, 0.5), 1),
+                "down_atten_db": 24.0, "up_atten_db": 28.0, "crc": self.crc, "fec": self.fec,
+                "errored_secs": self.es, "severe_secs": self.ses, "retrains": self.retrains}
+
+    def wan_status(self) -> dict:
+        return {"status": "Connected", "uptime_s": int(time.time() - self.synced_at), "last_error": "ERROR_NONE"}
+
+    def device_log(self) -> list[dict]:
+        now = time.time()
+        rows = []
+        for h_ago, group, msg in [
+            (2, "net", "Internetverbindung wurde erfolgreich erneuert. IP-Adresse: 203.0.113.50"),
+            (14, "net", "Internetverbindung wurde erfolgreich erneuert. IP-Adresse: 203.0.113.50"),
+            (30, "dsl", "DSL antwortet nicht (Keine DSL-Synchronisierung)."),
+            (30, "dsl", "DSL ist verfügbar (DSL-Synchronisierung besteht mit 54167/21926 kbit/s)."),
+            (30, "net", "Internetverbindung wurde erfolgreich hergestellt. IP-Adresse: 203.0.113.50"),
+            (50, "sys", "FRITZ!OS wurde erfolgreich aktualisiert."),
+            (60, "sys", "WLAN-Gerät hat sich neu angemeldet. Name: demo-phone"),
+        ]:
+            t = time.localtime(now - h_ago * 3600)
+            rows.append({"id": None, "group": group, "date": time.strftime("%d.%m.%y", t),
+                         "time": time.strftime("%H:%M:%S", t), "msg": msg})
+        return rows
+
+
+def demo_line_history(now: float, hours: int = 48) -> list[tuple]:
+    """Stored line values for the charts right after a dev-mode start."""
+    from .database import repository as repo
+    line = DemoLine(seed=3)
+    rows = []
+    for i in range(hours * 12, 0, -1):
+        rows.append(repo.line_params(int(now) - i * 300, line.dsl_info(), line.wan_status()))
+    return rows
