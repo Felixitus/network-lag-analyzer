@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -240,6 +240,16 @@ CREATE TABLE IF NOT EXISTS pi_health (
     sd_written_mb   INTEGER,
     pihole_active   INTEGER
 );
+
+-- When a device was in the network (schema 9). One row per period; an open period's
+-- ts_end is the last minute it was seen and is written back every 10 minutes.
+CREATE TABLE IF NOT EXISTS device_presence (
+    id       INTEGER PRIMARY KEY,
+    dev      INTEGER NOT NULL,            -- devices.id
+    ts_start INTEGER NOT NULL,
+    ts_end   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_device_presence_end ON device_presence(ts_end);
 
 -- The FRITZ!Box event log, copied so that it outlives the box's own short log.
 CREATE TABLE IF NOT EXISTS fritz_events (

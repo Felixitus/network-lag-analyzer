@@ -6,7 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 
-from ..analysis import line, overview as ov
+from ..analysis import line, overview as ov, presence
 from ..database import repository as repo
 
 router = APIRouter(prefix="/api")
@@ -32,9 +32,13 @@ async def overview(request: Request, range: Literal["24h", "7d"] = Query("24h"))
         events = [{"ts": r[0], "kind": r[1], "label": line.KIND_LABELS.get(r[1], r[1])} for r in c.execute(
             f"SELECT ts, kind FROM fritz_events WHERE ts>=? AND ts<? AND kind IN ({','.join('?' * len(line.LINE_KINDS))})",
             (start, end, *line.LINE_KINDS))]
-        return tl, incidents, log, events
+        return tl, incidents, log, events, repo.get_setting(c, presence.ACK_KEY, {})
 
-    tl, incidents, log, line_events = await core.db.read(q)
-    return {"now": time.time(), "lights": ov.lights(core), "timeline": tl, "incidents": incidents,
+    tl, incidents, log, line_events, acked = await core.db.read(q)
+    devs = core.devices.all()
+    new = presence.new_devices(devs, acked, start)
+    lights = ov.lights(core) + [ov.devices_light(core, new, presence.unknown_devices(devs, acked))]
+    return {"now": time.time(), "lights": lights, "timeline": tl, "incidents": incidents,
             "restarts": ov.restarts(log, start, end), "line_events": line_events,
+            "new_devices": [{"ts": d["first_seen"], "name": d["name"], "mac": d["mac"]} for d in new],
             "note": "Each cell sums the stored per-minute measurements. Hatched: nothing was measured."}

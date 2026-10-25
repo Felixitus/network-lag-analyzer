@@ -150,6 +150,16 @@ def lights(core) -> list[dict]:
     return [fn(core) for fn in LIGHTS]
 
 
+def devices_light(core, new: list[dict], unknown: list[dict]) -> dict:
+    devs = core.devices.all()
+    online = sum(1 for d in devs if d["active"])
+    todo = len({d["mac"] for d in new + unknown})
+    if not devs:
+        return _light("devices", "Devices", None, "Not available", "No device seen yet", "#/devices")
+    detail = f"{len(new)} new, {len(unknown)} without a name - please check" if todo else f"{len(devs)} known"
+    return _light("devices", "Devices", "warning" if new else "good", f"{online} online", detail, "#/devices")
+
+
 # ------------------------------------------------------------------ timeline (history)
 def _bucket_rows(conn, start: int, end: int, bucket: int, gateway: str | None) -> dict[int, dict]:
     out: dict[int, dict] = {}
