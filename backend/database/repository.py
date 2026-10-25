@@ -282,6 +282,32 @@ def decode_line(row) -> dict:
     return d
 
 
+# ------------------------------------------------- the Pi itself
+PI_COLS = ("boot_ts", "temp", "cpu_pct", "mem_avail_mb", "swap_used_mb", "disk_free_mb", "undervolt", "carrier",
+           "speed_mbit", "carrier_changes", "rx_errors", "tx_errors", "sd_written_mb", "pihole_active")
+INSERT_PI_HEALTH = f"INSERT OR REPLACE INTO pi_health(ts, {', '.join(PI_COLS)}) VALUES ({', '.join('?' * (len(PI_COLS) + 1))})"
+
+
+def _opt(v, scale: float = 1):
+    return None if v is None else int(round(v * scale))
+
+
+def pi_health_params(h: dict) -> tuple:
+    lk = h.get("link") or {}
+    return (int(h["ts"]), _opt(h.get("boot_ts")), _opt(h.get("temp_c"), DECI), _opt(h.get("cpu_pct"), CENTI),
+            h.get("mem_available_mb"), h.get("swap_used_mb"), h.get("disk_free_mb"), _opt(h.get("undervoltage")),
+            lk.get("carrier"), lk.get("speed_mbit"), lk.get("carrier_changes"), lk.get("rx_errors"), lk.get("tx_errors"),
+            None if h.get("sd_written_bytes") is None else h["sd_written_bytes"] // 1048576, _opt(h.get("pihole_active")))
+
+
+def decode_pi_health(row) -> dict:
+    d = dict(row)
+    d["temp_c"] = None if d.get("temp") is None else d.pop("temp") / DECI
+    d.pop("temp", None)
+    d["cpu_pct"] = None if d.get("cpu_pct") is None else d["cpu_pct"] / CENTI
+    return d
+
+
 INSERT_BUFFERBLOAT = (
     "INSERT OR REPLACE INTO bufferbloat(ts, idle_ms, idle_secs, up_ms, up_worst_ms, up_secs, "
     "down_ms, down_worst_ms, down_secs) VALUES (?,?,?,?,?,?,?,?,?)"
@@ -415,6 +441,7 @@ def apply_retention(conn: sqlite3.Connection, now: float, ret: Any) -> dict[str,
         ("dns_ip_history", "DELETE FROM dns_ip_history WHERE last_seen < ?", now - ret.dns_hourly_days * day),
         ("events", "DELETE FROM events WHERE ts_start < ?", now - ret.event_days * day),
         ("line_stats", "DELETE FROM line_stats WHERE ts < ?", now - ret.line_days * day),
+        ("pi_health", "DELETE FROM pi_health WHERE ts < ?", now - ret.aggregate_days * day),
         ("fritz_events", "DELETE FROM fritz_events WHERE ts < ?", now - ret.line_days * day),
         ("incidents", "DELETE FROM incidents WHERE ts_start < ?", now - ret.event_days * day),
     ]
@@ -445,6 +472,7 @@ TIME_TABLES: dict[str, tuple[str, str]] = {
     "dns_ip_history": ("last_seen", "Which device held which IP"),
     "events": ("ts_start", "Detected events"),
     "line_stats": ("ts", "Internet line values (FRITZ!Box)"),
+    "pi_health": ("ts", "Raspberry Pi health"),
     "fritz_events": ("ts", "FRITZ!Box event log"),
     "incidents": ("ts_start", "Incidents incl. analysis"),
     "bufferbloat": ("ts", "Latency under load (10-minute windows)"),

@@ -68,7 +68,11 @@ class LoadGuard:
             rss = self._proc.memory_info().rss
         except psutil.Error:
             rss = None
-        load1 = psutil.getloadavg()[0] if hasattr(psutil, "getloadavg") else None
+        try:
+            load1 = psutil.getloadavg()[0] if hasattr(psutil, "getloadavg") else None
+        except (OSError, RuntimeError):
+            # Windows without performance counters (dev mode): the load average is simply not available
+            load1 = None
         self.last = {"ts": now, "cpu_pct": cpu, "mem_available_mb": round(vm.available / 1048576),
                      "mem_total_mb": round(vm.total / 1048576), "temp_c": temp, "app_cpu_pct": own,
                      "capture_cpu_pct": cap, "app_rss_mb": round(rss / 1048576, 1) if rss else None,

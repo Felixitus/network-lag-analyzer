@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -219,6 +219,26 @@ CREATE TABLE IF NOT EXISTS line_stats (
     crc           INTEGER, fec INTEGER, errored_secs INTEGER, severe_secs INTEGER, retrains INTEGER,
     wan_connected INTEGER,
     wan_uptime    INTEGER                 -- seconds since the last (re)connect
+);
+
+-- The Pi itself, once a minute (schema 8). Port counters are cumulative since boot_ts,
+-- exactly as the kernel reports them; a new boot_ts means they started again from zero.
+CREATE TABLE IF NOT EXISTS pi_health (
+    ts              INTEGER PRIMARY KEY,
+    boot_ts         INTEGER,
+    temp            INTEGER,              -- 1/10 °C
+    cpu_pct         INTEGER,              -- 1/100 %
+    mem_avail_mb    INTEGER,
+    swap_used_mb    INTEGER,
+    disk_free_mb    INTEGER,
+    undervolt       INTEGER,              -- 1 = under-voltage alarm of the firmware
+    carrier         INTEGER,
+    speed_mbit      INTEGER,
+    carrier_changes INTEGER,
+    rx_errors       INTEGER,
+    tx_errors       INTEGER,
+    sd_written_mb   INTEGER,
+    pihole_active   INTEGER
 );
 
 -- The FRITZ!Box event log, copied so that it outlives the box's own short log.

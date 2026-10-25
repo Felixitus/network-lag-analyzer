@@ -9,6 +9,9 @@ server:
   port: 8088           # Pi-hole uses 80/443
 
 gateway: auto          # or e.g. 192.168.178.1
+# Optional: a second always-on LAN device (access point, switch, NAS). Pinged like the router;
+# if both lose packets together, the Pi's own cable or port is the problem (page "Pi").
+# lan_reference: 192.168.178.2
 
 targets:
   - address: 1.1.1.1

@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import time
 
-from ..database.repository import dec
+from ..database.repository import dec, decode_pi_health
+from . import pi_health
 
 LEVELS = ("good", "warning", "critical")
 RESTART_LOG_KEY = "restart_log"
@@ -66,6 +67,9 @@ def router_light(core) -> dict:
     level = worst(loss_level(t["loss_pct"], th), rtt_level(t["rtt_avg"], th.gateway_warning))
     detail = f"{t['rtt_avg']:.1f} ms · loss {t['loss_pct']:.1f} % ({t['window_seconds']} s)" if t["rtt_avg"] is not None \
         else f"loss {t['loss_pct']:.1f} %"
+    verdict = core.link_verdict() if hasattr(core, "link_verdict") else None
+    if verdict and verdict.get("text"):
+        detail = verdict["text"]
     value = "OK" if level == "good" else "Packet loss" if (t["loss_pct"] or 0) >= th.packet_loss_warning else "Slow"
     return _light("router", "Link to router", level, value, detail, "#/dashboard")
 
@@ -109,13 +113,16 @@ def capture_light(core) -> dict:
 
 
 def pi_light(core) -> dict:
-    s = core.loadguard.last or {}
-    level = {0: "good", 1: "warning", 2: "warning", 3: "critical"}.get(core.loadguard.level)
+    ph = getattr(core, "pi_health", None) or {}
+    s = {**(core.loadguard.last or {}), **{k: v for k, v in ph.items() if v is not None}}
+    guard = {0: "good", 1: "warning", 2: "warning", 3: "critical"}.get(core.loadguard.level)
+    level = worst(guard, ph.get("level"))
     parts = [f"CPU {s['cpu_pct']:.0f} %" if s.get("cpu_pct") is not None else None,
              f"{s['mem_available_mb']} MB free" if s.get("mem_available_mb") is not None else None,
              f"{s['temp_c']:.0f} °C" if s.get("temp_c") is not None else None]
-    value = "OK" if level == "good" else f"Load Guard {core.loadguard.level}"
-    return _light("pi", "Raspberry Pi", level, value, " · ".join(p for p in parts if p), "#/settings")
+    notes = ph.get("notes") or []
+    value = "OK" if level == "good" else (f"Load Guard {core.loadguard.level}" if guard != "good" else "Check")
+    return _light("pi", "Raspberry Pi", level, value, notes[0] if notes else " · ".join(p for p in parts if p), "#/pi")
 
 
 def line_light(core) -> dict:
@@ -206,9 +213,53 @@ def timeline(conn, th, gateway: str | None, start: int, end: int, bucket: int) -
         rows["dns"].append(None if c["dns_fail"] is None else {
             "level": "good" if not c["dns_fail"] else "critical" if c["dns_fail_min"] >= 3 else "warning",
             "text": f"{c['dns_fail']} failed test queries" if c["dns_fail"] else "all test queries answered"})
-    labels = {"internet": "Internet", "latency": "Latency", "router": "Link to router", "dns": "DNS"}
+    rows["pi"] = pi_cells(conn, starts, bucket)
+    labels = {"internet": "Internet", "latency": "Latency", "router": "Link to router", "dns": "DNS", "pi": "Raspberry Pi"}
     return {"start": start, "end": end, "bucket": bucket, "starts": starts,
             "rows": [{"key": k, "label": labels[k], "cells": v} for k, v in rows.items()]}
+
+
+def pi_cells(conn, starts: list[int], bucket: int) -> list[dict | None]:
+    """Worst state of the Pi per bucket: heat, under-voltage, link drops and receive errors on its port."""
+    if not starts:
+        return []
+    rows = [decode_pi_health(r) for r in conn.execute(
+        "SELECT * FROM pi_health WHERE ts>=? AND ts<? ORDER BY ts", (starts[0] - 120, starts[-1] + bucket))]
+    agg: dict[int, dict] = {}
+    for r, d in zip(rows, pi_health.deltas(rows)):
+        if r["ts"] < starts[0]:
+            continue
+        c = agg.setdefault(starts[0] + (r["ts"] - starts[0]) // bucket * bucket,
+                           {"temp": None, "undervolt": False, "flaps": 0, "rx_errors": 0, "ftl_down": False})
+        if r["temp_c"] is not None:
+            c["temp"] = max(c["temp"] or 0, r["temp_c"])
+        c["undervolt"] |= bool(r["undervolt"])
+        c["ftl_down"] |= r["pihole_active"] == 0
+        c["flaps"] += d["carrier_changes"] or 0
+        c["rx_errors"] += d["rx_errors"] or 0
+    out = []
+    for t in starts:
+        c = agg.get(t)
+        if c is None:
+            out.append(None)
+            continue
+        level, parts = "good", []
+        if c["undervolt"] or c["ftl_down"] or (c["temp"] or 0) >= pi_health.TEMP_CRIT:
+            level = "critical"
+        elif c["flaps"] or c["rx_errors"] or (c["temp"] or 0) >= pi_health.TEMP_WARN:
+            level = "warning"
+        if c["temp"] is not None:
+            parts.append(f"max {c['temp']:.0f} °C")
+        if c["undervolt"]:
+            parts.append("under-voltage")
+        if c["ftl_down"]:
+            parts.append("pihole-FTL not running")
+        if c["flaps"]:
+            parts.append(f"link dropped {c['flaps']}×")
+        if c["rx_errors"]:
+            parts.append(f"{c['rx_errors']} receive errors")
+        out.append({"level": level, "text": " · ".join(parts) or "OK"})
+    return out
 
 
 # ------------------------------------------------------------------ restarts
