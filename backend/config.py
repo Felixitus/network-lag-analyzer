@@ -253,11 +253,24 @@ class Config(BaseModel):
     load_guard: LoadGuardCfg = LoadGuardCfg()
     security: SecurityCfg = SecurityCfg()
     local_networks: list[str] = Field(default_factory=list)  # empty = automatic
+    # A second always-on device in the LAN (access point, switch, NAS). Pinged like the router,
+    # it tells a fault of the Pi's own cable or port apart from a fault of the router.
+    lan_reference: str | None = None
 
     @field_validator("gateway")
     @classmethod
     def _gw(cls, v: str) -> str:
         return v if v == "auto" else str(ipaddress.IPv4Address(v))
+
+    @field_validator("lan_reference")
+    @classmethod
+    def _lanref(cls, v: str | None) -> str | None:
+        if v in (None, ""):
+            return None
+        a = ipaddress.IPv4Address(v)
+        if not a.is_private or a.is_loopback:
+            raise ValueError("The LAN reference must be a device in the home network (private IPv4)")
+        return str(a)
 
     @field_validator("local_networks")
     @classmethod
@@ -283,7 +296,7 @@ def fritz_target(cfg: Config) -> tuple[str, str | None]:
 EDITABLE_SECTIONS = {
     "gateway", "targets", "probe", "dns_probe", "gaming_pc", "gaming", "thresholds",
     "capacity", "fritzbox", "capture", "pihole", "dns_usage", "retention", "deep_capture",
-    "load_guard", "local_networks",
+    "load_guard", "local_networks", "lan_reference",
 }
 # Changes to these sections require a restart of the collectors.
 RESTART_SECTIONS = {"fritzbox", "capture", "pihole", "dns_usage", "server"}

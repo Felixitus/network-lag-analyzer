@@ -17,6 +17,12 @@ versions follow [SemVer](https://semver.org/).
   outages measured by the Pi with the FRITZ!Box events around them, and an outage report
   as CSV for the provider. Boxes without DSL show only the connection state. On the
   overview: a light for the line, and its events on the timeline.
+- **Raspberry Pi** page: temperature, under-voltage alarm, CPU, memory, swap, free storage,
+  data written to the SD card, whether pihole-FTL runs, and the counters of the Pi's own
+  network port (link drops, receive errors), once a minute without root rights.
+  Optional `lan_reference`: a second always-on LAN device pinged like the router. If both
+  lose packets at the same time, the page names the Pi's own cable, port or switch.
+  On the overview: the Pi's findings in its light, and a timeline row for it.
 
 ### Security
 - The FRITZ!Box login no longer falls back to the old MD5 challenge scheme
@@ -30,6 +36,8 @@ versions follow [SemVer](https://semver.org/).
   host list, so the client identification on the DNS page stayed "Not available".
 - A failing FRITZ!Box request no longer stops the others; the status shows the UPnP
   error code instead of a bare "HTTP 500".
+- The system loop (load guard) stopped on Windows without performance counters, because
+  reading the load average raised there (dev mode only).
 - Code scanning findings: a misread character range in the XLSX writer's
   regular expression and a false "clear-text logging" alert in the account CLI.
 

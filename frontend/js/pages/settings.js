@@ -347,6 +347,7 @@ export async function mount(main, { refreshStatus }) {
   const meas = form(cfg, [
     { path: 'targets', label: 'Internet targets', type: 'list', help: 'IPs or host names, comma-separated' },
     { path: 'gateway', label: 'Gateway', help: '"auto" or IPv4' },
+    { path: 'lan_reference', label: 'LAN reference', type: 'nullable', help: 'Optional: a second always-on device (access point, switch, NAS). If it loses packets together with the router, the Pi\'s own cable or port is the problem.' },
     { path: 'probe.interval', label: 'Ping interval (s)', type: 'number' },
     { path: 'probe.gaming_interval', label: 'Interval in Gaming Mode (s)', type: 'number' },
     { path: 'probe.timeout', label: 'Timeout (s)', type: 'number', help: 'A later reply = lost' },

@@ -13,7 +13,7 @@ from collections import deque
 from typing import Any
 
 from . import __version__
-from .analysis import bufferbloat, daily, line, overview
+from .analysis import bufferbloat, daily, line, overview, pi_health
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
@@ -83,6 +83,8 @@ class Core:
         self.fritz: FritzClient | None = None
         self.fritz_status: dict = {"enabled": False}
         self.line_status: dict = {"enabled": False}
+        self.pi_health: dict = {}
+        self._pi_recent: deque = deque(maxlen=61)    # one snapshot per minute → last hour
         # Last FRITZ!Box host list, for the client identification check of the DNS pages.
         self.fritz_hosts: list = []
         self.fritz_hosts_at: float | None = None
@@ -231,6 +233,9 @@ class Core:
         for t in self.cfg.targets:
             if t.address != self.gateway:
                 wanted.append((t.address, t.name, "internet"))
+        ref = self.cfg.lan_reference
+        if ref and ref != self.gateway:
+            wanted.append((ref, "LAN reference", "lan"))
 
         def _ensure(c):
             return [(repo.ensure_target(c, a, n, k), a, n, k) for a, n, k in wanted]
@@ -1282,6 +1287,7 @@ class Core:
             log.warning("Removed %d orphaned PCAP files (%.0f MB)", len(orphans), freed / 1e6)
 
     async def _system_loop(self) -> None:
+        last_health = 0.0
         while True:
             await asyncio.sleep(1)
             self.loadguard.sample()
@@ -1290,6 +1296,36 @@ class Core:
             if lvl != lvl_before:
                 log.warning("Load Guard: level %s → %s (%s)", lvl_before, lvl, self.loadguard.last)
                 self.capture_command("level", lvl)
+            # after the load guard's sample: the health snapshot reuses its CPU and memory values
+            if time.time() - last_health >= 60:
+                last_health = time.time()
+                try:
+                    await self._sample_health()
+                except Exception:  # noqa: BLE001 - a missing sensor must not stop the load guard
+                    log.exception("Pi health sample failed")
+
+    async def _sample_health(self) -> None:
+        route = netinfo.default_route()
+        svc = "pihole-FTL" if self.cfg.pihole.enabled and not self.cfg.dev_mode else None
+        h = await asyncio.to_thread(pi_health.read, self.cfg.data_dir, route.interface if route else None,
+                                    self.loadguard.last, svc)
+        await self.db.write(lambda c: c.execute(repo.INSERT_PI_HEALTH, repo.pi_health_params(h)))
+        lk = h.get("link") or {}
+        self._pi_recent.append({"ts": h["ts"], "boot_ts": h.get("boot_ts"), **{k: lk.get(k) for k in
+                                ("carrier_changes", "rx_errors", "tx_errors")}})
+        recent: dict = {}
+        for d in pi_health.deltas(list(self._pi_recent))[1:]:
+            for k, v in d.items():
+                if k != "ts" and v:
+                    recent[k] = recent.get(k, 0) + v
+        level, notes = pi_health.assess(h, recent)
+        self.pi_health = {**h, "level": level, "notes": notes, "recent": recent}
+
+    def link_verdict(self) -> dict | None:
+        th = self.hub.target_health()
+        gw = next((t for t in th if t["kind"] == "gateway" and t["address"] == self.gateway), None)
+        lan = next((t for t in th if t["kind"] == "lan"), None)
+        return pi_health.link_verdict(gw, lan, self.cfg.thresholds.packet_loss_warning)
 
     # ================================================================== settings
     async def update_settings(self, patch: dict) -> dict:
@@ -1324,7 +1360,7 @@ class Core:
         if self.scheduler:
             self.scheduler.interval = new_cfg.probe.interval
             self.scheduler.fast_interval = new_cfg.probe.gaming_interval
-        if "targets" in patch or "gateway" in patch:
+        if "targets" in patch or "gateway" in patch or "lan_reference" in patch:
             self._init_network()
             await self._setup_targets()
         if new_cfg.deep_capture.enabled != old.deep_capture.enabled:
@@ -1366,6 +1402,7 @@ class Core:
             "capture": self.capture_status,
             "fritzbox": {k: v for k, v in self.fritz_status.items()},
             "line": self.line_status,
+            "pi": self.pi_health,
             "pihole": self.pihole_status,
             "dns_usage": self.dns_usage_status,
             "dns": self.dns.last if self.dns else {},
