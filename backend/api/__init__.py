@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, dashboard, devices, dns, dns_export, incidents, sessions, system
+from . import auth, dashboard, devices, dns, dns_export, incidents, overview, sessions, system
 from .security import SecurityMiddleware
 
 FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
@@ -27,8 +27,8 @@ def create_app(core) -> FastAPI:
                   docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
     app.state.core = core
     app.add_middleware(SecurityMiddleware, core=core)
-    for r in (auth.router, dashboard.router, incidents.router, devices.router, dns.router, dns_export.router, sessions.router,
-              system.router):
+    for r in (auth.router, dashboard.router, incidents.router, devices.router, dns.router, dns_export.router,
+              overview.router, sessions.router, system.router):
         app.include_router(r)
 
     @app.get("/", include_in_schema=False)

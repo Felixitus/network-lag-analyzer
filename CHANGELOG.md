@@ -5,6 +5,13 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Overview** is the new start page: one status light each for internet, the link to the
+  router, Pi-hole, FRITZ!Box, traffic capture and the Pi, and a timeline of the last 24
+  hours or 7 days (internet, latency, link to router, DNS) from the stored per-minute
+  values. Periods without measurements are hatched, never "OK". Incidents, service starts
+  and Pi reboots are marked on it. The previous dashboard is now called **Live**.
+
 ### Security
 - The FRITZ!Box login no longer falls back to the old MD5 challenge scheme
   (FRITZ!OS before 7.24). Anyone on the LAN who saw one MD5 login could

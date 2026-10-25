@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 279, must be green)
+python3 -m pytest tests -q                    # all tests (currently 288, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -68,6 +68,7 @@ backend/
     categories.py         domain → service → category rules (layers: manual, local, builtin, ut1)
     activity.py           estimated activity phases per service (from dns_service_minutes)
     client_match.py       FRITZ!Box vs Pi-hole: can the per-device DNS numbers be trusted?
+    overview.py           status lights and the timeline of the overview page, restart log
   data/domain_categories.yaml   shipped category rules (hand-maintained)
   database/
     models.py             schema + SCHEMA_VERSION
@@ -78,7 +79,8 @@ backend/
     auth.py               login/logout/password change, /api/health
   account.py              CLI: create the login account on the Pi (never via the web UI)
   util/tabular.py         CSV + XLSX writer without dependencies, formula-injection safe
-frontend/                 vanilla ES modules, uPlot vendored, no build step (pages/dns.js: DNS usage)
+frontend/                 vanilla ES modules, uPlot vendored, no build step (pages/dns.js: DNS usage,
+                          overview.js start page)
 ```
 
 ## Conventions
