@@ -13,7 +13,7 @@ from collections import deque
 from typing import Any
 
 from . import __version__
-from .analysis import bufferbloat, daily
+from .analysis import bufferbloat, daily, overview
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
@@ -142,6 +142,7 @@ class Core:
         if await self.db.write(lambda c: migrate_legacy(c, self.cfg.security.password_hash)):
             log.warning("Login: the previous password now belongs to the user 'admin' (usernames are new)")
         await self.db.read(self._load_state)
+        await self.db.write(self._log_start)
         self._init_network()
 
         self.events = EventEngine(self.cfg.thresholds, self.capacity, lambda: self._next_id("event"),
@@ -267,6 +268,16 @@ class Core:
                 self.fritz_status = {"enabled": True, "host": host, "ok": None}
                 self.tasks.append(asyncio.create_task(self._fritz_loop(), name="fritz"))
         self._start_capture()
+
+    def _log_start(self, c) -> None:
+        """Remembers service starts and the kernel's boot time for the overview timeline."""
+        try:
+            import psutil
+            boot = psutil.boot_time()
+        except Exception:  # noqa: BLE001 - no boot time is no reason not to start
+            boot = None
+        log_ = repo.get_setting(c, overview.RESTART_LOG_KEY, [])
+        repo.set_setting(c, overview.RESTART_LOG_KEY, overview.record_start(log_, self.started_at, boot))
 
     @property
     def login_required(self) -> bool:

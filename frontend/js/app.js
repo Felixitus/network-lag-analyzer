@@ -1,6 +1,7 @@
 // Entry point: routing, live stream (SSE), banners, theme, login.
 import { api, clear, h, toast } from './lib.js';
 import { destroyAll } from './charts.js';
+import * as overview from './pages/overview.js';
 import * as dashboard from './pages/dashboard.js';
 import * as timeline from './pages/timeline.js';
 import * as incidents from './pages/incidents.js';
@@ -16,13 +17,13 @@ export const store = {
   emit(kind, data) { for (const fn of this.listeners) { try { fn(kind, data); } catch (e) { console.error(e); } } },
 };
 
-const routes = { dashboard, timeline, incidents, incident: incidents, devices, dns, gaming, settings };
+const routes = { overview, dashboard, timeline, incidents, incident: incidents, devices, dns, gaming, settings };
 let current = null;
 
 function parseHash() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  const name = parts[0] || 'dashboard';
-  return { name: routes[name] ? name : 'dashboard', args: parts.slice(1) };
+  const name = parts[0] || 'overview';
+  return { name: routes[name] ? name : 'overview', args: parts.slice(1) };
 }
 
 async function render() {
