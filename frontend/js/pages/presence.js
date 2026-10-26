@@ -39,9 +39,14 @@ function lanesCard(r, rangeSeg) {
   if (!r.lanes.length) { card.append(h('div', { class: 'empty' }, 'No presence recorded yet - it is collected once a minute from now on.')); return card; }
   for (const l of r.lanes.slice(0, 40)) {
     const track = h('div', { class: 'phase-track' });
-    for (const [a, b] of l.periods) {
-      track.append(h('div', { class: 'phase-bar', title: `${fmtDateTime(a)} – ${fmtTime(b, false)} (${fmtDuration(b - a)})`,
-        style: { left: pct(a), width: `max(2px, ${100 * (b - a) / total}%)`, background: deviceColor(l.mac) } }));
+    for (const [a, b, src] of l.periods) {
+      const dns = src === 'dns';
+      const bar = h('div', { class: `phase-bar${dns ? ' from-dns' : ''}`,
+        title: `${fmtDateTime(a)} – ${fmtTime(b, false)} (${fmtDuration(b - a)})${dns ? ' · from DNS lookups, whole hours' : ''}`,
+        style: { left: pct(a), width: `max(2px, ${100 * (b - a) / total}%)` } });
+      // custom properties only via setProperty; Object.assign on style ignores them
+      if (dns) bar.style.setProperty('--bar', deviceColor(l.mac)); else bar.style.background = deviceColor(l.mac);
+      track.append(bar);
     }
     card.append(h('div', { class: 'phase-lane' }, h('div', { class: 'phase-label small', title: l.mac },
       h('span', { class: `dot ${l.active ? 'good' : 'muted'}`, style: { marginRight: '6px' } }), l.name), track));

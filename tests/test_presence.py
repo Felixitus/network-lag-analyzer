@@ -53,7 +53,7 @@ def test_unknown_devices_have_no_name_from_any_source():
 
 
 def test_lanes_are_clipped_to_the_span():
-    assert pr.lanes([(1, 0, 500), (1, 900, 1200), (2, 2000, 3000)], 100, 1000) == {1: [[100, 500], [900, 1000]]}
+    assert pr.lanes([(1, 0, 500, None), (1, 900, 1200, "dns"), (2, 2000, 3000, None)], 100, 1000) ==         {1: [[100, 500, None], [900, 1000, "dns"]]}
 
 
 @pytest.fixture(scope="module")

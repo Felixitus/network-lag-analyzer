@@ -68,15 +68,15 @@ async def device_presence(request: Request, range: str = Query("24h", pattern="^
     start = end - PRESENCE_SPANS[range]
 
     def q(c):
-        rows = c.execute("SELECT id, dev, ts_start, ts_end FROM device_presence WHERE ts_end >= ? AND ts_start <= ?",
+        rows = c.execute("SELECT id, dev, ts_start, ts_end, source FROM device_presence WHERE ts_end >= ? AND ts_start <= ?",
                          (start, end)).fetchall()
         return {r[0]: tuple(r[1:]) for r in rows}, repo.get_setting(c, presence.ACK_KEY, {})
     rows, acked = await core.db.read(q)
     # An open period is only written back every 10 minutes; its current end is in memory.
     for p in core.presence.open.values():
         if p["row"] in rows:
-            dev, s, _e = rows[p["row"]]
-            rows[p["row"]] = (dev, s, p["last"])
+            dev, s, _e, src = rows[p["row"]]
+            rows[p["row"]] = (dev, s, p["last"], src)
     periods = list(rows.values())
     devs = core.devices.all()
     by_id = {core.devices.id_for(d["mac"]): d for d in devs}
@@ -84,13 +84,15 @@ async def device_presence(request: Request, range: str = Query("24h", pattern="^
     return {
         "start": start, "end": end,
         "lanes": sorted(({"mac": by_id[dev]["mac"], "name": by_id[dev]["name"], "active": by_id[dev]["active"],
-                          "periods": ps, "seconds": sum(b - a for a, b in ps)}
+                          "periods": ps, "seconds": sum(p[1] - p[0] for p in ps)}
                          for dev, ps in lanes.items() if dev in by_id),
                         key=lambda x: (not x["active"], -x["seconds"])),
         "new": [{**d, "known": False} for d in presence.new_devices(devs, acked, start)],
         "unknown": presence.unknown_devices(devs, acked),
         "note": "A device counts as present while the FRITZ!Box reports it active or another source saw it within "
-                "5 minutes - resolution in minutes. Devices with a randomized MAC can appear as several devices.",
+                "5 minutes - resolution in minutes. Striped periods come from DNS lookups before presence was "
+                "recorded: whole hours in which the device asked Pi-hole for names; a device that asked nothing "
+                "is not shown there. Devices with a randomized MAC can appear as several devices.",
     }
 
 
