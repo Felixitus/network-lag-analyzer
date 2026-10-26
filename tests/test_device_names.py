@@ -124,3 +124,46 @@ def test_fritzbox_outage_does_not_break_refresh_or_identification(client):
         assert ident["rows"] == []                                                       # nothing invented
     finally:
         core.fritz, core.fritz_status, core.fritz_hosts, core.fritz_hosts_at = saved
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_pihole_reader_still_polls_queries_per_minute(tmp_path, legacy):
+    # read_dhcp_leases once landed in the middle of the class and swallowed poll_queries:
+    # the device loop died on its first round and for days no device and no DNS minute was saved.
+    now = time.time()
+    ftl = FakeFtl(tmp_path / "ftl.db", legacy=legacy)
+    ftl.add([(now - 1200, "192.0.2.10", "old.example", 2)])          # before the 15-minute start window
+    ftl.add([(now - 120, "192.0.2.10", "a.example", 2), (now - 119, "192.0.2.10", "a.example", 1),
+             (now - 60, "192.0.2.11", "b.example", 2)])
+    ftl.c.close()
+    reader = PiholeReader(str(tmp_path / "ftl.db"))
+    rows = reader.poll_queries()
+    assert reader.error is None
+    assert sum(r[2] for r in rows) == 3 and sum(r[3] for r in rows) == 1
+    assert reader.poll_queries() == []                                 # nothing new
+
+
+def test_device_loop_survives_a_failing_source(client):
+    import asyncio
+    core = client.app.state.core
+
+    class Broken:
+        error = None
+
+        def poll_queries(self):
+            raise AttributeError("poll_queries")
+    saved = core.pihole, core.pihole_status
+    core.pihole, core.pihole_status = Broken(), {"enabled": True, "ok": True}
+    calls = []
+    core._persist_devices = lambda orig=core._persist_devices: (calls.append(1), orig())[1]
+    try:
+        async def two_rounds():
+            try:
+                await asyncio.wait_for(core._devices_loop(), 0.5)
+            except asyncio.TimeoutError:
+                pass
+        asyncio.run_coroutine_threadsafe(two_rounds(), core.loop).result(5)
+    finally:
+        core.pihole, core.pihole_status = saved
+        del core._persist_devices
+    assert calls, "devices were not saved after the source failed"
