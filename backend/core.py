@@ -13,7 +13,7 @@ from collections import deque
 from typing import Any
 
 from . import __version__
-from .analysis import bufferbloat, daily, line, overview, pi_health, presence
+from .analysis import backfill, bufferbloat, daily, line, overview, pi_health, presence
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
@@ -264,6 +264,8 @@ class Core:
             pihole_ok, msg = await asyncio.to_thread(self.pihole.check)
             self.pihole_status = {"enabled": True, "ok": pihole_ok, "message": msg}
         self._start_dns_usage(pihole_ok)
+        if pihole_ok:
+            self.tasks.append(asyncio.create_task(self._backfill_loop(), name="backfill"))
         if cfg.dns_probe.enabled:
             self.dns = DnsProber(cfg.dns_probe.servers, cfg.dns_probe.query_name, cfg.dns_probe.interval,
                                  cfg.dns_probe.timeout, self.hub.add_dns,
@@ -691,6 +693,72 @@ class Core:
                                     (dev, int(now), int(now))).lastrowid) for dev in started]
         for dev, row_id in await self.db.write(write):
             self.presence.opened(dev, row_id, now)
+
+    async def _backfill_loop(self) -> None:
+        """Once after the start: fill gaps that Pi-hole's log can still answer (see analysis/backfill.py)."""
+        await asyncio.sleep(120)        # the live pipeline first
+        for name, step in (("presence", self._backfill_presence), ("DNS minutes", self._backfill_dns_minutes)):
+            try:
+                n = await step(time.time())
+                if n:
+                    log.info("Backfill %s: %d rows added from Pi-hole's log", name, n)
+            except Exception:  # noqa: BLE001 - a gap that stays is no reason to stop anything else
+                log.exception("Backfill %s failed", name)
+
+    async def _backfill_presence(self, now: float) -> int:
+        """Presence before the tracking started, from the hourly DNS counters per device (marked as such)."""
+        def plan(c):
+            if repo.get_setting(c, backfill.PRESENCE_KEY, None) is not None:
+                return None, []
+            first = c.execute("SELECT MIN(ts_start) FROM device_presence WHERE source IS NULL").fetchone()[0]
+            if first is None:
+                return None, []     # no live period yet: nothing to fill up to
+            until = int(first) // 3600 * 3600
+            rows = c.execute(
+                """SELECT d.id, h.ts FROM dns_client_hourly h JOIN dns_clients k ON k.id = h.client
+                   JOIN devices d ON d.mac = k.mac
+                   WHERE k.basis = 'mac' AND h.queries > 0 AND h.ts >= ? AND h.ts < ?""",
+                (until - backfill.PRESENCE_DAYS * 86400, until)).fetchall()
+            return until, [tuple(r) for r in rows]
+        until, hours = await self.db.read(plan)
+        if until is None:
+            return 0
+        periods = backfill.presence_periods(hours)
+
+        def write(c):
+            c.executemany("INSERT INTO device_presence(dev, ts_start, ts_end, source) VALUES (?,?,?,'dns')", periods)
+            repo.set_setting(c, backfill.PRESENCE_KEY, until)
+        await self.db.write(write)
+        return len(periods)
+
+    async def _backfill_dns_minutes(self, now: float, ftl: FtlQueryLog | None = None) -> int:
+        """DNS minutes (lag context) the service did not count, from Pi-hole's 91-day log.
+        Hour by hour, only at load guard level 0, newest first."""
+        ftl = ftl or FtlQueryLog(self.cfg.pihole.ftl_db)
+        start = int(now - self.cfg.retention.detailed_days * 86400)
+        end = int(self.started_at - 900) // 60 * 60     # from here on the live poll counts
+        covered, checked = await self.db.read(lambda c: (
+            {r[0] for r in c.execute("SELECT DISTINCT ts FROM dns_queries WHERE ts >= ? AND ts < ?", (start, end))},
+            {h for h in repo.get_setting(c, backfill.CHECKED_KEY, []) if h >= start}))
+        added = 0
+        for h in reversed(backfill.hours_to_fill(covered, checked, start, end)):
+            while self.loadguard.level > 0:
+                await asyncio.sleep(30)
+            t1 = min(h + 3600, end)
+            rows = [r for r in backfill.minute_rows(await asyncio.to_thread(lambda: list(ftl.iter_range(h, t1))))
+                    if r[0] not in covered]
+            if h + 3600 <= end:
+                checked.add(h)
+            done = sorted(checked)
+
+            def write(c, rows=rows, done=done):
+                c.executemany("INSERT OR IGNORE INTO dns_queries(ts, client_ip, queries, blocked, top_domains) "
+                              "VALUES (?,?,?,?,?)", rows)
+                repo.set_setting(c, backfill.CHECKED_KEY, done)
+            await self.db.write(write)
+            added += len(rows)
+            await asyncio.sleep(0.2 if rows else 0)    # breathing room for FTL after real work only
+        return added
 
     async def _observe_pihole_hosts(self) -> None:
         hosts = await asyncio.to_thread(self.pihole.hosts)

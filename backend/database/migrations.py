@@ -155,6 +155,12 @@ def _v3_compact_storage(conn: sqlite3.Connection) -> None:
         conn.execute("DROP TABLE bb_old")
 
 
+def _v10_presence_source(conn: sqlite3.Connection) -> None:
+    """Version 10: presence periods know their source (registry or DNS lookups)."""
+    if _table_exists(conn, "device_presence") and "source" not in _columns(conn, "device_presence"):
+        conn.execute("ALTER TABLE device_presence ADD COLUMN source TEXT")
+
+
 def _is_real(conn: sqlite3.Connection, table: str, column: str) -> bool:
     for r in conn.execute(f"PRAGMA table_info({table})"):
         if r[1] == column:
@@ -163,11 +169,12 @@ def _is_real(conn: sqlite3.Connection, table: str, column: str) -> bool:
 
 
 # (version, description, function) - sorted ascending.
-# Versions 4 (DNS usage tables), 5 (activity minutes) and 6 (login sessions) only
-# add new tables, which SCHEMA creates after the steps - no step needed.
+# Versions 4 (DNS usage tables), 5 (activity minutes), 6 (login sessions), 7 (internet line),
+# 8 (Pi health) and 9 (presence) only add new tables, which SCHEMA creates after the steps.
 STEPS: list[tuple[int, str, object]] = [
     (3, "More compact storage (INTEGER units, device_id, slim device_traffic)",
      _v3_compact_storage),
+    (10, "Source column for presence periods", _v10_presence_source),
 ]
 
 

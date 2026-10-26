@@ -61,11 +61,11 @@ def unknown_devices(devices: list[dict], acknowledged: dict[str, float]) -> list
     return [d for d in devices if not d.get("custom_name") and not d.get("hostname") and d["mac"] not in acknowledged]
 
 
-def lanes(periods: list[tuple[int, int, int]], start: int, end: int) -> dict[int, list[list[int]]]:
-    """Presence periods per device, clipped to [start, end]."""
-    out: dict[int, list[list[int]]] = {}
-    for dev, s, e in periods:
+def lanes(periods: list[tuple], start: int, end: int) -> dict[int, list[list]]:
+    """Presence periods per device, clipped to [start, end]: [from, to, source]."""
+    out: dict[int, list[list]] = {}
+    for dev, s, e, *src in periods:
         if e < start or s > end:
             continue
-        out.setdefault(dev, []).append([max(s, start), min(e, end)])
+        out.setdefault(dev, []).append([max(s, start), min(e, end), src[0] if src else None])
     return out

@@ -27,6 +27,13 @@ versions follow [SemVer](https://semver.org/).
   name are listed until marked as known; presence lanes show when which device was in
   the network (24 h / 7 d, minute resolution). On the overview: a light for the devices,
   and new devices on the timeline.
+- **Gaps are filled from Pi-hole's log** once after each start, at load guard level 0:
+  DNS minutes for the lag analysis that were not counted (service down, or the broken
+  device loop since 1.2.0) - exactly as live, within the 7-day retention; and presence
+  for the 31 days before it was recorded, from the hourly DNS counters per device. Those
+  periods are whole hours in which a device looked up names, shown striped and labelled;
+  a device that asked nothing is not shown there. Pi health and line values cannot be
+  filled - nothing stored them.
 
 ### Security
 - The FRITZ!Box login no longer falls back to the old MD5 challenge scheme

@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -247,7 +247,8 @@ CREATE TABLE IF NOT EXISTS device_presence (
     id       INTEGER PRIMARY KEY,
     dev      INTEGER NOT NULL,            -- devices.id
     ts_start INTEGER NOT NULL,
-    ts_end   INTEGER NOT NULL
+    ts_end   INTEGER NOT NULL,
+    source   TEXT                         -- NULL = device registry (minutes); 'dns' = DNS lookups (whole hours, schema 10)
 );
 CREATE INDEX IF NOT EXISTS ix_device_presence_end ON device_presence(ts_end);
 

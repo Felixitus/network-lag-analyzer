@@ -373,6 +373,7 @@ a.light:hover { border-color: var(--accent); }
 .otl-mark.restart { color: var(--text-secondary); }
 .otl-mark.line { color: var(--series-7); }
 .otl-mark.newdev { color: var(--series-3); font-weight: 700; }
+.phase-bar.from-dns { background: repeating-linear-gradient(135deg, var(--bar) 0 3px, transparent 3px 6px); opacity: .8; }
 .otl-axis { height: 16px; }
 .otl-axis span { position: absolute; transform: translateX(-50%); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 .otl-axis span:first-child { transform: none; }
