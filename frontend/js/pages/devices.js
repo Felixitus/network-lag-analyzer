@@ -1,6 +1,7 @@
 // Devices: list, renaming, marking the gaming PC, DNS activity, historical top talkers.
 import { api, clear, deviceColor, fmtBytes, fmtMbit, h, ago, toast } from '../lib.js';
 import { segmented } from './common.js';
+import { presenceSection } from './presence.js';
 
 export async function mount(main) {
   main.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Devices'),
@@ -9,7 +10,7 @@ export async function mount(main) {
   const listCard = h('div', { class: 'card' });
   const histCard = h('div', { class: 'card' });
   const dnsCard = h('div', { class: 'card', style: { display: 'none' } });
-  main.append(listCard, h('div', { style: { height: '16px' } }), dnsCard, h('div', { class: 'grid', style: { marginTop: '16px' } }, histCard));
+  main.append(presenceSection(), listCard, h('div', { style: { height: '16px' } }), dnsCard, h('div', { class: 'grid', style: { marginTop: '16px' } }, histCard));
 
   async function loadList() {
     const r = await api('api/devices');

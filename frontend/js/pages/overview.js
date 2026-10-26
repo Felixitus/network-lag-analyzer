@@ -49,6 +49,10 @@ function timelineView(data) {
     marks.append(h('a', { class: 'otl-mark line', href: '#/line', style: { left: pos(e.ts) },
       title: `${fmtDate(e.ts)} ${fmtTime(e.ts, false)}: FRITZ!Box - ${e.label}` }, '◆'));
   }
+  for (const d of data.new_devices || []) {
+    marks.append(h('a', { class: 'otl-mark newdev', href: '#/devices', style: { left: pos(d.ts) },
+      title: `${fmtDate(d.ts)} ${fmtTime(d.ts, false)}: new device ${d.name}` }, '＋'));
+  }
   wrap.append(h('div', { class: 'otl-row' }, h('div', { class: 'otl-label' }, 'Events'), marks));
   // axis: 6 labels
   const axis = h('div', { class: 'otl-strip otl-axis' });
@@ -64,7 +68,7 @@ function legend() {
   const item = (cls, text) => h('span', { class: 'row small' }, h('span', { class: `otl-cell legend ${cls}` }), text);
   return h('div', { class: 'row small muted', style: { flexWrap: 'wrap', gap: '14px' } },
     item('lvl-good', 'OK'), item('lvl-warning', 'Warning'), item('lvl-critical', 'Problem'), item('na', 'Not measured'),
-    h('span', null, '▲ Incident'), h('span', null, '◆ FRITZ!Box event'), h('span', null, '↻ Service started'), h('span', null, '⏻ Pi started'));
+    h('span', null, '▲ Incident'), h('span', null, '◆ FRITZ!Box event'), h('span', null, '＋ New device'), h('span', null, '↻ Service started'), h('span', null, '⏻ Pi started'));
 }
 
 function happenings(data) {
@@ -72,6 +76,7 @@ function happenings(data) {
     ...data.incidents.map(i => ({ ts: i.ts_start, el: h('a', { href: `#/incident/${i.id}` },
       i.source === 'user' ? 'Lag reported' : (i.title || `Incident #${i.id}`)), sub: i.cause })),
     ...data.restarts.map(r => ({ ts: r.ts, el: h('span', null, r.label), sub: null })),
+    ...(data.new_devices || []).map(d => ({ ts: d.ts, el: h('a', { href: '#/devices' }, `New device: ${d.name}`), sub: d.mac })),
   ].sort((a, b) => b.ts - a.ts).slice(0, 12);
   if (!items.length) return h('div', { class: 'empty' }, 'No incidents and no restarts in this time span.');
   return h('ul', { class: 'list' }, ...items.map(it => h('li', null,

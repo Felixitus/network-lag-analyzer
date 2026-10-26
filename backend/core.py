@@ -13,7 +13,7 @@ from collections import deque
 from typing import Any
 
 from . import __version__
-from .analysis import bufferbloat, daily, line, overview, pi_health
+from .analysis import bufferbloat, daily, line, overview, pi_health, presence
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
@@ -84,6 +84,7 @@ class Core:
         self.fritz_status: dict = {"enabled": False}
         self.line_status: dict = {"enabled": False}
         self.pi_health: dict = {}
+        self.presence = presence.PresenceTracker()
         self._pi_recent: deque = deque(maxlen=61)    # one snapshot per minute → last hour
         # Last FRITZ!Box host list, for the client identification check of the DNS pages.
         self.fritz_hosts: list = []
@@ -631,7 +632,10 @@ class Core:
 
     # ------------------------------------------------------------------ devices / Pi-hole
     async def _devices_loop(self) -> None:
-        last_ph_hosts = last_arp = 0.0
+        last_ph_hosts = last_arp = last_presence = 0.0
+        await self.db.read(lambda c: self.presence.load(
+            c.execute("SELECT id, dev, ts_start, ts_end FROM device_presence WHERE ts_end >= ?",
+                      (int(time.time()) - 3600,)).fetchall(), time.time()))
         while True:
             now = time.time()
             if now - last_arp > 30:
@@ -656,7 +660,27 @@ class Core:
                     self.pihole_status.update(ok=False, message=self.pihole.error)
             self._persist_devices()
             self._sync_gaming_mac()
+            if now - last_presence >= 60:
+                last_presence = now
+                try:
+                    await self._presence_step(now)
+                except Exception:  # noqa: BLE001 - presence is a view, the measurements go on
+                    log.exception("Presence update failed")
             await asyncio.sleep(self.cfg.pihole.poll_interval if self.pihole else 30)
+
+    async def _presence_step(self, now: float) -> None:
+        present = {self.devices.id_for(d.mac) for d in list(self.devices.by_mac.values()) if d.active}
+        started, ended, flush = self.presence.step(now, present)
+        open_rows = [(p["last"], p["row"]) for p in self.presence.open.values()] if flush else []
+
+        def write(c):
+            c.executemany("UPDATE device_presence SET ts_end=? WHERE id=?", [(end, row) for row, _dev, end in ended])
+            if open_rows:
+                c.executemany("UPDATE device_presence SET ts_end=? WHERE id=?", open_rows)
+            return [(dev, c.execute("INSERT INTO device_presence(dev, ts_start, ts_end) VALUES (?,?,?)",
+                                    (dev, int(now), int(now))).lastrowid) for dev in started]
+        for dev, row_id in await self.db.write(write):
+            self.presence.opened(dev, row_id, now)
 
     async def _observe_pihole_hosts(self) -> None:
         hosts = await asyncio.to_thread(self.pihole.hosts)

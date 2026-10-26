@@ -1,4 +1,4 @@
-"""Device list, renaming, DNS activity per device (Pi-hole)."""
+"""Device list, renaming, DNS activity per device (Pi-hole), presence and new devices."""
 from __future__ import annotations
 
 import json
@@ -8,6 +8,8 @@ import time
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
+from ..analysis import presence
+from ..database import repository as repo
 from ..util.netinfo import normalize_mac
 
 router = APIRouter(prefix="/api")
@@ -53,6 +55,67 @@ async def devices(request: Request):
         d["up_bps"] = a[1] / n if a else (0.0 if core.hub.capture_active() else None)
         d["gaming_pc"] = bool(gaming_ip and d["ip"] == gaming_ip)
     return {"devices": items, "traffic_available": core.hub.capture_active()}
+
+
+PRESENCE_SPANS = {"24h": 86400, "7d": 7 * 86400}
+
+
+@router.get("/devices/presence")
+async def device_presence(request: Request, range: str = Query("24h", pattern="^(24h|7d)$")):
+    """When which device was in the network, new devices since the start of the span, unnamed devices."""
+    core = core_of(request)
+    end = int(time.time()) + 1
+    start = end - PRESENCE_SPANS[range]
+
+    def q(c):
+        rows = c.execute("SELECT id, dev, ts_start, ts_end FROM device_presence WHERE ts_end >= ? AND ts_start <= ?",
+                         (start, end)).fetchall()
+        return {r[0]: tuple(r[1:]) for r in rows}, repo.get_setting(c, presence.ACK_KEY, {})
+    rows, acked = await core.db.read(q)
+    # An open period is only written back every 10 minutes; its current end is in memory.
+    for p in core.presence.open.values():
+        if p["row"] in rows:
+            dev, s, _e = rows[p["row"]]
+            rows[p["row"]] = (dev, s, p["last"])
+    periods = list(rows.values())
+    devs = core.devices.all()
+    by_id = {core.devices.id_for(d["mac"]): d for d in devs}
+    lanes = presence.lanes(periods, start, end)
+    return {
+        "start": start, "end": end,
+        "lanes": sorted(({"mac": by_id[dev]["mac"], "name": by_id[dev]["name"], "active": by_id[dev]["active"],
+                          "periods": ps, "seconds": sum(b - a for a, b in ps)}
+                         for dev, ps in lanes.items() if dev in by_id),
+                        key=lambda x: (not x["active"], -x["seconds"])),
+        "new": [{**d, "known": False} for d in presence.new_devices(devs, acked, start)],
+        "unknown": presence.unknown_devices(devs, acked),
+        "note": "A device counts as present while the FRITZ!Box reports it active or another source saw it within "
+                "5 minutes - resolution in minutes. Devices with a randomized MAC can appear as several devices.",
+    }
+
+
+class KnownBody(BaseModel):
+    macs: list[str] = Field(default_factory=list, max_length=500)
+    all_new: bool = False
+
+
+@router.post("/devices/known")
+async def mark_known(request: Request, body: KnownBody):
+    """Mark devices as known: they leave the "new" and "unknown" lists."""
+    core = core_of(request)
+    macs = {m for m in (normalize_mac(x) for x in body.macs) if m in core.devices.by_mac}
+    now = time.time()
+
+    def w(c):
+        acked = repo.get_setting(c, presence.ACK_KEY, {})
+        add = set(macs)
+        if body.all_new:
+            devs = core.devices.all()
+            add |= {d["mac"] for d in presence.new_devices(devs, acked, 0)} | {d["mac"] for d in presence.unknown_devices(devs, acked)}
+        acked.update({m: now for m in add})
+        repo.set_setting(c, presence.ACK_KEY, acked)
+        return len(add)
+    return {"marked": await core.db.write(w)}
 
 
 @router.post("/devices/refresh-names")

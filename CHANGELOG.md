@@ -23,6 +23,10 @@ versions follow [SemVer](https://semver.org/).
   Optional `lan_reference`: a second always-on LAN device pinged like the router. If both
   lose packets at the same time, the page names the Pi's own cable, port or switch.
   On the overview: the Pi's findings in its light, and a timeline row for it.
+- **Devices**: new devices (after the first hour of the database) and devices without any
+  name are listed until marked as known; presence lanes show when which device was in
+  the network (24 h / 7 d, minute resolution). On the overview: a light for the devices,
+  and new devices on the timeline.
 
 ### Security
 - The FRITZ!Box login no longer falls back to the old MD5 challenge scheme
