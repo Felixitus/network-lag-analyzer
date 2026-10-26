@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 332, must be green)
+python3 -m pytest tests -q                    # all tests (currently 335, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -124,6 +124,9 @@ Do not walk into them again - the tests for them are there on purpose.
   `chown pihole:pihole` afterwards.
 * **The system clock jumps** (Pi without RTC, NTP after boot). Jumps > 2 s are detected,
   started seconds are discarded - an honest gap is better than wrong timestamps.
+* **A background loop must never die silently.** An exception ends an asyncio task
+  without any log line; the device loop was dead for days that way. Every loop catches
+  and logs per round (`log.exception`), so the next round runs.
 * **FRITZ!OS 8 dropped TR-064 actions** (`GetAddonInfos`: HTTP 500, UPnP error 401
   "Invalid Action"). Every FRITZ!Box request needs a fallback or must fail on its own -
   one missing action once took the host list down with it.

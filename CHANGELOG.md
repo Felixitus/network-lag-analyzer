@@ -34,6 +34,11 @@ versions follow [SemVer](https://semver.org/).
   brute-force the password offline. Older FRITZ!OS versions now get a clear error.
 
 ### Fixed
+- Since 1.2.0 the device loop stopped on its first round: `poll_queries` had ended up
+  inside `read_dhcp_leases` and no longer existed. Devices seen via ARP and Pi-hole were
+  not saved and the DNS minutes for the lag analysis were missing - without a word in
+  the log. An error in one round is now logged and the loop goes on. The start of the
+  Pi-hole poll reads the indexed table instead of the view (27 s → instant on the Pi).
 - FRITZ!OS 8 (seen on a FRITZ!Box 7690 with 8.02) no longer offers the TR-064 action
   `GetAddonInfos`. The WAN rate now comes from the link utilization of
   `GetCommonLinkProperties` on such boxes. Before, the failing call also stopped the

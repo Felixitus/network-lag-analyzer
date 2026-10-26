@@ -638,26 +638,12 @@ class Core:
                       (int(time.time()) - 3600,)).fetchall(), time.time()))
         while True:
             now = time.time()
-            if now - last_arp > 30:
-                for ip, mac in netinfo.arp_table().items():
-                    self.devices.observe(mac, ip=ip, source="arp", seen=now)
-                if self.gateway:
-                    gm = netinfo.arp_table().get(self.gateway)
-                    if gm and gm != self.gateway_mac:
-                        self.gateway_mac = gm
-                        self.capture_command("router_macs", [gm])
-                last_arp = now
-            if self.pihole is not None and self.pihole_status.get("ok"):
-                if now - last_ph_hosts > 60:
-                    await self._observe_pihole_hosts()
-                    last_ph_hosts = now
-                rows = await asyncio.to_thread(self.pihole.poll_queries)
-                if rows:
-                    self.db.enqueue_many(
-                        "INSERT OR REPLACE INTO dns_queries(ts, client_ip, queries, blocked, top_domains) VALUES (?,?,?,?,?)",
-                        rows)
-                if self.pihole.error:
-                    self.pihole_status.update(ok=False, message=self.pihole.error)
+            try:
+                last_arp, last_ph_hosts = await self._devices_step(now, last_arp, last_ph_hosts)
+            except Exception:  # noqa: BLE001
+                # Before, one error here ended the task without a word: for days no device was
+                # saved and no DNS minute was counted, and nothing in the log said so.
+                log.exception("Device update failed")
             self._persist_devices()
             self._sync_gaming_mac()
             if now - last_presence >= 60:
@@ -667,6 +653,30 @@ class Core:
                 except Exception:  # noqa: BLE001 - presence is a view, the measurements go on
                     log.exception("Presence update failed")
             await asyncio.sleep(self.cfg.pihole.poll_interval if self.pihole else 30)
+
+    async def _devices_step(self, now: float, last_arp: float, last_ph_hosts: float) -> tuple[float, float]:
+        """One round of the device sources; returns the new (last_arp, last_ph_hosts)."""
+        if now - last_arp > 30:
+            for ip, mac in netinfo.arp_table().items():
+                self.devices.observe(mac, ip=ip, source="arp", seen=now)
+            if self.gateway:
+                gm = netinfo.arp_table().get(self.gateway)
+                if gm and gm != self.gateway_mac:
+                    self.gateway_mac = gm
+                    self.capture_command("router_macs", [gm])
+            last_arp = now
+        if self.pihole is not None and self.pihole_status.get("ok"):
+            if now - last_ph_hosts > 60:
+                await self._observe_pihole_hosts()
+                last_ph_hosts = now
+            rows = await asyncio.to_thread(self.pihole.poll_queries)
+            if rows:
+                self.db.enqueue_many(
+                    "INSERT OR REPLACE INTO dns_queries(ts, client_ip, queries, blocked, top_domains) VALUES (?,?,?,?,?)",
+                    rows)
+            if self.pihole.error:
+                self.pihole_status.update(ok=False, message=self.pihole.error)
+        return last_arp, last_ph_hosts
 
     async def _presence_step(self, now: float) -> None:
         present = {self.devices.id_for(d.mac) for d in list(self.devices.by_mac.values()) if d.active}

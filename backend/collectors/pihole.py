@@ -99,31 +99,15 @@ class PiholeReader:
         return out
 
 
-def read_dhcp_leases(path: str) -> list[PiholeHost]:
-    """Pi-hole's (dnsmasq's) current DHCP leases: `expiry mac ip hostname client-id`.
-
-    Read-only, and only meaningful where Pi-hole is the DHCP server. A missing or
-    unreadable file simply yields nothing.
-    """
-    out: list[PiholeHost] = []
-    try:
-        with open(path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                p = line.split()
-                if len(p) < 4 or p[1].count(":") != 5:
-                    continue                            # DHCPv6 lines (duid) have no MAC
-                out.append(PiholeHost(mac=p[1].lower(), ip=p[2], name=None if p[3] == "*" else p[3],
-                                      vendor=None, last_query=None))
-    except OSError:
-        pass
-    return out
-
     def poll_queries(self, max_rows: int = 50000) -> list[tuple]:
         """Reads new DNS queries and returns dns_queries rows (ts, client, n, blocked, top_json)."""
         try:
             with self._conn() as c:
                 if self._last_id is None:
-                    r = c.execute("SELECT MIN(id) FROM queries WHERE timestamp > ?", (time.time() - 900,)).fetchone()
+                    # The v6 view `queries` joins four tables; through it this lookup took 27 s on the Pi.
+                    # The table behind it has the timestamp index.
+                    table = "query_storage" if _has_table(c, "query_storage") else "queries"
+                    r = c.execute(f"SELECT MIN(id) FROM {table} WHERE timestamp > ?", (time.time() - 900,)).fetchone()
                     start = (r[0] - 1) if r and r[0] else None
                     if start is None:
                         r = c.execute("SELECT MAX(id) FROM queries").fetchone()
@@ -155,3 +139,27 @@ def read_dhcp_leases(path: str) -> list[PiholeHost]:
         for m in [m for m in self._buckets if m < cutoff]:
             del self._buckets[m]
         return out
+
+
+def _has_table(c: sqlite3.Connection, name: str) -> bool:
+    return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def read_dhcp_leases(path: str) -> list[PiholeHost]:
+    """Pi-hole's (dnsmasq's) current DHCP leases: `expiry mac ip hostname client-id`.
+
+    Read-only, and only meaningful where Pi-hole is the DHCP server. A missing or
+    unreadable file simply yields nothing.
+    """
+    out: list[PiholeHost] = []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                p = line.split()
+                if len(p) < 4 or p[1].count(":") != 5:
+                    continue                            # DHCPv6 lines (duid) have no MAC
+                out.append(PiholeHost(mac=p[1].lower(), ip=p[2], name=None if p[3] == "*" else p[3],
+                                      vendor=None, last_query=None))
+    except OSError:
+        pass
+    return out
