@@ -46,6 +46,9 @@ versions follow [SemVer](https://semver.org/).
   not saved and the DNS minutes for the lag analysis were missing - without a word in
   the log. An error in one round is now logged and the loop goes on. The start of the
   Pi-hole poll reads the indexed table instead of the view (27 s → instant on the Pi).
+- `PRAGMA integrity_check` (the backup check in the README) reported "NULL value in
+  fritz_events.kind" for every row with the SQLite of Debian 12 (3.40.1), although the data
+  was fine. The table now has its key columns first (schema 11, migration step).
 - FRITZ!OS 8 (seen on a FRITZ!Box 7690 with 8.02) no longer offers the TR-064 action
   `GetAddonInfos`. The WAN rate now comes from the link utilization of
   `GetCommonLinkProperties` on such boxes. Before, the failing call also stopped the

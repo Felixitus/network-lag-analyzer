@@ -46,6 +46,23 @@ def test_presence_source_column_is_added_by_a_migration(tmp_path):
     assert c.execute("SELECT dev, source FROM device_presence").fetchall() == [(1, None)]
 
 
+def test_fritz_events_get_their_key_columns_first_and_keep_every_row(tmp_path):
+    db = str(tmp_path / "v10.sqlite3")
+    c = sqlite3.connect(db)
+    c.executescript("""CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO meta VALUES ('schema_version', '10');
+        CREATE TABLE fritz_events (ts INTEGER NOT NULL, kind TEXT NOT NULL, grp TEXT, msg TEXT NOT NULL,
+            PRIMARY KEY (ts, msg)) WITHOUT ROWID;
+        INSERT INTO fritz_events VALUES (100, 'renewed', 'net', 'a'), (200, 'other', NULL, 'b');""")
+    migrations.migrate(c, db, SCHEMA_VERSION)
+    assert [r[1] for r in c.execute("PRAGMA table_info(fritz_events)")] == ["ts", "msg", "kind", "grp"]
+    assert c.execute("SELECT ts, kind, grp, msg FROM fritz_events ORDER BY ts").fetchall() == \
+        [(100, "renewed", "net", "a"), (200, "other", None, "b")]
+    assert c.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
+    migrations.migrate(c, db, SCHEMA_VERSION)                    # nothing left to do
+    assert c.execute("SELECT COUNT(*) FROM fritz_events").fetchone()[0] == 2
+
+
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     d = tmp_path_factory.mktemp("nla-backfill")

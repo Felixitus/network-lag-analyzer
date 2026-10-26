@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 341, must be green)
+python3 -m pytest tests -q                    # all tests (currently 342, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -125,6 +125,8 @@ Do not walk into them again - the tests for them are there on purpose.
   `chown pihole:pihole` afterwards.
 * **The system clock jumps** (Pi without RTC, NTP after boot). Jumps > 2 s are detected,
   started seconds are discarded - an honest gap is better than wrong timestamps.
+* **WITHOUT ROWID tables: key columns first.** With a NOT NULL column between the key
+  columns, SQLite 3.40.1 (Debian 12) reports false NULL errors in `integrity_check`.
 * **A background loop must never die silently.** An exception ends an asyncio task
   without any log line; the device loop was dead for days that way. Every loop catches
   and logs per round (`log.exception`), so the next round runs.

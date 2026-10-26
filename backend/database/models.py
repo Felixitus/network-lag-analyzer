@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -253,11 +253,14 @@ CREATE TABLE IF NOT EXISTS device_presence (
 CREATE INDEX IF NOT EXISTS ix_device_presence_end ON device_presence(ts_end);
 
 -- The FRITZ!Box event log, copied so that it outlives the box's own short log.
+-- The key columns come first on purpose: with a NOT NULL column between them, the
+-- SQLite of Debian 12 (3.40.1) reports "NULL value in fritz_events.kind" for every
+-- row in PRAGMA integrity_check, although there is none (schema 11).
 CREATE TABLE IF NOT EXISTS fritz_events (
     ts   INTEGER NOT NULL,
+    msg  TEXT NOT NULL,
     kind TEXT NOT NULL,                   -- see analysis/line.py
     grp  TEXT,
-    msg  TEXT NOT NULL,
     PRIMARY KEY (ts, msg)
 ) WITHOUT ROWID;
 
