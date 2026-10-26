@@ -161,6 +161,17 @@ def _v10_presence_source(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE device_presence ADD COLUMN source TEXT")
 
 
+def _v11_fritz_events_order(conn: sqlite3.Connection) -> None:
+    """Version 11: key columns of fritz_events first (false integrity_check errors in SQLite 3.40)."""
+    if not _table_exists(conn, "fritz_events") or _columns(conn, "fritz_events")[:2] == ["ts", "msg"]:
+        return
+    conn.execute("ALTER TABLE fritz_events RENAME TO fritz_events_old")
+    conn.execute("""CREATE TABLE fritz_events (ts INTEGER NOT NULL, msg TEXT NOT NULL, kind TEXT NOT NULL,
+                    grp TEXT, PRIMARY KEY (ts, msg)) WITHOUT ROWID""")
+    conn.execute("INSERT INTO fritz_events (ts, msg, kind, grp) SELECT ts, msg, kind, grp FROM fritz_events_old")
+    conn.execute("DROP TABLE fritz_events_old")
+
+
 def _is_real(conn: sqlite3.Connection, table: str, column: str) -> bool:
     for r in conn.execute(f"PRAGMA table_info({table})"):
         if r[1] == column:
@@ -175,6 +186,7 @@ STEPS: list[tuple[int, str, object]] = [
     (3, "More compact storage (INTEGER units, device_id, slim device_traffic)",
      _v3_compact_storage),
     (10, "Source column for presence periods", _v10_presence_source),
+    (11, "Key columns of fritz_events first", _v11_fritz_events_order),
 ]
 
 
