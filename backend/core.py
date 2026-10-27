@@ -14,6 +14,7 @@ from typing import Any
 
 from . import __version__
 from .analysis import backfill, bufferbloat, daily, line, overview, pi_health, presence
+from .analysis.alerts import Alerts, Message
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report, dismiss_reason
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
@@ -84,6 +85,9 @@ class Core:
         self.fritz_status: dict = {"enabled": False}
         self.line_status: dict = {"enabled": False}
         self.pi_health: dict = {}
+        self.alerts = Alerts()
+        self.notify_log: deque = deque(maxlen=50)
+        self._notified_devices: set[str] = set()
         self.presence = presence.PresenceTracker()
         self._pi_recent: deque = deque(maxlen=61)    # one snapshot per minute → last hour
         # Last FRITZ!Box host list, for the client identification check of the DNS pages.
@@ -181,6 +185,7 @@ class Core:
             asyncio.create_task(self._maintenance_loop(), name="maintenance"),
             asyncio.create_task(self._system_loop(), name="system"),
             asyncio.create_task(self._devices_loop(), name="devices"),
+            asyncio.create_task(self._notify_loop(), name="notify"),
         ]
         log.info("Network Lag Analyzer %s started (dev_mode=%s, data: %s)",
                  self.version, self.cfg.dev_mode, self.cfg.data_dir)
@@ -681,6 +686,80 @@ class Core:
             if self.pihole.error:
                 self.pihole_status.update(ok=False, message=self.pihole.error)
         return last_arp, last_ph_hosts
+
+    # ------------------------------------------------------------------ notifications
+    async def _notify_loop(self) -> None:
+        await asyncio.sleep(90)          # measurements first: right after a start every window is short
+        last_events = time.time()
+        while True:
+            try:
+                last_events = await self._notify_round(time.time(), last_events)
+            except Exception:  # noqa: BLE001
+                log.exception("Notification round failed")
+            await asyncio.sleep(30)
+
+    async def _notify_round(self, now: float, last_events: float) -> float:
+        n = self.cfg.notify
+        if not n.enabled:
+            return now
+        self.alerts.cooldown_s = n.cooldown_minutes * 60
+        msgs: list[Message] = []
+        a = self.alerts
+        if n.router_loss:
+            gw = next((t for t in self.hub.target_health() if t["kind"] == "gateway" and t["address"] == self.gateway), None)
+            loss = gw["loss_pct"] if gw and gw["probes"] else None
+            verdict = (self.link_verdict() or {}).get("text") or ""
+            msgs += a.condition("router_loss", now, loss is not None and loss >= n.router_loss_pct,
+                                "Packet loss to the router", f"{loss or 0:.1f} % in the last 2 minutes. {verdict}".strip(), 0)
+        if n.internet_down:
+            msgs += a.condition("internet_down", now, self.hub.internet_online() is False, "Internet down",
+                                "No internet target answers pings.", n.internet_down_seconds)
+        if n.pihole_down:
+            light = overview.dns_light(self)
+            down = light["level"] == "critical" or self.pi_health.get("pihole_active") is False
+            msgs += a.condition("pihole_down", now, down, "Pi-hole does not answer",
+                                f"{light['value']} - {light['detail']}".strip(" -"), 60)
+        if n.pi_health:
+            ph = self.pi_health
+            msgs += a.condition("pi_health", now, ph.get("level") == "critical", "Raspberry Pi needs attention",
+                                "; ".join(ph.get("notes") or []), 120)
+        if n.line:
+            ls = self.line_status or {}
+            wan = (ls.get("wan") or {}).get("status")
+            bad = ls.get("level") == "critical" or (wan is not None and wan.lower() != "connected")
+            msgs += a.condition("line", now, bad, "Internet line problem",
+                                "; ".join(ls.get("notes") or []) or f"FRITZ!Box connection state: {wan}", 0)
+            evs = await self.db.read(lambda c: c.execute(
+                "SELECT ts, kind, msg FROM fritz_events WHERE ts > ? AND kind IN ('dsl_down', 'disconnected') ORDER BY ts",
+                (int(last_events),)).fetchall())
+            for ts, kind, msg in evs:
+                msgs.append(Message(f"fritz:{ts}", line.KIND_LABELS.get(kind, kind), msg, "default", "event"))
+        if n.new_device:
+            acked = await self.db.read(lambda c: repo.get_setting(c, presence.ACK_KEY, {}))
+            known = await self.db.read(lambda c: set(repo.get_setting(c, "notified_devices", [])))
+            for d in presence.new_devices(self.devices.all(), acked, now - 86400):
+                if d["mac"] in known or d["mac"] in self._notified_devices:
+                    continue
+                self._notified_devices.add(d["mac"])
+                msgs.append(Message(f"device:{d['mac']}", "New device in the network",
+                                    f"{d['name']} ({d['ip'] or 'no IPv4'}, {d['mac']}{', ' + d['vendor'] if d.get('vendor') else ''})",
+                                    "default", "event"))
+            if self._notified_devices - known:
+                done = sorted(known | self._notified_devices)[-500:]
+                await self.db.write(lambda c: repo.set_setting(c, "notified_devices", done))
+        for m in msgs:
+            await self._send(m)
+        return now
+
+    async def _send(self, m: Message) -> dict:
+        from .collectors import notify as nt
+        res = await asyncio.to_thread(nt.deliver, self.cfg.notify, m.title, m.body, m.priority)
+        self.notify_log.appendleft({"ts": time.time(), "key": m.key, "title": m.title, "body": m.body, "kind": m.kind,
+                                    "result": res})
+        for ch, err in res.items():
+            if err:
+                log.warning("Notification via %s failed: %s", ch, err)
+        return res
 
     async def _presence_step(self, now: float) -> None:
         present = {self.devices.id_for(d.mac) for d in list(self.devices.by_mac.values()) if d.active}
@@ -1456,6 +1535,11 @@ class Core:
                 patch["fritzbox"].pop("password", None)
             else:
                 new_password = True
+        if "notify" in patch:
+            from .config import NOTIFY_SECRETS
+            for k in NOTIFY_SECRETS:            # the UI shows secrets masked; unchanged means keep
+                if patch["notify"].get(k) == "********":
+                    patch["notify"].pop(k)
         overrides = await self.db.read(lambda c: repo.get_setting(c, "config_overrides", {}))
         merged = deep_merge(overrides, patch)
         new_cfg = build_config(self.yaml_data, merged)   # validates (raises on errors)
@@ -1533,6 +1617,7 @@ class Core:
             "gaming": self.gaming.to_dict() if self.gaming else None,
             "incident_open": self.correlator.current.to_dict() if self.correlator.current else None,
             "incidents_dismissed": self.dismissed_incidents,
+            "alerts_active": self.alerts.active(),
         }
 
 

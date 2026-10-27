@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 374, must be green)
+python3 -m pytest tests -q                    # all tests (currently 383, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -55,6 +55,7 @@ backend/
     pihole.py             FTL DB read-only (lag context per minute)
     ftl_queries.py        FTL query log read-only, v5/v6 schema, time ranges on the index only
     devices.py            device registry, assigns the numeric IDs itself
+    notify.py             sending notifications: ntfy, Telegram, e-mail, each channel on its own
   analysis/
     metrics.py            per-second assembler, ring buffer (1 h)
     events.py             event detection with hysteresis
@@ -68,6 +69,7 @@ backend/
     categories.py         domain → service → category rules (layers: manual, local, builtin, ut1)
     activity.py           estimated activity phases per service (from dns_service_minutes)
     client_match.py       FRITZ!Box vs Pi-hole: can the per-device DNS numbers be trusted?
+    alerts.py             when to notify: minimum duration, cooldown, all clear
     overview.py           status lights and the timeline of the overview page, restart log
     line.py               internet line: FRITZ!Box event log, outages from our pings, error deltas
     pi_health.py          the Pi itself (sysfs/procfs, no root), and where LAN losses lie
