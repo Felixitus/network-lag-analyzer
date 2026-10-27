@@ -5,6 +5,11 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-27
+
+Overview page, internet line, the Pi itself, devices and presence, notifications,
+automatic backups, a much more precise DNS section and measured connections per service.
+
 ### Added
 - **Measured connections per service** on the device page: the TLS server name (SNI)
   is read from the first packet of every connection in the FRITZ!Box capture (new column
@@ -102,6 +107,8 @@ versions follow [SemVer](https://semver.org/).
   brute-force the password offline. Older FRITZ!OS versions now get a clear error.
 
 ### Project
+- A note in the web UI when a newer release is on GitHub (one request a day, no data of
+  this installation; `update_check: false` switches it off). It never installs anything.
 - CI checks the syntax of every frontend JavaScript file (`node --check`): the frontend
   has no build step, so a syntax error used to show up only as a blank page.
 

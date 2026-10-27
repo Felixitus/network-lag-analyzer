@@ -86,6 +86,7 @@ class Core:
         self.line_status: dict = {"enabled": False}
         self.pi_health: dict = {}
         self.alerts = Alerts()
+        self.update_info: dict | None = None
         self.notify_log: deque = deque(maxlen=50)
         self._notified_devices: set[str] = set()
         self.presence = presence.PresenceTracker()
@@ -1288,6 +1289,7 @@ class Core:
                     await self._check_db_size()
                     await self._auto_backup()
                     await self._ut1_refresh()
+                    await self._check_update()
                     last_ret = time.time()
             except Exception:
                 log.exception("Maintenance failed")
@@ -1318,6 +1320,29 @@ class Core:
             log.error("Backup failed: %s", res["error"])
         await self.db.write(lambda c: repo.set_setting(c, "last_backup", res))
         return res
+
+    RELEASES_URL = "https://api.github.com/repos/Felixitus/network-lag-analyzer/releases/latest"
+
+    async def _check_update(self, force: bool = False) -> dict | None:
+        """Is there a newer release? Once a day, one request without any data of this installation."""
+        if not (self.cfg.update_check or force) or self.cfg.dev_mode and not force:
+            return None
+        if not force and time.time() - (self.update_info or {}).get("checked", 0) < 86400:
+            return None
+
+        def fetch():
+            import httpx
+            r = httpx.get(self.RELEASES_URL, timeout=10, headers={"Accept": "application/vnd.github+json"})
+            r.raise_for_status()
+            return r.json()
+        try:
+            d = await asyncio.to_thread(fetch)
+            latest = str(d.get("tag_name") or "").lstrip("v")
+            self.update_info = {"checked": time.time(), "latest": latest, "url": d.get("html_url"),
+                                "newer": _version_tuple(latest) > _version_tuple(self.version)}
+        except Exception as e:  # noqa: BLE001 - no internet is no reason for anything
+            self.update_info = {"checked": time.time(), "error": f"{type(e).__name__}", "newer": False}
+        return self.update_info
 
     UT1_URL = "https://dsi.ut-capitole.fr/blacklists/download/blacklists.tar.gz"
     UT1_MAX_BYTES = 300 * 1024 * 1024
@@ -1719,6 +1744,7 @@ class Core:
             "incident_open": self.correlator.current.to_dict() if self.correlator.current else None,
             "incidents_dismissed": self.dismissed_incidents,
             "alerts_active": self.alerts.active(),
+            "update": self.update_info,
         }
 
 
@@ -1733,6 +1759,14 @@ def _resolve_v4(host: str | None) -> str | None:
         return socket.gethostbyname(name)
     except OSError:
         return None
+
+
+def _version_tuple(v: str) -> tuple:
+    """"1.10.0" > "1.9.2"; anything unparsable counts as the oldest."""
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except (ValueError, AttributeError):
+        return (0,)
 
 
 def _pct(a, b) -> float | None:

@@ -322,6 +322,8 @@ class Config(BaseModel):
     # A second always-on device in the LAN (access point, switch, NAS). Pinged like the router,
     # it tells a fault of the Pi's own cable or port apart from a fault of the router.
     lan_reference: str | None = None
+    # Once a day: is there a newer release on GitHub? Only shows a note, never installs.
+    update_check: bool = True
 
     @field_validator("gateway")
     @classmethod
@@ -365,7 +367,7 @@ def fritz_target(cfg: Config) -> tuple[str, str | None]:
 EDITABLE_SECTIONS = {
     "gateway", "targets", "probe", "dns_probe", "gaming_pc", "gaming", "thresholds",
     "capacity", "fritzbox", "capture", "pihole", "dns_usage", "retention", "deep_capture",
-    "load_guard", "local_networks", "lan_reference", "notify", "backup",
+    "load_guard", "local_networks", "lan_reference", "notify", "backup", "update_check",
 }
 # Changes to these sections require a restart of the collectors.
 RESTART_SECTIONS = {"fritzbox", "capture", "pihole", "dns_usage", "server"}
