@@ -15,7 +15,7 @@ from typing import Any
 from . import __version__
 from .analysis import backfill, bufferbloat, daily, line, overview, pi_health, presence
 from .analysis.categories import Classifier
-from .analysis.correlation import Correlator, Incident, analyze_user_report
+from .analysis.correlation import Correlator, Incident, analyze_user_report, dismiss_reason
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
 from .analysis.events import EVENT_LABELS, Event, EventEngine
 from .analysis.gaming import ICMP_GIVE_UP_PROBES, GamingDetector, GamingSession, pick_server, summarize_session
@@ -107,6 +107,7 @@ class Core:
         self.targets: dict[int, dict] = {}
         self.recent_events: deque[dict] = deque(maxlen=500)
         self.recent_incidents: deque[dict] = deque(maxlen=200)
+        self.dismissed_incidents: dict[str, int] = {}     # since the start, by reason
         self.active_flows: deque[tuple[float, list]] = deque(maxlen=720)
         self.udp_candidates: list[dict] = []
         self.gaming: GamingSession | None = None
@@ -152,7 +153,8 @@ class Core:
         self.events = EventEngine(self.cfg.thresholds, self.capacity, lambda: self._next_id("event"),
                                   self._top_device_of_row, gaming_active_fn=lambda: self.gaming is not None)
         self.correlator = Correlator(self.build_window, lambda: self._next_id("incident"),
-                                     self._incident_closed, self._incident_opened)
+                                     self._incident_closed, self._incident_opened,
+                                     on_dismiss=self._incident_dismissed, dismiss_fn=dismiss_reason)
         self.correlator.session_id_fn = lambda: self.gaming.id if self.gaming else None
         self.events.on_start.append(self._event_started)
         self.events.on_end.append(self._event_ended)
@@ -981,6 +983,19 @@ class Core:
         self._remember_incident(inc)
         self.broadcaster.publish("incident", inc.to_dict() | {"state": "closed"})
 
+    def _incident_dismissed(self, inc: Incident, events: list[Event], reason: str) -> None:
+        """Not worth an incident (see correlation.dismiss_reason): the row written when it opened goes,
+        its events are kept without an incident."""
+        self.db.enqueue("DELETE FROM incidents WHERE id=?", (inc.id,))
+        for e in events:
+            if e.incident_id in (None, inc.id):
+                e.incident_id = None
+                self.db.enqueue(self.EVENT_SQL, self._event_params(e))
+                self._remember_event(e)
+        self.recent_incidents = deque((x for x in self.recent_incidents if x["id"] != inc.id), maxlen=200)
+        self.dismissed_incidents[reason] = self.dismissed_incidents.get(reason, 0) + 1
+        self.broadcaster.publish("incident", {"id": inc.id, "state": "dismissed", "reason": reason})
+
     def _protect_pcap_for(self, inc: Incident, events: list[Event]) -> bool:
         """Keep the capture for an automatically detected incident - or not.
 
@@ -1517,6 +1532,7 @@ class Core:
             "db": self.db.stats,
             "gaming": self.gaming.to_dict() if self.gaming else None,
             "incident_open": self.correlator.current.to_dict() if self.correlator.current else None,
+            "incidents_dismissed": self.dismissed_incidents,
         }
 
 

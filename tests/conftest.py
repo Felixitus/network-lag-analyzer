@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from backend.analysis.correlation import Correlator  # noqa: E402
+from backend.analysis.correlation import CLOSE_AFTER, POST_SECONDS, Correlator  # noqa: E402
 from backend.analysis.events import EventEngine  # noqa: E402
 from backend.analysis.metrics import MetricsHub, TargetInfo  # noqa: E402
 from backend.analysis.root_cause import Window  # noqa: E402
@@ -82,7 +82,7 @@ class Pipeline:
             self._feed(t, s, traffic)
             t += 1
         self.hub.finalize_due(now=t + 10)
-        self.corr.tick(t + 60)
+        self.corr.tick(t + CLOSE_AFTER + POST_SECONDS + 1)
         self.end = t
         return self
 
