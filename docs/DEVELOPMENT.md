@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 383, must be green)
+python3 -m pytest tests -q                    # all tests (currently 388, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -80,6 +80,7 @@ backend/
   database/
     models.py             schema + SCHEMA_VERSION
     migrations.py         numbered steps, backup copy before rebuilding
+    backup.py             automatic, checked backups with rotation (only backup-auto-* files)
     repository.py         writer thread, enc/dec, aggregation, retention
   api/                    FastAPI + SSE (dns.py: DNS usage per device, dns_export.py: CSV/XLSX)
     security.py           mandatory login, server-side sessions, CSRF, headers

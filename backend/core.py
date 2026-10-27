@@ -1285,10 +1285,37 @@ class Core:
                     await self._write_daily()
                     await self._dns_usage_maintenance()
                     await self._check_db_size()
+                    await self._auto_backup()
                     last_ret = time.time()
             except Exception:
                 log.exception("Maintenance failed")
             await asyncio.sleep(60)
+
+    @property
+    def backup_dir(self):
+        from pathlib import Path
+        return Path(self.cfg.data_dir) / "backups"
+
+    async def _auto_backup(self, force: bool = False) -> dict | None:
+        """Weekly (by default) at the configured hour, only at load guard level 0."""
+        from .database import backup as bk
+        b = self.cfg.backup
+        last = await self.db.read(lambda c: repo.get_setting(c, "last_backup", None))
+        due = force or (b.enabled and (last is None or time.time() - last.get("ts", 0) >= b.interval_days * 86400 - 3600)
+                        and time.localtime().tm_hour == b.hour and self.loadguard.level == 0)
+        if not due:
+            return None
+        await self.db.flush()
+        try:
+            res = await asyncio.to_thread(bk.make_backup, self.db.path, self.backup_dir, self.yaml_path)
+            res["removed"] = await asyncio.to_thread(bk.rotate, self.backup_dir, b.keep)
+            res["ok"] = True
+            log.info("Backup written: %s (%.0f MB, %s s)", res["path"], res["size"] / 1e6, res["seconds"])
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "ts": time.time(), "error": f"{type(e).__name__}: {e}"}
+            log.error("Backup failed: %s", res["error"])
+        await self.db.write(lambda c: repo.set_setting(c, "last_backup", res))
+        return res
 
     async def _dns_usage_maintenance(self) -> None:
         ing = self.dns_usage

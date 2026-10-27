@@ -119,6 +119,13 @@ class FritzCfg(BaseModel):
     hostlist_interval: float = Field(120, ge=30, le=3600)
 
 
+class BackupCfg(BaseModel):
+    """Automatic database backups in <data dir>/backups, the oldest removed beyond `keep`."""
+    enabled: bool = True
+    interval_days: float = Field(7, ge=1, le=90)
+    keep: int = Field(2, ge=1, le=20)
+    hour: int = Field(3, ge=0, le=23)          # local hour; quiet time, and Pi-hole's gravity update is on Sundays
+
 NOTIFY_SECRETS = ("ntfy_token", "telegram_bot_token", "smtp_password")
 
 
@@ -289,6 +296,7 @@ class Config(BaseModel):
     load_guard: LoadGuardCfg = LoadGuardCfg()
     security: SecurityCfg = SecurityCfg()
     notify: NotifyCfg = NotifyCfg()
+    backup: BackupCfg = BackupCfg()
     local_networks: list[str] = Field(default_factory=list)  # empty = automatic
     # A second always-on device in the LAN (access point, switch, NAS). Pinged like the router,
     # it tells a fault of the Pi's own cable or port apart from a fault of the router.
@@ -335,7 +343,7 @@ def fritz_target(cfg: Config) -> tuple[str, str | None]:
 EDITABLE_SECTIONS = {
     "gateway", "targets", "probe", "dns_probe", "gaming_pc", "gaming", "thresholds",
     "capacity", "fritzbox", "capture", "pihole", "dns_usage", "retention", "deep_capture",
-    "load_guard", "local_networks", "lan_reference", "notify",
+    "load_guard", "local_networks", "lan_reference", "notify", "backup",
 }
 # Changes to these sections require a restart of the collectors.
 RESTART_SECTIONS = {"fritzbox", "capture", "pihole", "dns_usage", "server"}

@@ -6,6 +6,11 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Automatic backups**: weekly at 03:00 (configurable, only at load guard level 0) a
+  consistent copy of the database and `config.yaml` in `<data dir>/backups`, checked with
+  `quick_check` before it counts; the two newest are kept, manual copies are never
+  touched. "Back up now" and the list are under Setup → Backups. Skipped with too little
+  free space.
 - **Notifications** via ntfy (push to the phone), Telegram or e-mail (Setup →
   Notifications, with a test button): packet loss to the router, internet down,
   Pi-hole not answering, the Pi critical (power, heat, storage), internet line problems

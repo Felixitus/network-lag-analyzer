@@ -110,6 +110,24 @@ async def database(request: Request):
     }
 
 
+@router.get("/backups")
+async def backups(request: Request):
+    from ..database import backup as bk
+    core = core_of(request)
+    last = await core.db.read(lambda c: repo.get_setting(c, "last_backup", None))
+    return {"dir": str(core.backup_dir), "backups": await asyncio.to_thread(bk.list_backups, core.backup_dir),
+            "last": last, "settings": core.cfg.backup.model_dump()}
+
+
+@router.post("/backups/run")
+async def backup_now(request: Request):
+    core = core_of(request)
+    res = await core._auto_backup(force=True)
+    if not res or not res.get("ok"):
+        raise HTTPException(500, (res or {}).get("error") or "Backup failed")
+    return res
+
+
 @router.post("/database/pcap-cleanup")
 async def pcap_cleanup(request: Request):
     """Bring captures down to the configured budget right away."""

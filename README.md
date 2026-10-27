@@ -489,7 +489,12 @@ The database contains the settings (including the FRITZ!Box password), the login
 (as a hash) and the DNS statistics - keep backups as private as the Pi itself. Pi-hole's
 own data is not part of it (use Pi-hole's Teleporter for that).
 
-Backup, while the service runs (SQLite's online backup is consistent; needs the
+**Automatic:** once a week at 03:00 (Setup → Backups, also "Back up now") the service
+writes a checked copy of the database and of `config.yaml` to
+`/var/lib/network-lag-analyzer/backups/` and keeps the two newest. They are on the same
+SD card - copy one off the Pi now and then.
+
+Manual backup, while the service runs (SQLite's online backup is consistent; needs the
 `sqlite3` package):
 
 ```bash
