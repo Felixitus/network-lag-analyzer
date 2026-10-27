@@ -88,6 +88,10 @@ versions follow [SemVer](https://semver.org/).
   has no build step, so a syntax error used to show up only as a blank page.
 
 ### Changed
+- **Smaller database:** incident analyses are stored zlib-compressed and without their
+  copy of the events (those are in the events table). On a copy of the Pi's database:
+  207 → 135 MB, the incidents 99 → 34 MB (schema 12; the migration takes about 45 s once
+  at the first start, including the backup copy and VACUUM).
 - **Fewer, merged incidents.** An incident now stays open until no lag event came for
   2 minutes (was 5 s) and lasts at most 30 minutes (was 10). On the Pi, 72 % of the
   incidents had started within a minute of the previous one - one loss episode cut into

@@ -172,6 +172,25 @@ def _v11_fritz_events_order(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE fritz_events_old")
 
 
+def _v12_compress_incidents(conn: sqlite3.Connection) -> None:
+    """Version 12: incident analyses compressed, without the copy of the events (they are in
+    the events table with their incident_id). Half the database on the Pi was these JSONs."""
+    from .repository import ANALYSIS_MAGIC, dec_analysis, enc_analysis
+    if not _table_exists(conn, "incidents"):
+        return
+    rows = conn.execute("SELECT id, source, analysis FROM incidents").fetchall()
+    for iid, source, analysis in rows:
+        if analysis is None or (isinstance(analysis, bytes) and analysis.startswith(ANALYSIS_MAGIC)):
+            continue
+        try:
+            a = dec_analysis(analysis)
+        except ValueError:
+            continue                    # unreadable stays as it was
+        if source == "auto":
+            a.pop("events", None)       # a lag report keeps its list: those events belong to other incidents
+        conn.execute("UPDATE incidents SET analysis=? WHERE id=?", (enc_analysis(a), iid))
+
+
 def _is_real(conn: sqlite3.Connection, table: str, column: str) -> bool:
     for r in conn.execute(f"PRAGMA table_info({table})"):
         if r[1] == column:
@@ -187,6 +206,7 @@ STEPS: list[tuple[int, str, object]] = [
      _v3_compact_storage),
     (10, "Source column for presence periods", _v10_presence_source),
     (11, "Key columns of fritz_events first", _v11_fritz_events_order),
+    (12, "Incident analyses compressed, events by reference", _v12_compress_incidents),
 ]
 
 

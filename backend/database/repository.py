@@ -251,6 +251,30 @@ def target_params(res: int, ts: int, target_id: int, v: dict) -> tuple:
             v.get("probes"), v.get("lost"))
 
 
+# ------------------------------------------------- incident analysis
+# The analysis of an incident is a few KB of JSON - evidence, rule scores, top talkers,
+# metrics, recommendation. At hundreds of incidents a day it was half the database, so
+# it is stored zlib-compressed (about 1/6). Older rows are plain JSON text; both are read.
+ANALYSIS_MAGIC = b"z1"
+
+
+def enc_analysis(analysis: dict) -> bytes:
+    import zlib
+    return ANALYSIS_MAGIC + zlib.compress(json.dumps(analysis, default=str, separators=(",", ":")).encode("utf-8"), 6)
+
+
+def dec_analysis(value) -> dict:
+    import zlib
+    if not value:
+        return {}
+    if isinstance(value, (bytes, memoryview)):
+        b = bytes(value)
+        if b.startswith(ANALYSIS_MAGIC):
+            return json.loads(zlib.decompress(b[len(ANALYSIS_MAGIC):]).decode("utf-8"))
+        return json.loads(b.decode("utf-8"))
+    return json.loads(value)
+
+
 # ------------------------------------------------- internet line (FRITZ!Box)
 LINE_COLS = ("dsl_up", "down_kbit", "up_kbit", "down_max_kbit", "up_max_kbit", "down_snr", "up_snr",
              "down_atten", "up_atten", "crc", "fec", "errored_secs", "severe_secs", "retrains",
