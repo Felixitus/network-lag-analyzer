@@ -72,6 +72,19 @@ dns_usage:
   top_domains_per_day: 300
   phase_gap_minutes: 5   # activity phases: a longer pause ends a phase
 
+# Notifications (also in the web UI under Setup → Notifications). Every channel is optional.
+notify:
+  enabled: false
+  ntfy_url: ""                 # https://ntfy.sh/<long random topic> - the topic acts as the password
+  telegram_bot_token: ""       # from @BotFather
+  telegram_chat_id: ""
+  smtp_host: ""                # e-mail; with Gmail use an app password
+  smtp_port: 587
+  mail_to: ""
+  cooldown_minutes: 30         # repeat an ongoing alert at most this often
+  router_loss_pct: 5           # packet loss to the router over 2 minutes
+  internet_down_seconds: 60
+
 # Login is mandatory. Create the account on the Pi:
 #   cd /opt/network-lag-analyzer && sudo -u nla env NLA_CONFIG=/etc/network-lag-analyzer/config.yaml \
 #     venv/bin/python -m backend.account set --username admin

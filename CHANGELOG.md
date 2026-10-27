@@ -6,6 +6,13 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Notifications** via ntfy (push to the phone), Telegram or e-mail (Setup →
+  Notifications, with a test button): packet loss to the router, internet down,
+  Pi-hole not answering, the Pi critical (power, heat, storage), internet line problems
+  and FRITZ!Box events (DSL lost, disconnected), and new devices. Each alert needs a
+  minimum duration, repeats at most once per cooldown (30 min) and ends with an "all
+  clear" saying how long it lasted. Tokens and passwords are shown masked and kept
+  when saved unchanged; errors never contain the Telegram token.
 - **Categories per device** (DNS usage → Categories per device): every device with a bar
   of its lookups per category, background in grey; per device a table of lookups and
   share, active hours (clock hours with an allowed lookup) and - only where single

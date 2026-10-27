@@ -357,6 +357,51 @@ export async function mount(main, { refreshStatus }) {
   ]);
   main.append(h('div', { style: { height: '16px' } }), section('Measurement', null, meas));
 
+  // ---------------------------------------------------------------- notifications
+  const nf = form(cfg, [
+    { path: 'notify.enabled', label: 'Send notifications', type: 'bool' },
+    { path: 'notify.ntfy_url', label: 'ntfy address', help: 'e.g. https://ntfy.sh/ followed by a long random topic - the topic is the password. Install the ntfy app and subscribe to it.' },
+    { path: 'notify.ntfy_token', label: 'ntfy access token', type: 'password', help: 'Only for a protected topic or your own server' },
+    { path: 'notify.telegram_bot_token', label: 'Telegram bot token', type: 'password', help: 'From @BotFather' },
+    { path: 'notify.telegram_chat_id', label: 'Telegram chat ID' },
+    { path: 'notify.smtp_host', label: 'SMTP server', help: 'For e-mail, e.g. smtp.gmail.com' },
+    { path: 'notify.smtp_port', label: 'SMTP port', type: 'number' },
+    { path: 'notify.smtp_starttls', label: 'STARTTLS', type: 'bool' },
+    { path: 'notify.smtp_username', label: 'SMTP user' },
+    { path: 'notify.smtp_password', label: 'SMTP password', type: 'password', help: 'With Gmail an app password' },
+    { path: 'notify.mail_from', label: 'Sender address' },
+    { path: 'notify.mail_to', label: 'Recipient address' },
+    { path: 'notify.router_loss', label: 'Packet loss to the router', type: 'bool' },
+    { path: 'notify.router_loss_pct', label: '… from (% in 2 min)', type: 'number' },
+    { path: 'notify.internet_down', label: 'Internet down', type: 'bool' },
+    { path: 'notify.internet_down_seconds', label: '… after (s)', type: 'number' },
+    { path: 'notify.pihole_down', label: 'Pi-hole does not answer', type: 'bool' },
+    { path: 'notify.pi_health', label: 'Raspberry Pi critical (power, heat, storage)', type: 'bool' },
+    { path: 'notify.line', label: 'Internet line (DSL lost, disconnected)', type: 'bool' },
+    { path: 'notify.new_device', label: 'New device in the network', type: 'bool' },
+    { path: 'notify.cooldown_minutes', label: 'Repeat an ongoing alert after (min)', type: 'number' },
+  ]);
+  const nOut = h('div', { class: 'small' });
+  const nTest = h('button', { class: 'btn', type: 'button' }, 'Send test message');
+  nTest.addEventListener('click', async () => {
+    nTest.disabled = true;
+    try {
+      const r = await api('api/notify/test', { method: 'POST', body: {} });
+      clear(nOut).append(...Object.entries(r.result).map(([ch, err]) => h('div', null, statusIcon(!err), ` ${ch}: ${err || 'sent'}`)));
+    } catch (e) { nOut.textContent = e.message; }
+    nTest.disabled = false;
+  });
+  const nLog = h('ul', { class: 'list small' });
+  api('api/notify').then(r => {
+    if (!r.log.length) { nLog.append(h('li', { class: 'muted' }, 'No messages sent since the last start.')); return; }
+    nLog.append(...r.log.slice(0, 10).map(m => h('li', null, h('b', null, m.title), h('span', { class: 'muted' }, ` · ${fmtDateTime(m.ts)}`),
+      h('div', { class: 'secondary' }, m.body),
+      h('div', { class: 'muted' }, Object.entries(m.result).map(([ch, err]) => `${ch}: ${err || 'sent'}`).join(' · ') || 'no channel'))));
+  }).catch(() => null);
+  main.append(h('div', { style: { height: '16px' } }), section('Notifications',
+    'Messages to your phone when something needs attention - after a minimum duration, repeated at most once per cooldown, with an "all clear" when it is over. Save first, then send a test.',
+    nf, nTest), nOut, h('details', null, h('summary', { class: 'small', style: { cursor: 'pointer' } }, 'Last messages'), nLog));
+
   const thr = form(cfg, [
     { path: 'thresholds.ping_warning', label: 'Ping warning (ms)', type: 'number' },
     { path: 'thresholds.ping_critical', label: 'Ping critical (ms)', type: 'number' },

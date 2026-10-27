@@ -119,6 +119,42 @@ class FritzCfg(BaseModel):
     hostlist_interval: float = Field(120, ge=30, le=3600)
 
 
+NOTIFY_SECRETS = ("ntfy_token", "telegram_bot_token", "smtp_password")
+
+
+class NotifyCfg(BaseModel):
+    """Push messages when something needs attention. Every channel is optional."""
+    enabled: bool = False
+    ntfy_url: str = ""                 # e.g. https://ntfy.sh/<a long random topic>
+    ntfy_token: str = ""
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    smtp_host: str = ""
+    smtp_port: int = Field(587, ge=1, le=65535)
+    smtp_starttls: bool = True
+    smtp_username: str = ""
+    smtp_password: str = ""
+    mail_from: str = ""
+    mail_to: str = ""
+    cooldown_minutes: int = Field(30, ge=5, le=1440)     # repeat an ongoing alert at most this often
+    router_loss: bool = True
+    router_loss_pct: float = Field(5, ge=0.5, le=100)    # over the last 2 minutes
+    internet_down: bool = True
+    internet_down_seconds: int = Field(60, ge=10, le=3600)
+    pihole_down: bool = True
+    new_device: bool = True
+    pi_health: bool = True
+    line: bool = True
+
+    @field_validator("ntfy_url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        v = v.strip()
+        if v and not v.startswith(("https://", "http://")):
+            raise ValueError("The ntfy address must start with https:// (or http:// for a server in the LAN)")
+        return v
+
+
 class CaptureCfg(BaseModel):
     source: Literal["auto", "fritzbox", "local", "none"] = "auto"
     local_interface: str = "eth0"
@@ -252,6 +288,7 @@ class Config(BaseModel):
     deep_capture: DeepCaptureCfg = DeepCaptureCfg()
     load_guard: LoadGuardCfg = LoadGuardCfg()
     security: SecurityCfg = SecurityCfg()
+    notify: NotifyCfg = NotifyCfg()
     local_networks: list[str] = Field(default_factory=list)  # empty = automatic
     # A second always-on device in the LAN (access point, switch, NAS). Pinged like the router,
     # it tells a fault of the Pi's own cable or port apart from a fault of the router.
@@ -281,6 +318,8 @@ class Config(BaseModel):
     def public_dict(self) -> dict[str, Any]:
         d = self.model_dump()
         d["fritzbox"]["password"] = "********" if self.fritzbox.password else ""
+        for k in NOTIFY_SECRETS:
+            d["notify"][k] = "********" if getattr(self.notify, k) else ""
         d["security"].pop("password_hash", None)
         d["security"]["password_set"] = bool(self.security.password_hash)
         return d
@@ -296,7 +335,7 @@ def fritz_target(cfg: Config) -> tuple[str, str | None]:
 EDITABLE_SECTIONS = {
     "gateway", "targets", "probe", "dns_probe", "gaming_pc", "gaming", "thresholds",
     "capacity", "fritzbox", "capture", "pihole", "dns_usage", "retention", "deep_capture",
-    "load_guard", "local_networks", "lan_reference",
+    "load_guard", "local_networks", "lan_reference", "notify",
 }
 # Changes to these sections require a restart of the collectors.
 RESTART_SECTIONS = {"fritzbox", "capture", "pihole", "dns_usage", "server"}
