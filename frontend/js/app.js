@@ -74,6 +74,11 @@ export async function refreshStatus() {
       h('span', null, 'The setup wizard checks which data can actually be measured in your network. '),
       h('a', { href: '#/settings' }, 'Open setup →')));
   }
+  if (s.update && s.update.newer) {
+    b.append(h('div', { class: 'banner info' }, h('b', null, `Version ${s.update.latest} is available`),
+      h('span', null, `You run ${s.version}. Update on the Pi: git pull && sudo ./install.sh `),
+      s.update.url ? h('a', { href: s.update.url, target: '_blank', rel: 'noopener noreferrer' }, 'What is new →') : null));
+  }
   if (s.icmp && s.icmp.error) {
     b.append(h('div', { class: 'banner warn' }, h('b', null, 'Ping measurement not possible'), h('span', null, s.icmp.error)));
   }
