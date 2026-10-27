@@ -100,7 +100,9 @@ Rule based and offline. Layers, highest priority first:
    existing categories (social networks, games, shopping, press, ...). The 5 million
    names are kept as a hash index on disk (8 bytes per name, ~40 MB), not in memory;
    every match says "UT1 list" and has confidence "medium" - a list entry is a judgement
-   by its maintainers, not a fact about the domain.
+   by its maintainers, not a fact about the domain. Once imported, the lists are fetched
+   again every 30 days at night and re-imported only if they changed
+   (`dns_usage.ut1_auto_update`, `dns_usage.ut1_update_days`).
 
 The most specific rule wins (`youtubei.googleapis.com` beats `googleapis.com`); for the
 same name the higher layer wins. Every domain shows the rule, the layer and the

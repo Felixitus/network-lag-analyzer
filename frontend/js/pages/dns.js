@@ -723,6 +723,12 @@ async function mountRules(main) {
     const entries = Object.entries(r.overrides || {});
     clear(listCard).append(h('div', { class: 'card-head' }, h('h2', null, `Manual rules (${entries.length})`),
       h('span', { class: 'sub' }, r.layers.map(l => `${l.source}: ${l.rules}`).join(' · '))));
+    const ut1 = (r.layers || []).find(l => l.source === 'ut1');
+    listCard.append(h('div', { class: 'small muted' }, ut1
+      ? `UT1 lists: ${n(ut1.rules)} names, list of ${ut1.list_date ? fmtDate(ut1.list_date) : 'unknown date'}, imported ${ut1.imported ? fmtDate(ut1.imported) : '–'}. `
+        + (r.ut1_auto_update ? `Checked for updates every ${r.ut1_update_days} days at night.` : 'Automatic update is off.')
+        + (r.ut1_refresh && !r.ut1_refresh.ok ? ` Last update failed: ${r.ut1_refresh.error}` : '')
+      : 'UT1 lists not imported (optional, see docs/dns-usage.md).'));
     for (const e of r.errors || []) listCard.append(h('div', { class: 'banner warn' }, h('b', null, 'Rule file ignored'), h('span', null, e)));
     if (!entries.length) { listCard.append(naBox('No manual rules yet. Check a domain on the left to add one.')); return; }
     listCard.append(h('ul', { class: 'list' }, entries.map(([dom, o]) => {

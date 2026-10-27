@@ -542,8 +542,10 @@ def _checked_domain(domain: str) -> str:
 @router.get("/rules")
 async def rules(request: Request):
     core = core_of(request)
-    overrides = await core.db.read(lambda c: repo.get_setting(c, OVERRIDES_KEY, {}))
-    return {**core.classifier.summary(), "overrides": overrides}
+    overrides, refresh = await core.db.read(lambda c: (repo.get_setting(c, OVERRIDES_KEY, {}),
+                                                        repo.get_setting(c, "ut1_refresh", None)))
+    return {**core.classifier.summary(), "overrides": overrides, "ut1_refresh": refresh,
+            "ut1_auto_update": core.cfg.dns_usage.ut1_auto_update, "ut1_update_days": core.cfg.dns_usage.ut1_update_days}
 
 
 @router.get("/classify")
