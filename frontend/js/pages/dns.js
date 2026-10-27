@@ -573,6 +573,7 @@ async function mountClient(main, cid) {
         rangeNote(s.domains_resolution, s.domains_range))));
 
     body.append(activityCard(cid));
+    if (s.client.mac) body.append(connectionsCard(s.client.mac));
     const domCard = h('div', { class: 'card' });
     body.append(domCard);
     filt.offset = 0;
@@ -650,6 +651,39 @@ async function mountClient(main, cid) {
     fetchPage();
   }
   await load();
+}
+
+// ------------------------------------------------------------------ measured connections (TLS server names)
+function connectionsCard(mac) {
+  const card = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('div', null, h('h2', null, 'Measured connections'),
+    h('div', { class: 'sub' }, 'from the TLS server names in the FRITZ!Box capture - measured, not estimated')), h('div', { class: 'skeleton' }, 'Loading…')));
+  const [s, e] = currentRange();
+  api(`api/devices/${encodeURIComponent(mac)}/connections?start=${s}&end=${e}`).then(r => {
+    card.lastChild.remove();
+    if (r.hint) card.append(h('div', { class: 'banner info', style: { margin: '0 0 10px' } }, h('b', null, 'Note'), h('span', null, r.hint)));
+    const cv = r.coverage;
+    card.append(h('div', { class: 'small muted' }, cv.bytes
+      ? `${fmtBytesShort(cv.named_bytes)} of ${fmtBytesShort(cv.bytes)} (${(100 * cv.named_share).toFixed(0)} %) of this device's traffic have a server name`
+        + (cv.quic_bytes ? `; ${(100 * cv.quic_share).toFixed(0)} % is QUIC (HTTP/3), which cannot be named.` : '.')
+      : `No connections recorded in this range (kept ${r.retention_days} days).`));
+    if (!r.services.length) { card.append(naBox('No connection with a server name in this range.')); card.append(h('div', { class: 'small muted' }, r.note)); return; }
+    card.append(h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
+      h('thead', null, h('tr', null, h('th', null, 'Service'), h('th', null, 'Category'), h('th', { class: 'num' }, 'Sessions'),
+        h('th', { class: 'num' }, 'Connected'), h('th', { class: 'num' }, 'Data'), h('th', null, 'Last'))),
+      h('tbody', null, r.services.slice(0, 30).map(x => h('tr', { title: x.servers.join(', ') },
+        h('td', null, x.name), h('td', null, catBadge(x.category)), h('td', { class: 'num' }, n(x.session_count)),
+        h('td', { class: 'num' }, fmtEstimate(x.seconds) ? fmtEstimate(x.seconds).replace('~', '') : '< 1 min'),
+        h('td', { class: 'num' }, fmtBytesShort(x.bytes)),
+        h('td', { class: 'small muted' }, fmtDateTime(x.sessions[x.sessions.length - 1].end))))))));
+    card.append(h('div', { class: 'small muted' }, r.note));
+  }).catch(err => { card.lastChild.replaceWith(naBox(`Not available - ${err.message}`)); });
+  return card;
+}
+function fmtBytesShort(b) {
+  if (!b) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+  while (b >= 1000 && i < u.length - 1) { b /= 1000; i++; }
+  return `${b.toFixed(b >= 100 || i === 0 ? 0 : 1)} ${u[i]}`;
 }
 
 // ------------------------------------------------------------------ activity phases (estimated)

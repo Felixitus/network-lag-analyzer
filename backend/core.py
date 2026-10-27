@@ -489,7 +489,8 @@ class Core:
         elif kind == "flows":
             rows = []
             for f in msg[1]:
-                rows.append(f[:15] + (self.devices.ip_names.get(f[6]),))
+                # dns_name: a guess from DNS (who last looked up this IP); sni: measured from the ClientHello
+                rows.append(f[:15] + (self.devices.ip_names.get(f[6]), f[16] if len(f) > 16 else None))
             self.db.enqueue_many(repo.INSERT_FLOW, rows)
         elif kind == "active_flows":
             self.active_flows.append((msg[1], msg[2]))

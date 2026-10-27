@@ -8,7 +8,7 @@ import time
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from ..analysis import presence
+from ..analysis import connections, presence
 from ..database import repository as repo
 from ..util.netinfo import normalize_mac
 
@@ -118,6 +118,35 @@ async def mark_known(request: Request, body: KnownBody):
         repo.set_setting(c, presence.ACK_KEY, acked)
         return len(add)
     return {"marked": await core.db.write(w)}
+
+
+@router.get("/devices/{mac}/connections")
+async def device_connections(request: Request, mac: str, start: float | None = Query(None), end: float | None = Query(None)):
+    """Measured connections per service from the TLS server names (capture), with what they do not cover."""
+    core = core_of(request)
+    m = normalize_mac(mac)
+    if not m:
+        raise HTTPException(400, "Not a MAC address")
+    end = time.time() if end is None else end
+    start = end - 86400 if start is None else start
+    rows = await core.db.read(lambda c: [dict(r) for r in c.execute(
+        """SELECT ts_start, ts_end, proto, remote_port, bytes_up, bytes_down, sni FROM network_flows
+           WHERE mac = ? AND ts_end >= ? AND ts_start <= ? ORDER BY ts_start""", (m, start, end))])
+    cap = core.capture_status or {}
+    sni = cap.get("sni") or {}
+    snaplen = core.cfg.fritzbox.snaplen
+    hint = None
+    if cap.get("state") != "running":
+        hint = "The traffic capture is not running - no connections are measured."
+    elif sni.get("hellos") and sni.get("truncated", 0) > sni.get("named", 0):
+        hint = (f"Most TLS server names are cut off: the capture keeps {snaplen} bytes per packet. "
+                "Set Setup → FRITZ!Box → Snaplen to 600 (about 4× the capture data).")
+    return {"mac": m, "start": start, "end": end, "services": connections.sessions(rows, core.classifier),
+            "coverage": connections.coverage(rows), "capture": {"snaplen": snaplen, **sni}, "hint": hint,
+            "retention_days": core.cfg.retention.flow_days,
+            "note": "Measured from the FRITZ!Box capture: connections to the named servers and their bytes. A session "
+                    "ends after 2 minutes without a connection to the service. Not covered: connections without a "
+                    "readable server name and QUIC (HTTP/3)."}
 
 
 @router.post("/devices/refresh-names")
