@@ -11,8 +11,14 @@ export async function mount(main, ctx) {
 async function list(main) {
   let source = null;
   const body = h('div', { class: 'card' });
+  const st = await api('api/status').catch(() => ({}));
+  const dis = st.incidents_dismissed || {};
+  const nDis = Object.values(dis).reduce((a, b) => a + b, 0);
   main.append(h('div', { class: 'page-head' },
-    h('div', null, h('h1', null, 'Incidents'), h('p', null, 'Automatically detected lag events and your "I just had lag" reports.')),
+    h('div', null, h('h1', null, 'Incidents'), h('p', null, 'Automatically detected lag events and your "I just had lag" reports. '
+      + 'Problems less than 2 minutes apart form one incident.'),
+    h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, `Kept as events only, not as incidents: problems of a single external target `
+      + `while the line was fine, and blips under 5 s without a cause${nDis ? ` - ${nDis} since the last start` : ''}.`)),
     segmented([[null, 'All'], ['auto', 'Automatic'], ['user', 'Reported']], null, v => { source = v; load(); })), body);
   async function load() {
     const r = await api(`api/incidents?limit=200${source ? `&source=${source}` : ''}`);

@@ -65,6 +65,14 @@ versions follow [SemVer](https://semver.org/).
   (FRITZ!OS before 7.24). Anyone on the LAN who saw one MD5 login could
   brute-force the password offline. Older FRITZ!OS versions now get a clear error.
 
+### Changed
+- **Fewer, merged incidents.** An incident now stays open until no lag event came for
+  2 minutes (was 5 s) and lasts at most 30 minutes (was 10). On the Pi, 72 % of the
+  incidents had started within a minute of the previous one - one loss episode cut into
+  hundreds of pieces (~800 a day). A problem of one external target while the line is
+  fine, and a blip under 5 s that no rule explains, stay events instead of incidents;
+  the incidents page says so. Reports of the user are never dropped.
+
 ### Fixed
 - Since 1.2.0 the device loop stopped on its first round: `poll_queries` had ended up
   inside `read_dhcp_leases` and no longer existed. Devices seen via ARP and Pi-hole were

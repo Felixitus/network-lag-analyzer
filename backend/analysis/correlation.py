@@ -2,7 +2,9 @@
 
 * Lag-relevant events open an incident. Further events that start in the
   meantime are attached. The incident closes when no lag event has been open
-  for 5 s (max. 10 min per incident).
+  for 2 minutes (max. 30 min per incident).
+* Not every closed incident is kept: a problem of one external target while the
+  line is fine, and a blip of a few seconds that no rule can explain, stay events.
 * After closing, the window [start − 30 s, end + 5 s] is analyzed with the rules
   from root_cause.py.
 * A user report analyzes the last 10 s / 30 s / 60 s / 5 min and immediately
@@ -22,8 +24,12 @@ log = logging.getLogger(__name__)
 
 PRE_SECONDS = 30
 POST_SECONDS = 5
-CLOSE_AFTER = 5
-MAX_INCIDENT = 600
+# A loss episode on a bad cable is a burst every few seconds for hours. With 5 s the Pi
+# recorded ~800 incidents a day, 72 % of them within a minute of the previous one -
+# the same problem, cut into pieces. 2 minutes keep one episode one incident.
+CLOSE_AFTER = 120
+MAX_INCIDENT = 1800
+BLIP_SECONDS = 5
 REPORT_WINDOWS = (10, 30, 60, 300)
 
 
@@ -50,13 +56,36 @@ class Incident:
                 "session_id": self.session_id}
 
 
+def dismiss_reason(inc: Incident, result: dict) -> str | None:
+    """Why a closed incident is no incident after all - or None to keep it.
+
+    Kept apart from the analysis: the rules still name what happened, this only decides
+    whether it is worth an entry of its own. The events are stored either way."""
+    if result.get("category") == "target":
+        # One external target was slow or lost packets while the router and the other
+        # targets were fine: a problem of that server or its route, not of this line.
+        # (A game server stays an incident - category "game_server".)
+        return "single_target"
+    duration = (inc.ts_end or inc.ts_start) - inc.ts_start
+    if duration < BLIP_SECONDS and result.get("confidence") == "low" and result.get("category") in ("loss", "unknown", None):
+        return "blip"
+    return None
+
+
+DISMISS_LABELS = {"single_target": "only one external target affected", "blip": f"shorter than {BLIP_SECONDS} s, no cause found"}
+
+
 class Correlator:
     def __init__(self, window_fn: Callable[[float, float], Window], next_id: Callable[[], int],
-                 on_close: Callable[[Incident, list[Event]], None], on_open: Callable[[Incident], None] | None = None):
+                 on_close: Callable[[Incident, list[Event]], None], on_open: Callable[[Incident], None] | None = None,
+                 on_dismiss: Callable[[Incident, list[Event], str], None] | None = None,
+                 dismiss_fn: Callable[[Incident, dict], str | None] | None = None):
         self.window_fn = window_fn
         self.next_id = next_id
         self.on_close = on_close
         self.on_open = on_open or (lambda i: None)
+        self.on_dismiss = on_dismiss
+        self.dismiss_fn = dismiss_fn
         self.current: Incident | None = None
         self.open_events: dict[int, Event] = {}
         self.events: list[Event] = []
@@ -118,6 +147,10 @@ class Correlator:
         inc.category = result["category"]
         inc.confidence = result["confidence"]
         inc.title = _title(result, self.events)
+        reason = self.dismiss_fn(inc, result) if self.dismiss_fn and inc.source == "auto" else None
+        if reason and self.on_dismiss:
+            self.on_dismiss(inc, list(self.events), reason)
+            return
         self.on_close(inc, list(self.events))
 
     def flush(self, ts: float) -> None:

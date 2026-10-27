@@ -298,7 +298,8 @@ export async function mount(main, { store }) {
       if (i >= 0) markers.events[i] = d; else markers.events.push(d);
     } else if (kind === 'incident') {
       const i = markers.incidents.findIndex(e => e.id === d.id);
-      if (i >= 0) markers.incidents[i] = d; else markers.incidents.push(d);
+      if (d.state === 'dismissed') { if (i >= 0) markers.incidents.splice(i, 1); }   // stayed events only
+      else if (i >= 0) markers.incidents[i] = d; else markers.incidents.push(d);
       loadIncidents();
     } else if (kind === 'gaming') {
       lastGaming = d; renderGaming(d);

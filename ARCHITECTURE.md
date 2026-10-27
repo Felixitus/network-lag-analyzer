@@ -202,8 +202,11 @@ GATEWAY_LATENCY, INTERNET_LATENCY, GAME_FLOW_GAP`.
 
 ## 6. Incidents and root cause analysis
 
-* Lag-relevant events open an **incident**; it closes 5 s after the last lag
-  event. Then the window [start − 30 s, end + 5 s] is analyzed.
+* Lag-relevant events open an **incident**; it closes 2 minutes after the last lag
+  event (at most 30 minutes long), so one loss episode stays one incident. Then the
+  window [start − 30 s, end + 5 s] is analyzed. A problem of one external target while
+  the line is fine, and an unexplained blip under 5 s, are kept as events only
+  (`correlation.dismiss_reason`).
 * The **"I JUST HAD LAG" button** immediately creates an incident for the last
   10 s/30 s/60 s/5 min and returns a timeline of the findings.
 * `analysis/root_cause.py` contains every rule as a separate, documented function.
