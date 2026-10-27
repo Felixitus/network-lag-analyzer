@@ -65,6 +65,10 @@ versions follow [SemVer](https://semver.org/).
   (FRITZ!OS before 7.24). Anyone on the LAN who saw one MD5 login could
   brute-force the password offline. Older FRITZ!OS versions now get a clear error.
 
+### Project
+- CI checks the syntax of every frontend JavaScript file (`node --check`): the frontend
+  has no build step, so a syntax error used to show up only as a blank page.
+
 ### Changed
 - **Fewer, merged incidents.** An incident now stays open until no lag event came for
   2 minutes (was 5 s) and lasts at most 30 minutes (was 10). On the Pi, 72 % of the
