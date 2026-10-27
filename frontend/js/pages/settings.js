@@ -388,6 +388,15 @@ export async function mount(main, { refreshStatus }) {
   ]);
   main.append(h('div', { style: { height: '16px' } }), section('Measurement', null, meas));
 
+  // ---------------------------------------------------------------- Pi-hole actions
+  const pf = form(cfg, [
+    { path: 'pihole.api_enabled', label: 'Allow Pi-hole actions from this page', type: 'bool', help: 'Pause blocking, allow or block a domain, restart DNS, update blocklists - each only after a confirmation' },
+    { path: 'pihole.api_url', label: 'Pi-hole address', help: 'Only the Pi-hole on this Pi' },
+    { path: 'pihole.api_password', label: 'Pi-hole app password', type: 'password', help: 'Pi-hole → Settings → Web interface / API → "Configure app password" (not your login password)' },
+  ]);
+  main.append(h('div', { style: { height: '16px' } }), section('Pi-hole actions',
+    'Off by default. When on, the DNS pages offer to pause blocking and to allow or block a domain. Everything is logged with your user name.', pf));
+
   // ---------------------------------------------------------------- notifications
   const nf = form(cfg, [
     { path: 'notify.enabled', label: 'Send notifications', type: 'bool' },

@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 398, must be green)
+python3 -m pytest tests -q                    # all tests (currently 402, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -36,7 +36,10 @@ These come before everything else. They are the reason you can trust the numbers
 4. **Do not fake causality.** Simultaneity alone yields at most confidence "low"
    ("temporally correlated"). A device is only named if traffic per device was
    actually measured.
-5. **Pi-hole is not modified.** Read-only access to the FTL database.
+5. **Pi-hole is changed only through its own API, only on a click, and only when switched
+   on.** The FTL database stays read-only. Actions (pause blocking, allow/deny a domain,
+   restart DNS, update blocklists) need `confirm: true`, are logged with the user, and the
+   app password only goes to the Pi-hole on this Pi (`collectors/pihole_api.py`).
 6. **The Pi must not be overloaded.** The load guard (levels 0–3) throttles when
    needed; Pi-hole takes precedence.
 
@@ -55,6 +58,7 @@ backend/
     pihole.py             FTL DB read-only (lag context per minute)
     ftl_queries.py        FTL query log read-only, v5/v6 schema, time ranges on the index only
     devices.py            device registry, assigns the numeric IDs itself
+    pihole_api.py         Pi-hole v6 API: the only way Pi-hole is changed, one session per action
     notify.py             sending notifications: ntfy, Telegram, e-mail, each channel on its own
   analysis/
     metrics.py            per-second assembler, ring buffer (1 h)

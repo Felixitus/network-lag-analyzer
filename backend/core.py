@@ -1633,6 +1633,8 @@ class Core:
                 patch["fritzbox"].pop("password", None)
             else:
                 new_password = True
+        if "pihole" in patch and patch["pihole"].get("api_password") == "********":
+            patch["pihole"].pop("api_password")
         if "notify" in patch:
             from .config import NOTIFY_SECRETS
             for k in NOTIFY_SECRETS:            # the UI shows secrets masked; unchanged means keep

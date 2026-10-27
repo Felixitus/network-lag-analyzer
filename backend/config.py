@@ -176,6 +176,22 @@ class PiholeCfg(BaseModel):
     ftl_db: str = "/etc/pihole/pihole-FTL.db"
     dhcp_leases: str = "/etc/pihole/dhcp.leases"     # read-only; host names of the current leases
     poll_interval: float = Field(15, ge=5, le=600)
+    # Actions through Pi-hole's own API (pause blocking, allow/deny a domain, restart DNS,
+    # update the blocklists). Off by default; needs an app password from Pi-hole's settings.
+    api_enabled: bool = False
+    api_url: str = "http://127.0.0.1"
+    api_password: str = ""
+
+    @field_validator("api_url")
+    @classmethod
+    def _local_only(cls, v: str) -> str:
+        # The app password may only go to the Pi-hole on this Pi - like the FRITZ!Box password,
+        # it must not be redirectable to another device on the LAN.
+        from urllib.parse import urlparse
+        u = urlparse(v.strip())
+        if u.scheme not in ("http", "https") or u.hostname not in ("127.0.0.1", "localhost", "::1"):
+            raise ValueError("Pi-hole actions only work with the Pi-hole on this Pi (http://127.0.0.1)")
+        return v.strip().rstrip("/")
 
 
 class DnsUsageCfg(BaseModel):
@@ -331,6 +347,7 @@ class Config(BaseModel):
         d["fritzbox"]["password"] = "********" if self.fritzbox.password else ""
         for k in NOTIFY_SECRETS:
             d["notify"][k] = "********" if getattr(self.notify, k) else ""
+        d["pihole"]["api_password"] = "********" if self.pihole.api_password else ""
         d["security"].pop("password_hash", None)
         d["security"]["password_set"] = bool(self.security.password_hash)
         return d
