@@ -7,9 +7,9 @@
 # beats the shared `googleapis.com`. `exact:` rules match only that one name.
 #
 # Only list domains that belong to ONE service. Shared infrastructure (CDNs, cloud
-# hosting, big platforms serving many products) goes under `shared` - naming a
-# service there would be made up. A query to fastly.net says nothing about which
-# website was behind it.
+# hosting, big platforms serving many products) goes under `shared`, one entry per
+# provider - naming a service there would be made up. A query to fastly.net says
+# which company delivered something, not which website was behind it.
 #
 # confidence: high   = the domain is operated by and only used for this service
 #             medium = mostly this service, but also embedded elsewhere (SDKs, widgets)
@@ -36,7 +36,7 @@ categories:
   news: News & media
   music: Music & audio
   cloud: Cloud & file storage
-  ads_tracking: Ads & tracking
+  ads_tracking: Ads, tracking & telemetry
   os_updates: Operating systems & updates
   smart_home: Smart home & IoT
   # Filled by the optional UT1 import (python -m backend.dns_category_import), not by this file:
@@ -45,8 +45,34 @@ categories:
   dating: Dating
   vpn: VPN, proxy & DNS bypass
   threat: Malware & phishing
+  network: Network & connectivity checks
+  infrastructure: Shared infrastructure (CDN, cloud)
   other: Other
   unknown: Unknown
+
+# What counts in a category, and what not - shown next to every category in the UI.
+category_info:
+  social: Social networks and their apps. A lookup can also come from an embedded share button or login.
+  gaming: Game platforms, launchers, game services and stores.
+  streaming: Video and live streaming, including the CDNs that only these services use.
+  communication: Messengers, video calls and webmail. These apps stay connected in the background.
+  productivity: Office, work tools, logins and developer services.
+  shopping: Online shops, marketplaces and payment pages.
+  news: News, press and reference sites.
+  music: Music, podcasts and radio.
+  cloud: File storage and sync. Sync runs in the background without anyone using the device.
+  ads_tracking: Advertising, analytics, crash reports and device telemetry - mostly not chosen by the user.
+  os_updates: Operating system, firmware and security software updates.
+  smart_home: Smart home devices, speakers, TVs and wearables talking to their vendors.
+  adult: Adult content according to the UT1 list. A list entry is the maintainers' judgement, not proof.
+  gambling: Betting and gambling according to the UT1 list.
+  dating: Dating sites according to the UT1 list.
+  vpn: VPN, proxy and DNS-over-HTTPS services. After such a lookup a device may resolve names past Pi-hole.
+  threat: Known malware or phishing domains according to the UT1 list - usually blocked by Pi-hole.
+  network: Connectivity checks, time servers, reverse lookups and names inside the home network. Never use by a person.
+  infrastructure: CDNs and cloud platforms that serve many services. Which service was behind the lookup cannot be told.
+  other: Matched a rule, but belongs to none of the categories above.
+  unknown: No rule matched yet - not the same as harmless or unimportant.
 
 services:
   # ------------------------------------------------------------ social media
@@ -68,7 +94,8 @@ services:
   tiktok:
     name: TikTok
     categories: [social, streaming]
-    domains: [tiktok.com, tiktokv.com, tiktokcdn.com, tiktokcdn-us.com, tiktokv.us, musical.ly]
+    domains: [tiktok.com, tiktokv.com, tiktokcdn.com, tiktokcdn-us.com, tiktokv.us, musical.ly, tiktokv.eu,
+              tiktokcdn-eu.com]
   snapchat:
     name: Snapchat
     categories: [social, communication]
@@ -185,6 +212,11 @@ services:
     categories: [productivity]
     domains: [claude.ai, anthropic.com]
 
+  airdroid:
+    name: AirDroid (remote access to phones)
+    categories: [productivity]
+    domains: [airdroid.com]
+
   # ------------------------------------------------------------ streaming & video
   youtube:
     name: YouTube
@@ -201,7 +233,7 @@ services:
     name: Netflix
     categories: [streaming]
     phase_gap_minutes: 10
-    domains: [netflix.com, netflix.net, nflxvideo.net, nflximg.net, nflxext.com, nflxso.net]
+    domains: [netflix.com, netflix.net, nflxvideo.net, nflximg.net, nflxext.com, nflxso.net, nflximg.com]
   disneyplus:
     name: Disney+
     categories: [streaming]
@@ -211,7 +243,8 @@ services:
     name: Prime Video
     categories: [streaming]
     phase_gap_minutes: 10
-    domains: [primevideo.com, aiv-cdn.net, aiv-delivery.net, amazonvideo.com, atv-ps.amazon.com, atv-ext.amazon.com]
+    domains: [primevideo.com, aiv-cdn.net, aiv-delivery.net, amazonvideo.com, atv-ps.amazon.com, atv-ext.amazon.com,
+              pv-cdn.net]
   appletv:
     name: Apple TV+
     categories: [streaming]
@@ -333,6 +366,11 @@ services:
     categories: [gaming]
     domains: [gog.com]
 
+  steam_tools:
+    name: Steam trading tools
+    categories: [gaming]
+    domains: [steaminventoryhelper.com, csfloat.com]
+
   # ------------------------------------------------------------ shopping
   amazon:
     name: Amazon
@@ -408,7 +446,7 @@ services:
     # Private Relay hides the real destinations from Pi-hole: everything after
     # this lookup is invisible to DNS-based statistics.
     name: iCloud Private Relay
-    categories: [other]
+    categories: [vpn]
     domains: [mask.icloud.com, mask-h2.icloud.com, mask-api.icloud.com]
   onedrive:
     name: OneDrive
@@ -454,7 +492,8 @@ services:
     name: Ad networks
     categories: [ads_tracking]
     domains: [adnxs.com, criteo.com, criteo.net, taboola.com, outbrain.com, amazon-adsystem.com, adsrvr.org,
-              rubiconproject.com, pubmatic.com, openx.net, smartadserver.com, adform.net, yieldlab.net]
+              rubiconproject.com, pubmatic.com, openx.net, smartadserver.com, adform.net, yieldlab.net,
+              doubleverify.com]
   trackers:
     name: Tracking / analytics services
     categories: [ads_tracking]
@@ -464,7 +503,21 @@ services:
     name: App monitoring / crash reports
     categories: [ads_tracking]
     confidence: medium
-    domains: [newrelic.com, nr-data.net, sentry.io, bugsnag.com]
+    domains: [newrelic.com, nr-data.net, sentry.io, bugsnag.com, browser-intake-datadoghq.eu,
+              browser-intake-datadoghq.com, datadoghq.com, datadoghq.eu, appcenter.ms]
+  mobile_ad_sdks:
+    name: Mobile ad and attribution SDKs
+    categories: [ads_tracking]
+    domains: [appsflyersdk.com, applovin.com, applvn.com, unityads.unity3d.com, app-measurement.com]
+  amazon_device_metrics:
+    name: Amazon device telemetry
+    categories: [ads_tracking]
+    domains: [app-analytics-services.com, device-metrics-us.amazon.com, device-metrics-us-2.amazon.com]
+  vendor_phone_services:
+    name: Phone vendor services (Vivo, Xiaomi, Oppo)
+    categories: [ads_tracking]
+    confidence: medium
+    domains: [vivoglobal.com, vivo.com.cn, miui.com, xiaomi.net, heytapmobile.com]
 
   # ------------------------------------------------------------ OS & updates
   windows_update:
@@ -490,12 +543,36 @@ services:
     name: Samsung firmware updates
     categories: [os_updates]
     domains: [samsungotn.net]
+  security_software:
+    name: Security software (signatures and updates)
+    categories: [os_updates]
+    domains: [kaspersky.com, kaspersky-labs.com, avast.com, avcdn.net, bitdefender.com, bitdefender.net,
+              eset.com, norton.com, mcafee.com]
 
   # ------------------------------------------------------------ smart home & IoT
   alexa:
     name: Amazon Alexa
     categories: [smart_home]
     domains: [amazonalexa.com, alexa.amazon.com, alexa.amazon.de]
+  amazon_devices:
+    # Echo and Fire TV services: device registration, settings, firmware - not someone shopping.
+    name: Amazon devices (Echo, Fire TV)
+    categories: [smart_home]
+    confidence: medium
+    domains: [a2z.com, amazon-dss.com, amazondeviceservices.com]
+  samsung_tv:
+    name: Samsung TV services
+    categories: [smart_home]
+    domains: [samsungcloud.tv, samsungcloudsolution.net, samsungcloudsolution.com, samsungqbe.com, samsungosp.com,
+              samsungelectronics.com]
+  garmin:
+    name: Garmin
+    categories: [smart_home]
+    domains: [garmin.com, garmin.io, garmincdn.com]
+  bose:
+    name: Bose
+    categories: [smart_home, music]
+    domains: [bose.io, bose.com]
   tuya:
     name: Tuya (Smart Life)
     categories: [smart_home]
@@ -549,23 +626,61 @@ services:
     categories: [smart_home]
     domains: [avm.de, myfritz.net]
 
-  # ------------------------------------------------------------ local network
+  # ------------------------------------------------------------ network
   local_network:
-    name: Local network names
-    categories: [other]
+    name: Names inside the home network and reverse lookups
+    categories: [network]
     domains: [lan, local, home.arpa, fritz.box, in-addr.arpa, ip6.arpa]
+  connectivity_checks:
+    # Devices ask these every few minutes to find out whether the internet works -
+    # Amazon devices alone produced 9 % of all lookups on the test Pi.
+    name: Connectivity checks (captive portal detection)
+    categories: [network]
+    domains: [avsxappcaptiveportal.com, fireoscaptiveportal.com, firetvcaptiveportal.com, acsechocaptiveportal.com,
+              connectivitycheck.gstatic.com, connectivitycheck.android.com, clients3.google.com,
+              captive.apple.com, msftconnecttest.com, msftncsi.com, detectportal.firefox.com, nmcheck.gnome.org,
+              network-test.debian.org]
+  time_and_dns:
+    name: Time servers and DNS infrastructure
+    categories: [network]
+    domains: [ntp.org, time.apple.com, time.windows.com, time.google.com, time.nist.gov, nist.gov,
+              root-servers.net, resolver.arpa, ptb.de]
 
-# Infrastructure shared by many services. Classified as "Other" with low
-# confidence - which service was behind it cannot be told from DNS.
+# Infrastructure shared by many services, one entry per provider. Classified as
+# "Shared infrastructure" with low confidence and the provider's name - which
+# service was behind the lookup cannot be told from DNS.
 shared:
-  name: Shared infrastructure (CDN, cloud, platform)
-  categories: [other]
-  domains: [akamai.net, akamaiedge.net, akamaihd.net, akamaized.net, edgekey.net, edgesuite.net,
-            cloudfront.net, amazonaws.com, fastly.net, fastly-edge.com, cloudflare.com, cloudflare.net,
-            cdn77.org, azureedge.net, azurefd.net, trafficmanager.net, msedge.net, windows.net,
-            googleapis.com, gstatic.com, googleusercontent.com, ggpht.com, 1e100.net, google.com, google.de,
-            apple.com, icloud.apple.com, cdn-apple.com, aaplimg.com, itunes.apple.com, apple-dns.net,
-            akadns.net, microsoft.com, live.com, msn.com, bing.com, azure.com, office.cloud.microsoft,
-            gvt3.com, doubleverify.com, jsdelivr.net, unpkg.com, cdnjs.cloudflare.com, wp.com,
-            byteoversea.com, ibytedtos.com, bytefcdn.com, alicdn.com, samsung.com, samsungcloud.com,
-            ntp.org, time.apple.com, time.windows.com]
+  amazon_cloudfront:
+    name: Amazon CloudFront (CDN)
+    domains: [cloudfront.net]
+  amazon_aws:
+    name: Amazon Web Services (cloud)
+    domains: [amazonaws.com, aws.dev, api.aws, awsstatic.com]
+  akamai:
+    name: Akamai (CDN)
+    domains: [akamai.net, akamaiedge.net, akamaihd.net, akamaized.net, edgekey.net, edgesuite.net, akadns.net]
+  fastly:
+    name: Fastly (CDN)
+    domains: [fastly.net, fastly-edge.com]
+  cloudflare:
+    name: Cloudflare (CDN, DNS)
+    domains: [cloudflare.com, cloudflare.net, cdnjs.cloudflare.com]
+  microsoft:
+    name: Microsoft (Azure, accounts, platform)
+    domains: [azureedge.net, azurefd.net, trafficmanager.net, msedge.net, windows.net, microsoft.com, live.com, msn.com,
+              bing.com, azure.com, office.cloud.microsoft, microsoftonline.com]
+  google:
+    name: Google (platform, APIs, static files)
+    domains: [googleapis.com, gstatic.com, googleusercontent.com, ggpht.com, 1e100.net, google.com, google.de, gvt3.com]
+  apple:
+    name: Apple (platform, store, static files)
+    domains: [apple.com, icloud.apple.com, cdn-apple.com, aaplimg.com, itunes.apple.com, apple-dns.net]
+  samsung:
+    name: Samsung (platform)
+    domains: [samsung.com, samsungcloud.com]
+  bytedance:
+    name: ByteDance (CDN of TikTok and others)
+    domains: [byteoversea.com, ibytedtos.com, bytefcdn.com]
+  other_cdns:
+    name: Other CDNs and hosting platforms
+    domains: [cdn77.org, jsdelivr.net, unpkg.com, wp.com, alicdn.com, salesforce.com, force.com]

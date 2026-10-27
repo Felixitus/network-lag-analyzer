@@ -95,7 +95,7 @@ def test_blocked_lookups_are_counted_but_do_not_form_phases():
 
 def test_cdn_lookups_are_reported_as_unattributed_not_as_a_service():
     r = run(burst(DAY, 10, "d1abc.cloudfront.net") + burst(DAY, 10, "nothing.example"))
-    assert r["services"] == [] and r["unattributed"] == {"other": 21, "unknown": 21}
+    assert r["services"] == [] and r["unattributed"] == {"infrastructure": 21, "unknown": 21}
 
 
 def test_overall_phases_merge_foreground_services_only():

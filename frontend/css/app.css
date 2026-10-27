@@ -384,3 +384,17 @@ a.light:hover { border-color: var(--accent); }
   .otl-strip { gap: 0; }
 }
 @media (forced-colors: active) { .otl-cell { forced-color-adjust: none; } }
+
+/* ---------------------------------------------------------------- DNS: domain details */
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left;
+  overflow-wrap: anywhere; }
+.linkish:hover { text-decoration: underline; }
+dialog.modal { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 20px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-1); color: var(--text-primary); }
+dialog.modal::backdrop { background: rgba(0, 0, 0, .45); }
+.modal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.modal-head h2 { flex: 1; margin: 0; overflow-wrap: anywhere; font-size: 18px; }
+dialog.modal h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+.rule-form summary, .glossary summary { cursor: pointer; font-weight: 600; }
+.rule-form[open] summary { margin-bottom: 8px; }
+.glossary .list { margin-top: 10px; }

@@ -4,6 +4,7 @@ import { api, clear, fmtDate, fmtDateTime, fmtTime, h, ago, toast, cssVar, NA } 
 import { timeChart } from '../charts.js';
 import { naBox, segmented } from './common.js';
 import { refreshNamesButton } from './devices.js';
+import { domainLink } from './dns_domain.js';
 
 const RANGES = [['1h', '1 H'], ['24h', '24 H'], ['7d', '7 D'], ['30d', '30 D'], ['custom', 'Custom']];
 const SPAN = { '1h': 3600, '24h': 86400, '7d': 7 * 86400, '30d': 30 * 86400 };
@@ -56,16 +57,21 @@ function rangePicker(onChange) {
 
 // ------------------------------------------------------------------ small building blocks
 const CAT_SLOTS = ['social', 'gaming', 'streaming', 'communication', 'productivity', 'shopping', 'news', 'music',
-  'cloud', 'ads_tracking', 'os_updates', 'smart_home'];
+  'cloud', 'ads_tracking', 'os_updates', 'smart_home', 'adult', 'gambling', 'dating', 'vpn'];
+// Not chosen by anybody: drawn in neutral grey so they never look like a kind of use.
+const NEUTRAL = new Set(['network', 'infrastructure', 'other', 'unknown', 'not_itemized']);
 function catColor(cat) {
+  if (cat === 'threat') return cssVar('--critical');
   const i = CAT_SLOTS.indexOf(cat);
-  return i < 0 ? cssVar('--axis') : cssVar(`--series-${(i % 8) + 1}`);
+  return i < 0 || NEUTRAL.has(cat) ? cssVar('--axis') : cssVar(`--series-${(i % 8) + 1}`);
 }
 let LABELS = {};
+let INFO = {};
+const domCtx = () => ({ labels: LABELS, info: INFO, qs, badge: catBadge });
 const catLabel = c => (c === 'not_itemized' ? 'Not itemized' : LABELS[c] || c);
 
 function catBadge(cat, cls) {
-  const title = cls === undefined ? catLabel(cat) : cls
+  const title = cls === undefined ? `${catLabel(cat)}${INFO[cat] ? ` - ${INFO[cat]}` : ''}` : cls
     ? `Rule: ${cls.rule || '–'} · source: ${cls.source || 'none'} · confidence: ${CONF_TEXT[cls.confidence] || 'none'}`
       + (cls.service_name ? ` · service: ${cls.service_name}` : '')
       + (cls.categories && cls.categories.length > 1 ? ` · also: ${cls.categories.slice(1).map(catLabel).join(', ')}` : '')
@@ -96,7 +102,7 @@ function sourceLine(name, st) {
 function categoryBars(cats) {
   if (!cats.length) return naBox('No queries in this range.');
   const max = Math.max(...cats.map(c => c.queries), 1);
-  return h('div', { class: 'stack-sm' }, cats.map(c => h('div', { class: 'bar-row cat-row', title: `${n(c.queries)} queries, ${n(c.blocked)} blocked, ${c.domains} domains` },
+  return h('div', { class: 'stack-sm' }, cats.map(c => h('div', { class: 'bar-row cat-row', title: `${n(c.queries)} queries, ${n(c.blocked)} blocked, ${c.domains} domains${INFO[c.category] ? `\n${INFO[c.category]}` : ''}` },
     h('span', { class: 'dot', style: { background: catColor(c.category) } }),
     h('div', null, h('div', { class: 'small' }, c.label), h('div', { class: 'bar-track' },
       h('div', { class: 'bar-fill', style: { width: `${100 * c.queries / max}%`, background: catColor(c.category) } }))),
@@ -133,7 +139,7 @@ function rangeNote(res, meta, note) {
 // ------------------------------------------------------------------ router
 export async function mount(main, ctx) {
   const [sub, id] = ctx.args;
-  try { LABELS = (await api('api/dns/rules')).categories || {}; } catch { LABELS = {}; }
+  try { const r = await api('api/dns/rules'); LABELS = r.categories || {}; INFO = r.category_info || {}; } catch { LABELS = {}; INFO = {}; }
   if (sub === 'client' && id) return mountClient(main, Number(id));
   if (sub === 'rules') return mountRules(main);
   return mountOverview(main);
@@ -220,7 +226,7 @@ async function mountOverview(main) {
 
     const domTable = o.top_domains.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
       h('thead', null, h('tr', null, h('th', null, 'Domain'), h('th', null, 'Category'), h('th', { class: 'num' }, 'Queries'), h('th', { class: 'num' }, 'Blocked'))),
-      h('tbody', null, o.top_domains.map(d => h('tr', null, h('td', { class: 'mono' }, d.domain), h('td', null, catBadge(d.category, d.classification)),
+      h('tbody', null, o.top_domains.map(d => h('tr', null, h('td', null, domainLink(d.domain, domCtx())), h('td', null, catBadge(d.category, d.classification)),
         h('td', { class: 'num' }, n(d.queries)), h('td', { class: 'num' }, n(d.blocked))))))) : naBox('No domains in this range.');
     body.append(h('div', { class: 'grid grid-2' },
       h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Top domains')), domTable, rangeNote(o.domains_resolution, o.domains_range)),
@@ -228,8 +234,42 @@ async function mountOverview(main) {
         categoryBars(o.categories))));
 
     body.append(h('div', { class: 'grid grid-2' }, clientsCard(cl), recentCard(o)));
+    body.append(h('div', { class: 'grid grid-2' }, uncategorizedCard(load), glossaryCard()));
   }
   await load();
+}
+
+// ------------------------------------------------------------------ not categorized yet
+function uncategorizedCard(reload) {
+  const card = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Not categorized yet'),
+    h('span', { class: 'sub' }, 'names no rule knows - busiest first')), h('div', { class: 'skeleton' }, 'Loading…'));
+  api(`api/dns/uncategorized?${qs()}&limit=25`).then(r => {
+    card.lastChild.remove();
+    card.append(h('div', { class: 'small muted' }, r.queries
+      ? `${pct(r.unknown_queries, r.queries)} of the lookups in this range match no rule, from ${n(r.group_count)} owners. `
+        + 'Click a name to see who asked for it and to give it a category.' : 'No lookups in this range.'));
+    if (!r.groups.length) { card.append(naBox('Every looked-up name matches a rule.')); return; }
+    card.append(h('ul', { class: 'list' }, r.groups.map(g => h('li', null,
+      h('div', { class: 'row' }, domainLink(g.names[0], { ...domCtx(), suggestion: g.group, onChange: reload }),
+        g.name_count > 1 ? h('span', { class: 'small muted' }, `+${g.name_count - 1} more under ${g.group}`) : null,
+        h('span', { class: 'spacer' }), h('b', { class: 'num' }, pct(g.queries, r.queries)))))));
+  }).catch(e => { card.lastChild.replaceWith(naBox(`Not available - ${e.message}`)); });
+  return card;
+}
+
+// ------------------------------------------------------------------ what the numbers mean
+function glossaryCard() {
+  const item = (term, text) => h('li', null, h('b', null, term), h('div', { class: 'small secondary' }, text));
+  return h('div', { class: 'card' }, h('details', { class: 'glossary' }, h('summary', null, h('h2', { style: { display: 'inline' } }, 'What these numbers mean')),
+    h('ul', { class: 'list' },
+      item('Lookup (DNS query)', 'A device asked Pi-hole for the address of a name. Apps do this on their own - for updates, ads, sync, push messages. A lookup is not a visit, not usage time and not data volume.'),
+      item('Blocked', 'Pi-hole answered with "does not exist" because the name is on a blocklist or your denylist. The device got nothing from it.'),
+      item('Retries', 'The same question again while the first one was still open. Counted separately, not as lookups.'),
+      item('Device vs. "IP only"', 'Lookups are assigned to a device through the MAC address Pi-hole knows for the IP. Without it the IP is shown - it can belong to different devices over time.'),
+      item('Category', 'Comes from rules: the shipped list, the UT1 list (if imported) or your own rules. Each one shows its source and confidence. "Not categorized yet" means no rule matched - not that it is harmless.'),
+      item('Shared infrastructure', 'CDNs and cloud platforms (CloudFront, Akamai, Google, Apple, Microsoft) deliver for countless services. The provider is known, the service behind it is not.'),
+      item('Network & connectivity', 'Devices checking whether the internet works, asking for the time or for names inside the home. Background, never use.'),
+      item('What DNS cannot see', 'Lookups that bypass Pi-hole: DNS over HTTPS in browsers, iCloud Private Relay, VPNs, devices with a fixed foreign DNS server. They are missing here completely.'))));
 }
 
 const ID_STATUS = {
@@ -321,7 +361,7 @@ function recentCard(o) {
   if (!o.recent.length) { card.append(naBox('No queries yet.')); return card; }
   card.append(h('ul', { class: 'list' }, o.recent.map(r => h('li', { class: 'row' },
     h('span', { class: 'small muted', style: { minWidth: '64px' } }, ago(r.ts)),
-    h('div', { style: { minWidth: 0, flex: 1 } }, h('div', { class: 'mono', style: { overflowWrap: 'anywhere' } }, r.domain),
+    h('div', { style: { minWidth: 0, flex: 1 } }, h('div', { style: { overflowWrap: 'anywhere' } }, domainLink(r.domain, domCtx())),
       h('div', { class: 'small muted' }, r.client || '–')),
     r.outcome === 'blocked' ? h('span', { class: 'badge critical' }, 'blocked') : null))));
   return card;
@@ -365,7 +405,7 @@ async function mountClient(main, cid) {
     hourlyChart(chartBox, hr.hours, hr.start, hr.end, st.data_from ?? null);
 
     const top = s.top_domains.length ? h('ul', { class: 'list' }, s.top_domains.map(d => h('li', { class: 'row' },
-      h('span', { class: 'mono', style: { overflowWrap: 'anywhere' } }, d.domain), h('span', { class: 'spacer' }),
+      h('span', { style: { overflowWrap: 'anywhere' } }, domainLink(d.domain, domCtx())), h('span', { class: 'spacer' }),
       catBadge(d.category, d.classification), h('span', { class: 'num' }, n(d.queries))))) : naBox('No domains in this range.');
     body.append(h('div', { class: 'grid grid-2' },
       h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Categories'), h('span', { class: 'sub' }, 'share of queries, rule based')),
@@ -437,7 +477,7 @@ async function mountClient(main, cid) {
         h('thead', null, h('tr', null, h('th', null, 'Domain'), h('th', null, 'Category'), h('th', { class: 'num' }, 'Queries'),
           h('th', { class: 'num' }, 'Blocked'), h('th', null, 'Last seen'))),
         h('tbody', null, r.domains.map(d => h('tr', null,
-          h('td', { class: 'mono', style: { overflowWrap: 'anywhere' } }, d.other ? h('i', null, 'other domains (folded)') : d.domain),
+          h('td', { style: { overflowWrap: 'anywhere' } }, domainLink(d.other ? null : d.domain, domCtx())),
           h('td', null, catBadge(d.category, d.classification)),
           h('td', { class: 'num' }, n(d.queries)), h('td', { class: 'num' }, n(d.blocked)),
           h('td', { class: 'small muted' }, d.last_seen ? fmtDateTime(d.last_seen) : '–')))))));

@@ -110,6 +110,56 @@ def distinct_domains_per_client(conn, d0: int, d1: int) -> dict[int, int]:
            WHERE day >= ? AND day <= ? AND domain != 0 GROUP BY client""", (d0, d1))}
 
 
+def domain_by_client(conn, name: str, d0: int, d1: int) -> list[dict]:
+    """One domain, per client, from the daily counters (all clients, including IP-only ones)."""
+    return [dict(r) for r in conn.execute(
+        """SELECT x.client AS client, SUM(x.queries) AS queries, SUM(x.blocked) AS blocked,
+                  MIN(x.first_ts) AS first_seen, MAX(x.last_ts) AS last_seen
+           FROM dns_domain_daily x JOIN dns_domains n ON n.id = x.domain
+           WHERE n.name = ? AND x.day >= ? AND x.day <= ? GROUP BY x.client""", (name, d0, d1))]
+
+
+def domain_by_client_hourly(conn, name: str, t0: int, t1: int) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        """SELECT x.client AS client, SUM(x.queries) AS queries, SUM(x.blocked) AS blocked,
+                  MIN(x.first_ts) AS first_seen, MAX(x.last_ts) AS last_seen
+           FROM dns_domain_hourly x JOIN dns_domains n ON n.id = x.domain
+           WHERE n.name = ? AND x.ts >= ? AND x.ts < ? GROUP BY x.client""", (name, t0, t1))]
+
+
+# Second-level suffixes under which every registration is a different owner; for them
+# the group is the last three labels (shop.co.uk), otherwise the last two.
+_TWO_PART_SUFFIXES = {"co.uk", "org.uk", "ac.uk", "gov.uk", "com.au", "net.au", "co.at", "or.at", "gv.at", "ac.at",
+                      "co.jp", "ne.jp", "com.br", "com.cn", "com.tr", "co.nz", "co.za", "com.mx", "co.in"}
+
+
+def group_name(name: str) -> str:
+    """The owner-level part of a name (cdn.example.co.uk → example.co.uk); an approximation without
+    the full public suffix list, good enough to bundle the names of one unknown service."""
+    labels = name.split(".")
+    if len(labels) >= 3 and ".".join(labels[-2:]) in _TWO_PART_SUFFIXES:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
+def uncategorized(rows: list[dict], limit: int = 30) -> tuple[list[dict], int]:
+    """Classified rows without any matching rule, bundled per owner-level name, busiest first."""
+    groups: dict[str, dict] = {}
+    for r in rows:
+        if r["name"] is None or r["category"] != "unknown":
+            continue
+        g = groups.setdefault(group_name(r["name"]), {"group": group_name(r["name"]), "queries": 0, "blocked": 0,
+                                                      "names": []})
+        g["queries"] += r["queries"]
+        g["blocked"] += r["blocked"]
+        g["names"].append((r["queries"], r["name"]))
+    out = sorted(groups.values(), key=lambda g: -g["queries"])
+    for g in out:
+        g["name_count"] = len(g["names"])
+        g["names"] = [n for _q, n in sorted(g["names"], reverse=True)[:5]]
+    return out[:limit], len(out)
+
+
 def classify_rows(rows: list[dict], clf: Classifier) -> list[dict]:
     for r in rows:
         if r["name"] is None:

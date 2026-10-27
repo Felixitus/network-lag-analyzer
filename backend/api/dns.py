@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..analysis import activity, client_match, dns_usage as usage
 from ..analysis.categories import normalize_domain, valid_domain
+from ..collectors.ftl_queries import STATUS_TEXT, outcome
 from ..database import repository as repo
 
 router = APIRouter(prefix="/api/dns")
@@ -137,6 +138,32 @@ def _resolution_note(res: str) -> str:
     return ("Per hour: the domain list covers exactly the hours of the totals." if res == "hour" else
             "Per local day: the domain list covers whole days, also when the selected range is shorter. "
             "Completed days keep the busiest domains per device and sum up the rest.")
+
+
+SOURCE_TEXT = {
+    "builtin": "Shipped rule file of the Network Lag Analyzer (hand-maintained, backend/data/domain_categories.yaml)",
+    "local": "Your rule file domain_categories.local.yaml in the data directory",
+    "manual": "Your own rule on the Category rules page",
+    "ut1": "UT1 list of the Université Toulouse Capitole (CC BY-SA 4.0), imported on this Pi",
+    None: "No rule matched this name",
+}
+CONFIDENCE_TEXT = {
+    "high": "The domain is operated by and only used for this service.",
+    "medium": "Mostly this service or category, but also embedded elsewhere - or the judgement of a list.",
+    "low": "Shared infrastructure: it says who delivered something, not which service was used.",
+    None: "No rule, no confidence.",
+}
+
+
+def explain(core, name: str) -> dict:
+    """What a domain is according to the rules, where that comes from and how sure it is."""
+    c = core.classifier.classify(name)
+    cls = c.to_dict()
+    return {**cls, "label": core.classifier.labels.get(c.primary, c.primary),
+            "description": core.classifier.info.get(c.primary),
+            "also": [{"category": x, "label": core.classifier.labels.get(x, x)} for x in c.categories[1:]],
+            "source_text": SOURCE_TEXT.get(c.source, c.source),
+            "confidence_text": CONFIDENCE_TEXT.get(c.confidence)}
 
 
 # ===================================================================== status
@@ -321,6 +348,67 @@ async def client_activity(request: Request, cid: int, start: float | None = Quer
                              f"({100 * rebuild['done']:.0f} % done). Phases are incomplete until then.") if rebuild else None,
             "note": "Estimated DNS activity - not verified screen or app usage time. "
                     "The estimate is the sum of the phases; pauses between phases are not counted."}
+
+
+@router.get("/domain")
+async def domain_detail(request: Request, name: str = Query(..., max_length=253), start: float | None = Query(None),
+                        end: float | None = Query(None)):
+    """One domain: what it is, where the classification comes from, which devices looked it up,
+    and how Pi-hole answered it in the last 24 hours."""
+    core = core_of(request)
+    d = _checked_domain(name)
+    start, end = _range(start, end)
+    t0, t1 = usage.hour_range(start, end)
+    hourly_from = await core.db.read(usage.hourly_domains_from)
+    if hourly_from is not None and t0 >= max(hourly_from, time.time() - core.cfg.retention.dns_domain_hourly_hours * 3600 + 3600):
+        rows, res = await core.db.read(lambda c: usage.domain_by_client_hourly(c, d, t0, t1)), "hour"
+    else:
+        d0, d1 = usage.day_range(t0, t1)
+        rows, res = await core.db.read(lambda c: usage.domain_by_client(c, d, d0, d1)), "day"
+    clients = []
+    for r in rows:
+        try:
+            cl = await _client(core, r["client"])
+        except HTTPException:
+            continue
+        clients.append({**r, "name": cl["name"], "basis": cl["basis"], "ip": cl["ip"], "mac": cl["mac"]})
+    clients.sort(key=lambda x: -x["queries"])
+    pihole: dict = {"window_hours": 24, "statuses": [], "error": None}
+    ing = core.dns_usage
+    if ing is None:
+        pihole["error"] = "Not available: Pi-hole log not connected"
+    else:
+        try:
+            async with _heavy:
+                counts = await asyncio.to_thread(ing.ftl.status_counts, d, time.time() - 86400)
+            pihole["statuses"] = sorted(({"code": k, "count": v, "text": STATUS_TEXT.get(k, f"status {k}"),
+                                          "kind": outcome(k)}
+                                         for k, v in counts.items()), key=lambda s: -s["count"])
+        except Exception as e:  # noqa: BLE001 - the counters above are still worth showing
+            pihole["error"] = f"Not available: {type(e).__name__}"
+    overrides = await core.db.read(lambda c: repo.get_setting(c, OVERRIDES_KEY, {}))
+    return {"domain": d, "classification": explain(core, d), "manual_rule": overrides.get(d),
+            "clients": clients, "queries": sum(r["queries"] for r in rows), "blocked": sum(r["blocked"] for r in rows),
+            "resolution": res, "start": start, "end": end, "pihole": pihole,
+            "note": "Counts of lookups as Pi-hole logged them. A lookup says a device asked for the name - "
+                    "not that a person opened anything, nor for how long."}
+
+
+@router.get("/uncategorized")
+async def uncategorized_domains(request: Request, start: float | None = Query(None), end: float | None = Query(None),
+                                limit: int = Query(30, ge=1, le=200)):
+    """Names no rule knows yet, bundled per owner, busiest first - the list to classify by hand."""
+    core = core_of(request)
+    start, end = _range(start, end)
+
+    async def build():
+        rows, res, meta = await _domains(core, start, end, None)
+        groups, total_groups = usage.uncategorized(rows, limit)
+        total = sum(r["queries"] for r in rows) or 0
+        unknown = sum(g["queries"] for g in usage.uncategorized(rows, 10 ** 6)[0])
+        return {"groups": groups, "group_count": total_groups, "queries": total, "unknown_queries": unknown,
+                "resolution": res, "range": meta}
+    return await _cached(("uncategorized", start // 60, end // 60, limit, core.classifier.fingerprint), build)
 
 
 @router.get("/identification")

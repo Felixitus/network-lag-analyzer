@@ -130,8 +130,14 @@ def _rule_set_from_data(data: dict, source: str, known: set[str] | None) -> tupl
 
     for sid, entry in (data.get("services") or {}).items():
         add(entry or {}, str(sid), rs)
-    if data.get("shared"):
-        add(data["shared"], None, shared)
+    sh = data.get("shared") or {}
+    # `shared` is either one entry (older local files) or one entry per provider. A provider
+    # gets a name but no service id: it says who delivered, never which service was used.
+    default_cat = ["infrastructure"] if "infrastructure" in known else ["other"]
+    for entry in ([sh] if "domains" in sh else sh.values()):
+        entry = dict(entry or {})
+        entry.setdefault("categories", default_cat)
+        add(entry, None, shared)
     # A service entry for the same name is the more specific statement than
     # "shared infrastructure", so shared rules only fill gaps.
     for d, r in shared.suffix.items():
@@ -139,6 +145,13 @@ def _rule_set_from_data(data: dict, source: str, known: set[str] | None) -> tupl
     for d, r in shared.exact.items():
         rs.exact.setdefault(d, r)
     return rs, labels
+
+
+def load_category_info(path: Path) -> dict[str, str]:
+    """`category_info` of a rule file: one sentence per category on what counts there and what not."""
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return {str(k): str(v) for k, v in (data.get("category_info") or {}).items()}
 
 
 def load_yaml_rules(path: Path, source: str, known: set[str] | None = None) -> tuple[RuleSet, dict[str, str]]:
@@ -249,6 +262,7 @@ class Classifier:
         order = {name: i for i, name in enumerate(LAYERS)}
         self.layers = sorted(layers, key=lambda rs: order.get(rs.source, len(order)))
         self.labels = labels
+        self.info: dict[str, str] = {}
         self.errors = errors or []
         self._cache: dict[str, Classification] = {}
         self._cache_size = cache_size
@@ -286,7 +300,9 @@ class Classifier:
                 errors.append(f"{UT1_INDEX} ignored: {e}")
                 log.error("UT1 index ignored: %s", e)
         layers.append(manual_rule_set(overrides or {}, known))
-        return cls(layers, labels, errors)
+        clf = cls(layers, labels, errors)
+        clf.info = load_category_info(builtin)
+        return clf
 
     def classify(self, domain: str) -> Classification:
         name = normalize_domain(domain)
@@ -329,6 +345,7 @@ class Classifier:
                             **({"imported": rs.meta.get("imported_at"), "list_date": rs.meta.get("list_date"),
                                 "counts": rs.meta.get("counts")} if isinstance(rs, Ut1Index) else {})}
                            for rs in self.layers],
+                "category_info": self.info,
                 "errors": self.errors, "categories": self.labels}
 
 

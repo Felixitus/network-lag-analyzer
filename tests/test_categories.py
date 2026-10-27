@@ -36,7 +36,8 @@ def test_known_services_are_recognized_by_documented_rules(clf, domain, category
 def test_more_specific_rule_beats_shared_infrastructure(clf):
     assert clf.classify("youtubei.googleapis.com").service == "youtube"
     shared = clf.classify("fonts.googleapis.com")
-    assert (shared.primary, shared.service, shared.confidence) == ("other", None, "low")
+    assert (shared.primary, shared.service, shared.confidence) == ("infrastructure", None, "low")
+    assert shared.service_name == "Google (platform, APIs, static files)"     # who delivered, not which service
 
 
 def test_cdn_is_never_attributed_to_a_service(clf):
@@ -108,7 +109,7 @@ def test_builtin_rules_are_valid_and_reference_only_known_categories():
     assert len(rs) > 300
     assert {"social", "gaming", "streaming", "communication", "productivity", "shopping", "news", "music",
             "cloud", "ads_tracking", "os_updates", "smart_home", "adult", "gambling", "dating", "vpn", "threat",
-            "other", "unknown"} == set(labels)
+            "network", "infrastructure", "other", "unknown"} == set(labels)
     with pytest.raises(RuleError):
         from backend.analysis.categories import _rule_set_from_data
         _rule_set_from_data({"categories": {"a": "A"}, "services": {"x": {"categories": ["a"], "domains": ["bad domain"]}}},
@@ -191,3 +192,27 @@ def test_category_breakdown_adds_up_and_keeps_folded_domains_apart(clf):
     assert [c["category"] for c in cats] == ["streaming", "gaming", NOT_ITEMIZED]
     assert sum(c["share"] for c in cats) == pytest.approx(1)
     assert cats[2]["domains"] == 0
+
+
+@pytest.mark.parametrize("domain,category,name", [
+    ("d1abc.cloudfront.net", "infrastructure", "Amazon CloudFront (CDN)"),
+    ("fireoscaptiveportal.com", "network", "Connectivity checks (captive portal detection)"),
+    ("printer.lan", "network", "Names inside the home network and reverse lookups"),
+    ("10.68.168.192.in-addr.arpa", "network", "Names inside the home network and reverse lookups"),
+    ("mask.icloud.com", "vpn", "iCloud Private Relay"),
+])
+def test_infrastructure_and_network_lookups_are_told_apart_from_use(clf, domain, category, name):
+    c = clf.classify(domain)
+    assert (c.primary, c.service_name) == (category, name)
+
+
+def test_every_category_has_an_explanation(clf):
+    assert set(clf.info) == set(clf.labels)
+    assert all(len(v) > 20 for v in clf.info.values())
+
+
+def test_older_single_shared_entry_still_loads(tmp_path):
+    (tmp_path / "domain_categories.local.yaml").write_text(
+        "shared:\n  name: My CDN\n  domains: [mycdn.example]\n", encoding="utf-8")
+    c = Classifier.load(str(tmp_path)).classify("x.mycdn.example")
+    assert (c.primary, c.source, c.service_name, c.confidence) == ("infrastructure", "local", "My CDN", "low")
