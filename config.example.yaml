@@ -72,6 +72,13 @@ dns_usage:
   top_domains_per_day: 300
   phase_gap_minutes: 5   # activity phases: a longer pause ends a phase
 
+# Automatic backups to <data dir>/backups (also Setup → Backups)
+backup:
+  enabled: true
+  interval_days: 7
+  keep: 2
+  hour: 3
+
 # Notifications (also in the web UI under Setup → Notifications). Every channel is optional.
 notify:
   enabled: false

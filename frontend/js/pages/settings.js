@@ -77,6 +77,37 @@ function isoDay(tsSeconds) {
 }
 function dayStart(iso) { return new Date(`${iso}T00:00:00`).getTime() / 1000; }
 
+function backupCard(cfg) {
+  const body = h('div', { class: 'stack-sm' });
+  const run = h('button', { class: 'btn', type: 'button' }, 'Back up now');
+  const bf = form(cfg, [
+    { path: 'backup.enabled', label: 'Automatic backups', type: 'bool' },
+    { path: 'backup.interval_days', label: 'Every (days)', type: 'number' },
+    { path: 'backup.keep', label: 'Keep the newest', type: 'number' },
+    { path: 'backup.hour', label: 'At (hour, local time)', type: 'number', help: 'Only while the Pi is not busy (load guard level 0)' },
+  ]);
+  async function load() {
+    let r;
+    try { r = await api('api/backups'); } catch (e) { clear(body).append(h('div', { class: 'empty' }, e.message)); return; }
+    clear(body);
+    const l = r.last;
+    body.append(h('div', { class: 'small' }, l ? (l.ok ? `Last backup ${fmtDateTime(l.ts)}: ${fmtBytes(l.size)} in ${l.seconds} s, checked OK`
+      : `Last backup FAILED ${fmtDateTime(l.ts)}: ${l.error}`) : 'No automatic backup yet.'));
+    body.append(r.backups.length ? h('ul', { class: 'list small' }, r.backups.map(b => h('li', { class: 'row' },
+      h('span', { class: 'mono' }, b.name), h('span', { class: 'spacer' }), h('span', null, fmtBytes(b.size)),
+      h('span', { class: 'muted' }, b.config ? '+ config.yaml' : '')))) : null);
+    body.append(h('div', { class: 'small muted' }, `In ${r.dir}. Copy them off the Pi now and then - a backup on the same SD card does not survive the card. Restore: see README, "Backup and restore".`));
+  }
+  run.addEventListener('click', async () => {
+    run.disabled = true; toast('Backing up…');
+    try { const r = await api('api/backups/run', { method: 'POST', body: {} }); toast(`Backup written (${fmtBytes(r.size)})`); load(); }
+    catch (e) { toast(`Backup failed: ${e.message}`, 6000); }
+    run.disabled = false;
+  });
+  load();
+  return h('div', { class: 'stack' }, section('Backups', 'A consistent copy of the database and config.yaml, checked after writing. Older automatic backups are removed; your own copies are never touched.', bf, run), body);
+}
+
 function databaseCard() {
   const card = h('div', { class: 'card stack' });
   const body = h('div', null, h('div', { class: 'skeleton' }, 'Reading database size …'));
@@ -449,6 +480,7 @@ export async function mount(main, { refreshStatus }) {
       + 'it is tiny and keeps the long-term comparison alive.', ret));
 
   main.append(h('div', { style: { height: '16px' } }), databaseCard());
+  main.append(h('div', { style: { height: '16px' } }), backupCard(cfg));
 
   // ---------------------------------------------------------------- account
   main.append(h('div', { style: { height: '16px' } }), await accountCard());
