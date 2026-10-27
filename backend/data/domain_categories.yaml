@@ -39,6 +39,12 @@ categories:
   ads_tracking: Ads & tracking
   os_updates: Operating systems & updates
   smart_home: Smart home & IoT
+  # Filled by the optional UT1 import (python -m backend.dns_category_import), not by this file:
+  adult: Adult content
+  gambling: Gambling
+  dating: Dating
+  vpn: VPN, proxy & DNS bypass
+  threat: Malware & phishing
   other: Other
   unknown: Unknown
 
