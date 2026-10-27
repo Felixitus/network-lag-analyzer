@@ -6,6 +6,12 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **More categories from the UT1 lists**: adult content, gambling, dating, malware &
+  phishing, and VPN / proxy / DNS-over-HTTPS servers (devices that may resolve past
+  Pi-hole), besides the existing mappings. The import now writes a hash index searched
+  on disk (8 bytes per name; 5 million names in ~40 MB instead of gigabytes of RAM), so
+  the big adult list no longer has to be skipped. VPN and malware lookups count as
+  background, not as use.
 - **Overview** is the new start page: one status light each for internet, the link to the
   router, Pi-hole, FRITZ!Box, traffic capture and the Pi, and a timeline of the last 24
   hours or 7 days (internet, latency, link to router, DNS) from the stored per-minute

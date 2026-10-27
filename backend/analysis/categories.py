@@ -5,7 +5,8 @@ Rule layers, highest priority first:
 1. `manual`  - rules entered in the web UI (stored in the settings table)
 2. `local`   - `domain_categories.local.yaml` in the data directory
 3. `builtin` - backend/data/domain_categories.yaml (shipped)
-4. `ut1`     - optional import of the UT1 lists (python -m backend.dns_category_import)
+4. `ut1`     - optional import of the UT1 lists (python -m backend.dns_category_import),
+               kept on disk as a hash index (see Ut1Index) - 4.6 million adult domains alone
 
 Matching walks from the full name to ever shorter suffixes; at each length the
 layers are asked in priority order. So the most specific rule wins, and among
@@ -17,9 +18,14 @@ is. "Unknown" means no rule matched - not that the domain is harmless.
 """
 from __future__ import annotations
 
+import bisect
 import hashlib
+import json
 import logging
+import mmap
 import re
+import struct
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -30,7 +36,9 @@ log = logging.getLogger(__name__)
 
 BUILTIN_PATH = Path(__file__).resolve().parent.parent / "data" / "domain_categories.yaml"
 LOCAL_FILE = "domain_categories.local.yaml"
-UT1_FILE = "ut1_categories.tsv"
+UT1_INDEX = "ut1_categories.idx"
+UT1_META = "ut1_categories.json"
+UT1_SOURCE = "UT1 list (Université Toulouse Capitole, CC BY-SA 4.0)"
 LAYERS = ("manual", "local", "builtin", "ut1")
 CONFIDENCE = ("high", "medium", "low")
 # Letters, digits, hyphen and underscore per label; also single labels like "lan".
@@ -138,20 +146,85 @@ def load_yaml_rules(path: Path, source: str, known: set[str] | None = None) -> t
         return _rule_set_from_data(yaml.safe_load(f) or {}, source, known)
 
 
-def load_ut1(path: Path, known: set[str]) -> RuleSet:
-    """Tab-separated `domain<TAB>category` as written by backend/dns_category_import.py."""
-    rs = RuleSet("ut1", {}, {})
-    rules: dict[str, Rule] = {}
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            dom, _, cat = line.rstrip("\n").partition("\t")
-            if not dom or cat not in known:
-                continue
-            r = rules.get(cat)
-            if r is None:
-                r = rules[cat] = Rule((cat,), None, "UT1 list", "medium")
-            rs.suffix[dom] = r
-    return rs
+def ut1_key(domain: str) -> int:
+    """56-bit hash of a domain, shifted left by 8 so the low byte can carry the category code.
+
+    With 5 million entries the chance that any two collide is about 1:6000, and that an
+    unlisted domain hits a listed hash about 1:10^10 per lookup - negligible next to how
+    rough a category list is anyway."""
+    return int.from_bytes(hashlib.blake2b(domain.encode("utf-8"), digest_size=7).digest(), "big") << 8
+
+
+class _Ut1Suffix:
+    """dict-like view on the index, so the classifier can treat it like any other rule layer."""
+
+    def __init__(self, index: "Ut1Index"):
+        self._index = index
+
+    def get(self, name: str, default=None):
+        return self._index.lookup(name) or default
+
+    def values(self):
+        return self._index.rules.values()
+
+    def __iter__(self):
+        return iter(())
+
+
+class Ut1Index:
+    """The UT1 lists as a sorted file of 8-byte records (hash << 8 | category code), searched
+    with a binary search on the memory-mapped file: no RAM for millions of names, a lookup is
+    about 23 reads of 8 bytes. The metadata file names the categories and the import."""
+
+    source = "ut1"
+
+    def __init__(self, idx: Path, meta: dict, known: set[str]):
+        self.meta = meta
+        cats = meta.get("categories") or []
+        self.rules = {i: Rule((c,), None, UT1_SOURCE, "medium") for i, c in enumerate(cats) if c in known}
+        self._f = open(idx, "rb")
+        size = idx.stat().st_size
+        if size != 8 * int(meta.get("count", -1)):
+            self._f.close()
+            raise OSError(f"{idx.name}: {size} bytes, metadata says {meta.get('count')} entries")
+        self._mm = mmap.mmap(self._f.fileno(), 0, access=mmap.ACCESS_READ) if size else None
+        self._n = size // 8
+        self._lock = threading.Lock()      # mmap slicing is not documented as thread-safe
+        self.exact: dict[str, Rule] = {}
+        self.suffix = _Ut1Suffix(self)
+
+    @classmethod
+    def open(cls, data_dir: Path, known: set[str]) -> "Ut1Index | None":
+        idx, meta = data_dir / UT1_INDEX, data_dir / UT1_META
+        if not idx.exists() or not meta.exists():
+            return None
+        return cls(idx, json.loads(meta.read_text(encoding="utf-8")), known)
+
+    def __len__(self) -> int:
+        return self._n
+
+    def _rec(self, i: int) -> int:
+        return struct.unpack_from(">Q", self._mm, 8 * i)[0]
+
+    def lookup(self, name: str) -> Rule | None:
+        if not self._n:
+            return None
+        key = ut1_key(name)
+        with self._lock:
+            i = bisect.bisect_left(range(self._n), key, key=self._rec)
+            rec = self._rec(i) if i < self._n else None
+        if rec is None or rec >> 8 != key >> 8:
+            return None
+        return self.rules.get(rec & 0xFF)
+
+    def close(self) -> None:
+        if self._mm is not None:
+            self._mm.close()
+        self._f.close()
+
+    @property
+    def fingerprint_token(self) -> str:
+        return f"{self.meta.get('sha256')}|{self.meta.get('count')}|{','.join(self.meta.get('categories') or [])}"
 
 
 def manual_rule_set(overrides: dict, known: set[str]) -> RuleSet:
@@ -205,12 +278,13 @@ class Classifier:
                 except (OSError, yaml.YAMLError, RuleError) as e:
                     errors.append(f"{LOCAL_FILE} ignored: {e}")
                     log.error("Category rules %s ignored: %s", local, e)
-            ut1 = Path(data_dir) / UT1_FILE
-            if ut1.exists():
-                try:
-                    layers.append(load_ut1(ut1, known))
-                except OSError as e:
-                    errors.append(f"{UT1_FILE} ignored: {e}")
+            try:
+                ut1 = Ut1Index.open(Path(data_dir), known)
+                if ut1 is not None:
+                    layers.append(ut1)
+            except (OSError, ValueError) as e:
+                errors.append(f"{UT1_INDEX} ignored: {e}")
+                log.error("UT1 index ignored: %s", e)
         layers.append(manual_rule_set(overrides or {}, known))
         return cls(layers, labels, errors)
 
@@ -241,11 +315,20 @@ class Classifier:
                     return _result(r, rs.source, suffix)
         return UNKNOWN
 
+    def close(self) -> None:
+        """Releases the UT1 index file (Windows cannot replace a file that is still mapped)."""
+        for rs in self.layers:
+            if hasattr(rs, "close"):
+                rs.close()
+
     def service_info(self, service: str) -> Rule | None:
         return self.services.get(service)
 
     def summary(self) -> dict:
-        return {"layers": [{"source": rs.source, "rules": len(rs)} for rs in self.layers],
+        return {"layers": [{"source": rs.source, "rules": len(rs),
+                            **({"imported": rs.meta.get("imported_at"), "list_date": rs.meta.get("list_date"),
+                                "counts": rs.meta.get("counts")} if isinstance(rs, Ut1Index) else {})}
+                           for rs in self.layers],
                 "errors": self.errors, "categories": self.labels}
 
 
@@ -254,6 +337,10 @@ def _fingerprint(layers: list[RuleSet]) -> str:
     h = hashlib.sha1()
     for rs in layers:
         h.update(rs.source.encode())
+        token = getattr(rs, "fingerprint_token", None)
+        if token is not None:            # millions of hashed names: the import itself identifies them
+            h.update(token.encode())
+            continue
         for kind, d in (("=", rs.exact), ("~", rs.suffix)):
             for name in sorted(d):
                 r = d[name]

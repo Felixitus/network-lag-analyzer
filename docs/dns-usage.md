@@ -93,9 +93,14 @@ Rule based and offline. Layers, highest priority first:
 1. **manual** - rules entered on the page *Category rules*
 2. **local** - `domain_categories.local.yaml` in the data directory (same format)
 3. **builtin** - `backend/data/domain_categories.yaml`, ~400 domains of known services
-4. **ut1** - optional import of the UT1 lists:
-   `python -m backend.dns_category_import --ut1 <blacklists dir> --data-dir <data dir>`
-   (download them yourself; CC BY-SA 4.0)
+4. **ut1** - optional import of the UT1 lists of the Université Toulouse Capitole
+   (CC BY-SA 4.0, download them yourself; the commands are in the header of
+   `backend/dns_category_import.py`). Mapped: adult content, gambling, dating,
+   malware & phishing, VPN / proxy / DNS-over-HTTPS servers, and the lists that match
+   existing categories (social networks, games, shopping, press, ...). The 5 million
+   names are kept as a hash index on disk (8 bytes per name, ~40 MB), not in memory;
+   every match says "UT1 list" and has confidence "medium" - a list entry is a judgement
+   by its maintainers, not a fact about the domain.
 
 The most specific rule wins (`youtubei.googleapis.com` beats `googleapis.com`); for the
 same name the higher layer wins. Every domain shows the rule, the layer and the

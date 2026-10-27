@@ -298,8 +298,9 @@ In short:
   are stored (about 400 KB per day on the test Pi, all of it subject to retention).
 * Queries are attributed to devices by MAC only where that is sound (own IP history,
   FRITZ!Box cross-check); otherwise they stay "IP only".
-* Categories are local rules (~400 domains of known services, own rules, optional UT1
-  lists). CDNs and shared platforms are never attributed to a service.
+* Categories are local rules (~400 domains of known services, own rules, optional UT1 lists
+  with adult content, gambling, dating, VPN/DNS bypass and malware). CDNs and shared
+  platforms are never attributed to a service.
 * Activity phases are **estimated DNS activity, not usage time** - confidence at most
   "medium", "Not reliably determinable" where the data does not allow an estimate.
 * Lookups that bypass Pi-hole (DNS over HTTPS, iCloud Private Relay, VPN, fixed DNS
