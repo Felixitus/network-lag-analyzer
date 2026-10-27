@@ -236,6 +236,7 @@ async function mountOverview(main) {
         categoryBars(o.categories))));
 
     body.append(h('div', { class: 'grid grid-2' }, clientsCard(cl), recentCard(o)));
+    body.append(bypassCard());
     body.append(h('div', { class: 'grid grid-2' }, uncategorizedCard(load), glossaryCard()));
   }
   await load();
@@ -333,6 +334,29 @@ async function mountCategories(main, selected) {
         + 'categories from the UT1 lists (adult, gambling, dating, ...) never get one.')].filter(Boolean));
   }
   await load();
+}
+
+// ------------------------------------------------------------------ DNS past Pi-hole
+const BYPASS_BADGE = { bypassing: 'critical', partial: 'warning', complete: 'good' };
+
+function bypassCard() {
+  const card = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'DNS past Pi-hole'),
+    h('span', { class: 'sub' }, 'devices whose numbers are probably incomplete (7 days)')), h('div', { class: 'skeleton' }, 'Loading…'));
+  api('api/dns/bypass').then(r => {
+    card.lastChild.remove();
+    const flagged = r.devices.filter(d => d.level !== 'complete');
+    if (!flagged.length) {
+      card.append(naBox(`No sign of DNS past Pi-hole for ${r.devices.length} devices.`));
+    } else {
+      card.append(h('ul', { class: 'list' }, flagged.map(d => h('li', null,
+        h('div', { class: 'row' }, d.client.id ? h('a', { href: `#/dns/client/${d.client.id}` }, d.client.name) : h('b', null, d.client.name),
+          h('span', { class: 'spacer' }), h('span', { class: `badge ${BYPASS_BADGE[d.level]}` }, d.level === 'bypassing' ? 'largely missing' : 'probably incomplete')),
+        d.reasons.map(x => h('div', { class: 'small secondary' }, `• ${x}`))))));
+    }
+    if (r.presence_note) card.append(h('div', { class: 'small muted' }, r.presence_note));
+    card.append(h('div', { class: 'small muted' }, r.note));
+  }).catch(e => { card.lastChild.replaceWith(naBox(`Not available - ${e.message}`)); });
+  return card;
 }
 
 // ------------------------------------------------------------------ not categorized yet
@@ -493,6 +517,13 @@ async function mountClient(main, cid) {
       tile('Distinct domains', n(t.domains), change('domains')),
       tile('Retries', n(t.duplicates), 'repeated lookups, not counted')));
     if (!cmp) body.append(h('div', { class: 'small muted' }, s.comparison_note));
+    api('api/dns/bypass').then(r => {
+      const me = r.devices.find(d => d.client.id === cid);
+      if (me && me.level !== 'complete') {
+        body.prepend(h('div', { class: `banner ${me.level === 'bypassing' ? 'warn' : 'info'}` }, h('b', null, me.text),
+          h('span', null, me.reasons.join(' '))));
+      }
+    }).catch(() => null);
 
     const chartBox = h('div');
     body.append(h('div', { class: 'card chart-card' },

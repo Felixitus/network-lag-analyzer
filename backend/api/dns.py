@@ -15,7 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from ..analysis import activity, category_usage as cu, client_match, dns_usage as usage
+from ..analysis import activity, category_usage as cu, client_match, dns_bypass, dns_usage as usage
 from ..analysis.categories import normalize_domain, valid_domain
 from ..collectors.ftl_queries import STATUS_TEXT, outcome
 from ..database import repository as repo
@@ -517,6 +517,87 @@ async def identification(request: Request):
              if not core.fritz_status.get("enabled") else
              f"Not available yet: {core.fritz_status.get('error') or 'waiting for the first host list'}"),
             "note": "A comparison of two independent views of the network. Nothing is merged or guessed from it."}
+
+
+@router.get("/bypass")
+async def bypass(request: Request, start: float | None = Query(None), end: float | None = Query(None)):
+    """Devices whose DNS numbers are probably incomplete because they resolve names past Pi-hole."""
+    core = core_of(request)
+    end = time.time() if end is None else end
+    start = end - 7 * 86400 if start is None else start
+    start, end = _range(start, end)
+    t0, t1 = usage.hour_range(start, end)
+    d0, d1 = usage.day_range(t0, t1)
+
+    async def build():
+        hourly = _hourly_ok(core, t0, await core.db.read(usage.hourly_domains_from))
+        rows = await core.db.read(lambda c: cu.client_domain_rows(c, t0, t1, d0, d1, hourly))
+
+        def q(c):
+            first = c.execute("SELECT MIN(ts_start) FROM device_presence WHERE source IS NULL").fetchone()[0]
+            # compare presence and lookups only where presence was recorded at all
+            w0 = max(t0, -(-int(first) // 3600) * 3600) if first else t1
+            dns_hours = {r[0]: r[1] for r in c.execute(
+                "SELECT client, COUNT(DISTINCT ts) FROM dns_client_hourly WHERE queries > 0 AND ts >= ? AND ts < ? "
+                "GROUP BY client", (w0, t1))}
+            periods = c.execute("SELECT dev, ts_start, ts_end FROM device_presence WHERE source IS NULL "
+                                "AND ts_end >= ? AND ts_start < ?", (w0, t1)).fetchall()
+            return dns_hours, periods, first, w0
+        dns_hours, periods, presence_from, w0 = await core.db.read(q)
+        present: dict[int, set[int]] = {}
+        for dev, s, e in periods:
+            for h in range(max(s, w0) // 3600, (min(e, t1) - 1) // 3600 + 1):
+                present.setdefault(dev, set()).add(h)
+        vpn: dict[int, dict] = {}
+        canary: dict[int, int] = {}
+        for cid, name, q_, b in rows:
+            if not name:
+                continue
+            if name == dns_bypass.CANARY or name.endswith("." + dns_bypass.CANARY):
+                canary[cid] = canary.get(cid, 0) + q_
+                continue
+            if core.classifier.classify(name).primary == "vpn":
+                v = vpn.setdefault(cid, {"n": 0, "names": []})
+                v["n"] += q_
+                v["names"].append((q_, name))
+        clients = {}
+        for cid in set(dns_hours) | set(vpn) | {r[0] for r in rows}:
+            try:
+                clients[cid] = await _client(core, cid)
+            except HTTPException:
+                pass
+        out = []
+        for cid, cl in clients.items():
+            if cl["basis"] == "local":
+                continue
+            dev_id = core.devices.id_for(cl["mac"]) if cl["mac"] and cl["mac"] in core.devices.by_mac else None
+            ph = len(present.get(dev_id, ())) if dev_id is not None and presence_from else None
+            v = vpn.get(cid, {"n": 0, "names": []})
+            a = dns_bypass.assess(vpn_lookups=v["n"], vpn_names=[nm for _q, nm in sorted(v["names"], reverse=True)],
+                                  present_hours=ph, dns_hours=dns_hours.get(cid, 0), canary=canary.get(cid, 0))
+            out.append({"client": cl, "present_hours": ph, "dns_hours": dns_hours.get(cid, 0), **a,
+                        "text": dns_bypass.LEVEL_TEXT[a["level"]]})
+        # devices the FRITZ!Box sees, but Pi-hole never did
+        if core.fritz_status.get("enabled") and core.fritz_hosts_at is not None and core.dns_usage is not None:
+            pihole = await asyncio.to_thread(core.dns_usage.ftl.network)
+            for r in client_match.compare(core.fritz_hosts, pihole, core.gateway)["rows"]:
+                if r["status"] == "not_using_pihole":
+                    dev = core.devices.by_mac.get(r["mac"])
+                    a = dns_bypass.assess(not_using_pihole=True)
+                    out.append({"client": {"id": None, "mac": r["mac"], "ip": r["fritz_ip"], "basis": "mac",
+                                           "name": dev.display_name if dev else (r["fritz_name"] or r["mac"])},
+                                "present_hours": None, "dns_hours": 0, **a, "text": dns_bypass.LEVEL_TEXT[a["level"]]})
+        order = {"bypassing": 0, "partial": 1, "complete": 2}
+        out.sort(key=lambda x: (order[x["level"]], x["client"]["name"] or ""))
+        return {"start": t0, "end": t1, "devices": out,
+                "counts": {k: sum(1 for x in out if x["level"] == k) for k in order},
+                "presence_note": None if presence_from and presence_from <= t0 else
+                ("The 'in the network but quiet' check covers the time since presence is recorded "
+                 f"({time.strftime('%Y-%m-%d %H:%M', time.localtime(w0))})." if presence_from else
+                 "Presence is not recorded yet - the 'in the network but quiet' check is not possible.")}
+    data = await _cached(("bypass", t0, t1, core.classifier.fingerprint), build)
+    return {**data, "note": "Signs, not proof: lookups of VPN/DoH services, FRITZ!Box activity without any Pi-hole query, "
+                            "and hours in the network without lookups. What these devices resolved elsewhere is not visible."}
 
 
 # ===================================================================== categories

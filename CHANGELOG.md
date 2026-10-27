@@ -6,6 +6,11 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **DNS past Pi-hole per device:** the DNS overview lists devices whose numbers are
+  probably incomplete, and the device page says so: lookups of VPN, proxy and
+  DNS-over-HTTPS services or iCloud Private Relay, active in the FRITZ!Box without any
+  Pi-hole query, or many hours in the network with lookups in few of them. Signs, not
+  proof; Firefox's DoH check (`use-application-dns.net`) is shown as information only.
 - **The UT1 lists update themselves** where they were imported once: every 30 days
   at night (load guard level 0) the archive is downloaded (at most 300 MB), compared by
   checksum and - only if it changed - imported in a separate low-priority process, so

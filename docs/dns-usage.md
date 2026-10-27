@@ -127,6 +127,19 @@ each domain's primary category, so they add up to 100 %.
 
 ---
 
+## DNS past Pi-hole
+
+A device that resolves names elsewhere has incomplete numbers here. The DNS overview
+("DNS past Pi-hole") and the device page name the signs, none of them proof alone:
+
+* lookups of VPN, proxy and DNS-over-HTTPS services or iCloud Private Relay - after such a
+  lookup names may travel encrypted to another resolver;
+* active according to the FRITZ!Box, but never a query at Pi-hole (fixed DNS server);
+* at least 6 hours in the network (presence), but lookups in less than half of them - only
+  counted for the time presence is recorded.
+
+"Largely missing" when the FRITZ!Box sign is there, "probably incomplete" for the others.
+
 ## Categories per device
 
 *DNS usage → Categories per device* lists every device with a bar of how its lookups
