@@ -310,3 +310,23 @@ def test_device_categories_keep_lookups_hours_and_estimates_apart(client):
     assert any(c["active_hours"] for c in cats.values())
     long = client.get(f"/api/dns/clients/{cid}/categories?start={time.time() - 60 * 86400}").json()
     assert all(c["active_hours"] is None for c in long["categories"]) and long["minutes_note"]
+
+
+def test_dns_bypass_signs_are_combined_without_guessing():
+    from backend.analysis import dns_bypass as b
+    assert b.assess()["level"] == "complete"
+    assert b.assess(vpn_lookups=12, vpn_names=["mask.icloud.com"])["level"] == "partial"
+    assert b.assess(not_using_pihole=True, vpn_lookups=3)["level"] == "bypassing"
+    quiet = b.assess(present_hours=20, dns_hours=4)
+    assert quiet["level"] == "partial" and "20 h" in quiet["reasons"][0]
+    assert b.assess(present_hours=3, dns_hours=0)["level"] == "complete"        # too short to say anything
+    assert b.assess(present_hours=None, dns_hours=0)["level"] == "complete"     # presence not recorded
+    assert b.assess(canary=2)["level"] == "complete" and b.assess(canary=2)["notes"]
+
+
+def test_dns_bypass_api_flags_a_device_pihole_never_saw(client):
+    _wait_for_dns_demo(client)
+    r = client.get("/api/dns/bypass").json()
+    flagged = [d for d in r["devices"] if d["level"] == "bypassing"]
+    assert flagged and any("never asked Pi-hole" in x for d in flagged for x in d["reasons"])
+    assert r["counts"]["bypassing"] == len(flagged) and "not proof" in r["note"]
