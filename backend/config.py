@@ -193,6 +193,9 @@ class DnsUsageCfg(BaseModel):
     # Activity phases: a pause longer than this ends a phase (services may define
     # their own gap in the category rules).
     phase_gap_minutes: float = Field(5, ge=1, le=120)
+    # Refresh the UT1 lists - only where they were imported once (opt-in by the import itself).
+    ut1_auto_update: bool = True
+    ut1_update_days: float = Field(30, ge=7, le=365)
 
 
 class RetentionCfg(BaseModel):

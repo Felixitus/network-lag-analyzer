@@ -1286,6 +1286,7 @@ class Core:
                     await self._dns_usage_maintenance()
                     await self._check_db_size()
                     await self._auto_backup()
+                    await self._ut1_refresh()
                     last_ret = time.time()
             except Exception:
                 log.exception("Maintenance failed")
@@ -1316,6 +1317,76 @@ class Core:
             log.error("Backup failed: %s", res["error"])
         await self.db.write(lambda c: repo.set_setting(c, "last_backup", res))
         return res
+
+    UT1_URL = "https://dsi.ut-capitole.fr/blacklists/download/blacklists.tar.gz"
+    UT1_MAX_BYTES = 300 * 1024 * 1024
+
+    async def _ut1_refresh(self, force: bool = False) -> dict | None:
+        """Monthly, at night, at load guard level 0: fetch the UT1 lists again and import them if they
+        changed. The import (~80 s, ~400 MB) runs in its own low-priority process: in this one it
+        would hold the interpreter lock that the per-second pipeline needs."""
+        import json
+        import subprocess
+        import sys
+        from pathlib import Path
+        from .analysis.categories import UT1_META
+        u = self.cfg.dns_usage
+        meta_p = Path(self.cfg.data_dir) / UT1_META
+        if not meta_p.exists() or not (u.ut1_auto_update or force):
+            return None                      # never imported: the user did not opt in
+        meta = json.loads(meta_p.read_text(encoding="utf-8"))
+        last = await self.db.read(lambda c: repo.get_setting(c, "ut1_refresh", {}))
+        checked = max(meta.get("imported_at") or 0, last.get("ts") or 0)
+        due = force or (time.time() - checked >= u.ut1_update_days * 86400
+                        and time.localtime().tm_hour == (self.cfg.backup.hour + 1) % 24 and self.loadguard.level == 0)
+        if not due:
+            return None
+        archive = Path(self.cfg.data_dir) / "ut1-download.tar.gz"
+        res: dict = {"ts": time.time(), "ok": False, "changed": False}
+        try:
+            sha = await asyncio.to_thread(self._download, self.UT1_URL, archive, self.UT1_MAX_BYTES)
+            if sha == meta.get("sha256"):
+                res.update(ok=True, note="unchanged")
+            else:
+                cmd = [sys.executable, "-m", "backend.dns_category_import", "--archive", str(archive),
+                       "--data-dir", self.cfg.data_dir]
+                if sys.platform != "win32":
+                    cmd = ["nice", "-n", "15", *cmd]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd, cwd=str(Path(__file__).resolve().parent.parent),
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout=1800)
+                if proc.returncode != 0:
+                    raise RuntimeError(out.decode("utf-8", "replace").strip().splitlines()[-1][:200] if out else "import failed")
+                overrides = await self.db.read(lambda c: repo.get_setting(c, "dns_category_overrides", {}))
+                self.reload_classifier(overrides)         # new fingerprint: activity minutes rebuild by themselves
+                res.update(ok=True, changed=True)
+                log.info("UT1 lists updated")
+        except Exception as e:  # noqa: BLE001 - the old index stays in use
+            res["error"] = f"{type(e).__name__}: {e}"
+            log.error("UT1 refresh failed: %s", res["error"])
+        finally:
+            archive.unlink(missing_ok=True)
+        await self.db.write(lambda c: repo.set_setting(c, "ut1_refresh", res))
+        return res
+
+    @staticmethod
+    def _download(url: str, dst, max_bytes: int) -> str:
+        """Streams to `dst`, refusing more than `max_bytes`; returns the SHA-256."""
+        import hashlib
+        import httpx
+        h = hashlib.sha256()
+        n = 0
+        with httpx.stream("GET", url, timeout=60, follow_redirects=True) as r:
+            r.raise_for_status()
+            with open(dst, "wb") as f:
+                for chunk in r.iter_bytes(1 << 20):
+                    n += len(chunk)
+                    if n > max_bytes:
+                        raise OSError(f"download larger than {max_bytes // 1048576} MB - refused")
+                    h.update(chunk)
+                    f.write(chunk)
+        return h.hexdigest()
 
     async def _dns_usage_maintenance(self) -> None:
         ing = self.dns_usage

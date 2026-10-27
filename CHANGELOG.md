@@ -6,6 +6,12 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **The UT1 lists update themselves** where they were imported once: every 30 days
+  at night (load guard level 0) the archive is downloaded (at most 300 MB), compared by
+  checksum and - only if it changed - imported in a separate low-priority process, so
+  the per-second measurements do not stall. The import reads the lists straight from
+  the archive; nothing from it is extracted to disk. A failed update keeps the old index.
+  The rules page shows the list date and the last update.
 - **Automatic backups**: weekly at 03:00 (configurable, only at load guard level 0) a
   consistent copy of the database and `config.yaml` in `<data dir>/backups`, checked with
   `quick_check` before it counts; the two newest are kept, manual copies are never
