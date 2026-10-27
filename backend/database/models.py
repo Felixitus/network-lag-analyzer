@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     cause        TEXT,
     category     TEXT,
     confidence   TEXT,
-    analysis     TEXT,                   -- JSON: evidence, top talkers, metrics
+    analysis     BLOB,                   -- zlib-compressed JSON (repository.enc_analysis): evidence, top talkers, metrics
     session_id   INTEGER,
     pcap_protected INTEGER NOT NULL DEFAULT 0
 );

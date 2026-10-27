@@ -1042,7 +1042,7 @@ class Core:
 
     def _incident_params(self, inc: Incident, protected: bool = False) -> tuple:
         return (inc.id, inc.source, inc.ts_start, inc.ts_end, inc.reported_at, inc.title, inc.cause, inc.category,
-                inc.confidence, json.dumps(inc.analysis, default=str), inc.session_id, int(protected))
+                inc.confidence, repo.enc_analysis(inc.analysis), inc.session_id, int(protected))
 
     def _incident_opened(self, inc: Incident) -> None:
         inc.title = "Ongoing incident"
@@ -1747,7 +1747,7 @@ def _event_row(r) -> dict:
 
 def _incident_row(r) -> dict:
     d = dict(r)
-    d["analysis"] = json.loads(d["analysis"] or "{}")
+    d["analysis"] = repo.dec_analysis(d["analysis"])
     d["category_label"] = CATEGORY_LABELS.get(d.get("category") or "", d.get("category"))
     return d
 

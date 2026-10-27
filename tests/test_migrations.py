@@ -157,3 +157,37 @@ def test_compact_format_is_much_smaller(tmp_path):
     before = size_before - os.path.getsize(empty_v2)
     after = os.path.getsize(p) - os.path.getsize(str(tmp_path / "empty.sqlite3"))
     assert after < before * 0.6, f"only {100 - after / before * 100:.0f} % saved"
+
+
+def test_incident_analyses_are_compressed_and_lose_only_the_event_copy(tmp_path):
+    import json
+    import sqlite3 as sq
+    from backend.database.repository import ANALYSIS_MAGIC, dec_analysis
+    path = str(tmp_path / "v11.sqlite3")
+    c = sq.connect(path)
+    c.executescript("""CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO meta VALUES ('schema_version', '11');
+        CREATE TABLE incidents (id INTEGER PRIMARY KEY, source TEXT NOT NULL, ts_start REAL NOT NULL, ts_end REAL,
+            reported_at REAL, title TEXT, cause TEXT, category TEXT, confidence TEXT, analysis TEXT, session_id INTEGER,
+            pcap_protected INTEGER NOT NULL DEFAULT 0);""")
+    big = {"cause": "Packet loss", "metrics": {"loss_pct": 12.5}, "evidence": ["x" * 50] * 40,
+           "events": [{"id": i, "type": "PACKET_LOSS", "details": {"k": "v" * 40}} for i in range(30)]}
+    c.execute("INSERT INTO incidents (id, source, ts_start, analysis) VALUES (1, 'auto', 1, ?)", (json.dumps(big),))
+    c.execute("INSERT INTO incidents (id, source, ts_start, analysis) VALUES (2, 'user', 1, ?)", (json.dumps(big),))
+    c.commit()
+    before = c.execute("SELECT SUM(length(analysis)) FROM incidents").fetchone()[0]
+    migrations.migrate(c, path, SCHEMA_VERSION)
+    rows = {r[0]: r[1] for r in c.execute("SELECT id, analysis FROM incidents")}
+    assert all(isinstance(v, bytes) and v.startswith(ANALYSIS_MAGIC) for v in rows.values())
+    auto, user = dec_analysis(rows[1]), dec_analysis(rows[2])
+    assert "events" not in auto and auto["metrics"] == {"loss_pct": 12.5} and auto["evidence"] == big["evidence"]
+    assert len(user["events"]) == 30            # a lag report keeps its window's events
+    after = c.execute("SELECT SUM(length(analysis)) FROM incidents").fetchone()[0]
+    assert after < before / 5
+
+
+def test_both_analysis_formats_are_read():
+    from backend.database.repository import dec_analysis, enc_analysis
+    a = {"cause": "x", "metrics": {"n": 1}}
+    assert dec_analysis(enc_analysis(a)) == a
+    assert dec_analysis('{"cause": "x"}') == {"cause": "x"} and dec_analysis(None) == {}

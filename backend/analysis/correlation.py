@@ -141,7 +141,9 @@ class Correlator:
         w = self.window_fn(t0, t1)
         w.events = [e.to_dict() for e in self.events]
         result = analyze(w)
-        result["events"] = [e.to_dict() for e in self.events]
+        # The events are stored in their own table with this incident's id; a copy here
+        # was a quarter of every incident's size.
+        result["event_ids"] = [e.id for e in self.events]
         inc.analysis = result
         inc.cause = result["cause"]
         inc.category = result["category"]

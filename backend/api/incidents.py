@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from ..analysis.events import EVENT_LABELS
 from ..analysis.root_cause import CATEGORY_LABELS
+from ..database import repository as repo
 
 router = APIRouter(prefix="/api")
 
@@ -38,8 +39,7 @@ async def incidents(request: Request, limit: int = Query(50, ge=1, le=500), befo
 
     def q(c):
         sql = ("SELECT id, source, ts_start, ts_end, reported_at, title, cause, category, confidence, session_id, "
-               "json_extract(analysis, '$.metrics') AS metrics, json_extract(analysis, '$.device') AS device "
-               "FROM incidents WHERE 1=1")
+               "analysis FROM incidents WHERE 1=1")
         args: list = []
         if before:
             sql += " AND id < ?"
@@ -56,8 +56,9 @@ async def incidents(request: Request, limit: int = Query(50, ge=1, le=500), befo
     await core.db.flush()
     rows = await core.db.read(q)
     for r in rows:
-        r["metrics"] = json.loads(r["metrics"]) if r["metrics"] else None
-        r["device"] = json.loads(r["device"]) if r["device"] else None
+        a = repo.dec_analysis(r.pop("analysis"))       # compressed: json_extract cannot look inside
+        r["metrics"] = a.get("metrics")
+        r["device"] = a.get("device")
         r["category_label"] = CATEGORY_LABELS.get(r["category"] or "", r["category"])
     return {"incidents": rows}
 
@@ -72,7 +73,7 @@ async def incident(request: Request, incident_id: int):
         if r is None:
             return None
         d = dict(r)
-        d["analysis"] = json.loads(d["analysis"] or "{}")
+        d["analysis"] = repo.dec_analysis(d["analysis"])
         d["events"] = [dict(e) | {"details": json.loads(e["details"] or "{}"), "label": EVENT_LABELS.get(e["type"])}
                        for e in c.execute("SELECT * FROM events WHERE incident_id=? ORDER BY ts_start", (incident_id,))]
         t0 = (d["ts_start"] or 0) - 30
