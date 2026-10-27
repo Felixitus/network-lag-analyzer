@@ -15,7 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from ..analysis import activity, client_match, dns_usage as usage
+from ..analysis import activity, category_usage as cu, client_match, dns_usage as usage
 from ..analysis.categories import normalize_domain, valid_domain
 from ..collectors.ftl_queries import STATUS_TEXT, outcome
 from ..database import repository as repo
@@ -348,6 +348,87 @@ async def client_activity(request: Request, cid: int, start: float | None = Quer
                              f"({100 * rebuild['done']:.0f} % done). Phases are incomplete until then.") if rebuild else None,
             "note": "Estimated DNS activity - not verified screen or app usage time. "
                     "The estimate is the sum of the phases; pauses between phases are not counted."}
+
+
+CATEGORY_NOTE = ("Share of lookups and active hours are counted from the Pi-hole log. The estimated activity is "
+                 "the sum of the per-service DNS estimates where one is possible - not screen time, not usage time. "
+                 "Grey categories (infrastructure, network checks, telemetry, updates, ...) are background, not use.")
+
+
+def _hourly_ok(core, t0: int, hourly_from: int | None) -> bool:
+    return hourly_from is not None and t0 >= max(hourly_from, time.time() - core.cfg.retention.dns_domain_hourly_hours * 3600 + 3600)
+
+
+@router.get("/categories")
+async def categories_by_client(request: Request, start: float | None = Query(None), end: float | None = Query(None)):
+    """Every device with how its lookups split into categories - the overview to pick a device from."""
+    core = core_of(request)
+    start, end = _range(start, end)
+    t0, t1 = usage.hour_range(start, end)
+    d0, d1 = usage.day_range(t0, t1)
+
+    async def build():
+        hourly = _hourly_ok(core, t0, await core.db.read(usage.hourly_domains_from))
+        rows = await core.db.read(lambda c: cu.client_domain_rows(c, t0, t1, d0, d1, hourly))
+        m = await asyncio.to_thread(cu.matrix, rows, core.classifier)
+        out = []
+        for cid, data in m.items():
+            try:
+                cl = await _client(core, cid)
+            except HTTPException:
+                continue
+            cats = cu.category_list(data, core.classifier.labels)
+            fg = sum(c["queries"] for c in cats if not c["background"])
+            out.append({"client": cl, "queries": data["queries"], "blocked": data["blocked"], "categories": cats,
+                        "foreground_queries": fg})
+        out.sort(key=lambda x: -x["queries"])
+        return {"start": t0, "end": t1, "resolution": "hour" if hourly else "day",
+                "range": {"from": t0, "to": t1} if hourly else {"from": d0, "to": d1 + 86400}, "clients": out}
+    data = await _cached(("categories", t0, t1, core.classifier.fingerprint), build)
+    return {**data, "labels": core.classifier.labels, "info": core.classifier.info, "note": CATEGORY_NOTE}
+
+
+@router.get("/clients/{cid}/categories")
+async def client_categories(request: Request, cid: int, start: float | None = Query(None), end: float | None = Query(None)):
+    """One device per category: lookups and share, active hours, and the estimated activity where possible."""
+    core = core_of(request)
+    client = await _client(core, cid)
+    start, end = _range(start, end)
+    rows, res, meta = await _cached(("domains", cid, round(start), round(end)), lambda: _domains(core, start, end, client))
+    by = {"queries": 0, "blocked": 0, "categories": {}}
+    for r in rows:
+        a = by["categories"].setdefault(r["category"], [0, 0])
+        a[0] += r["queries"]
+        a[1] += r["blocked"]
+        by["queries"] += r["queries"]
+        by["blocked"] += r["blocked"]
+    cats = cu.category_list(by, core.classifier.labels)
+    max_days = core.cfg.retention.dns_minute_days
+    minutes_ok = end - start <= max_days * 86400 + 3600
+    hours: dict[str, int] = {}
+    est: dict[str, dict] = {}
+    if minutes_ok:
+        def q(c):
+            return [(r[0], r[1], r[2], r[3]) for r in c.execute(
+                """SELECT m.ts, s.key, m.queries, m.blocked FROM dns_service_minutes m
+                   JOIN dns_services s ON s.id = m.service
+                   WHERE m.client = ? AND m.ts >= ? AND m.ts < ? ORDER BY m.ts""", (cid, int(start), int(end)))]
+        minutes = await core.db.read(q)
+        hours = cu.active_hours(minutes, core.classifier)
+        act = await asyncio.to_thread(activity.build, minutes, core.classifier, core.cfg.dns_usage.phase_gap_minutes)
+        est = cu.estimates(act["services"])
+    for c in cats:
+        c["active_hours"] = hours.get(c["category"]) if minutes_ok else None
+        e = est.get(c["category"]) or {}
+        c["estimate_seconds"] = None if c["background"] else e.get("estimate_seconds")
+        c["estimate_confidence"] = None if c["background"] else e.get("confidence")
+        c["estimated_services"] = e.get("services", [])
+        c["services_without_estimate"] = e.get("without_estimate", [])
+        c["description"] = core.classifier.info.get(c["category"])
+    return {"client": client, "start": start, "end": end, "resolution": res, "range": meta,
+            "queries": by["queries"], "blocked": by["blocked"], "categories": cats,
+            "minutes_note": None if minutes_ok else f"Active hours and estimates only for ranges up to {max_days:g} days.",
+            "note": CATEGORY_NOTE}
 
 
 @router.get("/domain")

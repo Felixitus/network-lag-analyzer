@@ -142,6 +142,7 @@ export async function mount(main, ctx) {
   try { const r = await api('api/dns/rules'); LABELS = r.categories || {}; INFO = r.category_info || {}; } catch { LABELS = {}; INFO = {}; }
   if (sub === 'client' && id) return mountClient(main, Number(id));
   if (sub === 'rules') return mountRules(main);
+  if (sub === 'categories') return mountCategories(main, id ? Number(id) : null);
   return mountOverview(main);
 }
 
@@ -191,7 +192,8 @@ async function mountOverview(main) {
       ['Category statistics', 'csv', 'categories'],
       ['Blocked domains', 'csv', 'blocked'],
       ['Time series (per hour)', 'csv', 'timeseries'],
-    ]), h('a', { class: 'btn', href: '#/dns/rules' }, 'Category rules'))),
+    ]), h('a', { class: 'btn', href: '#/dns/categories' }, 'Categories per device'),
+    h('a', { class: 'btn', href: '#/dns/rules' }, 'Category rules'))),
   h('div', { class: 'card' }, rangePicker(load)), h('div', { style: { height: '16px' } }), body);
 
   async function load() {
@@ -235,6 +237,100 @@ async function mountOverview(main) {
 
     body.append(h('div', { class: 'grid grid-2' }, clientsCard(cl), recentCard(o)));
     body.append(h('div', { class: 'grid grid-2' }, uncategorizedCard(load), glossaryCard()));
+  }
+  await load();
+}
+
+// ------------------------------------------------------------------ categories per device
+function fmtEstimate(s) {
+  if (!s) return null;
+  const m = Math.round(s / 60);
+  return m < 60 ? `~${m} min` : `~${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+function stackedBar(cats, showBackground) {
+  const bar = h('div', { class: 'stack-bar', role: 'img', 'aria-label': cats.filter(c => !c.background).slice(0, 4)
+    .map(c => `${c.label} ${(100 * c.share).toFixed(0)} %`).join(', ') || 'background only' });
+  let bg = 0;
+  for (const c of cats) {
+    if (c.background && !showBackground) { bg += c.share; continue; }
+    bar.append(h('span', { style: { width: `${100 * c.share}%`, background: catColor(c.category) },
+      title: `${c.label}: ${(100 * c.share).toFixed(1)} % of the lookups${c.background ? ' (background)' : ''}` }));
+  }
+  if (bg > 0) bar.append(h('span', { class: 'bg', style: { width: `${100 * bg}%` }, title: `Background (not use): ${(100 * bg).toFixed(1)} %` }));
+  return bar;
+}
+
+async function mountCategories(main, selected) {
+  let showBackground = false;
+  const listBox = h('div');
+  const detailBox = h('div');
+  const bgToggle = h('label', { class: 'check small' }, h('input', { type: 'checkbox', onchange: e => { showBackground = e.target.checked; load(); } }),
+    'show background categories one by one');
+  main.append(h('div', { class: 'row small' }, h('a', { href: '#/dns' }, '← DNS usage')),
+    pageHead('Categories per device', 'How the lookups of each device split into categories. Pick a device for lookups, active hours and - where possible - an estimate per category.'),
+    h('div', { class: 'card' }, h('div', { class: 'row' }, rangePicker(load), h('span', { class: 'spacer' }), bgToggle)),
+    h('div', { class: 'banner info', style: { margin: '12px 0' } }, h('b', null, 'Not usage time'),
+      h('span', null, 'DNS lookups show that a device asked for names - also in the background, also without anyone watching. '
+        + 'Grey parts are background (infrastructure, network checks, telemetry, updates).')),
+    h('div', { class: 'grid grid-2' }, h('div', { class: 'card' }, listBox), h('div', { class: 'card' }, detailBox)));
+
+  async function load() {
+    clear(listBox).append(h('div', { class: 'skeleton' }, 'Loading…'));
+    let r;
+    try { r = await api(`api/dns/categories?${qs()}`); } catch (e) { clear(listBox).append(naBox(`Not available - ${e.message}`)); return; }
+    clear(listBox).append(h('div', { class: 'card-head' }, h('h2', null, `Devices (${r.clients.length})`),
+      h('span', { class: 'sub' }, r.resolution === 'hour' ? 'exact hours' : 'whole days')));
+    if (!r.clients.length) { listBox.append(naBox('No lookups in this range.')); return; }
+    const ul = h('ul', { class: 'list device-cats' });
+    for (const d of r.clients) {
+      const top = d.categories.filter(c => !c.background).slice(0, 3);
+      const li = h('li', { class: `click${d.client.id === selected ? ' selected' : ''}`, tabindex: '0' },
+        h('div', { class: 'row' }, h('b', null, d.client.name), d.client.basis === 'ip' ? basisBadge('ip') : null,
+          h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, `${n(d.queries)} lookups`)),
+        stackedBar(d.categories, showBackground),
+        h('div', { class: 'small secondary' }, top.length
+          ? top.map(c => `${c.label} ${(100 * c.share).toFixed(1)} %`).join(' · ')
+          : 'only background lookups'));
+      const pick = () => { selected = d.client.id; history.replaceState(null, '', `#/dns/categories/${selected}`); load(); };
+      li.addEventListener('click', pick);
+      li.addEventListener('keydown', ev => { if (ev.key === 'Enter') pick(); });
+      ul.append(li);
+    }
+    listBox.append(ul, h('div', { class: 'small muted' }, r.note));
+    if (selected === null || !r.clients.some(d => d.client.id === selected)) selected = r.clients[0].client.id;
+    loadDetail();
+  }
+
+  async function loadDetail() {
+    clear(detailBox).append(h('div', { class: 'skeleton' }, 'Loading…'));
+    let r;
+    try { r = await api(`api/dns/clients/${selected}/categories?${qs()}`); } catch (e) { clear(detailBox).append(naBox(`Not available - ${e.message}`)); return; }
+    const fg = r.categories.filter(c => !c.background), bg = r.categories.filter(c => c.background);
+    const row = c => h('tr', { title: c.description || '' },
+      h('td', null, catBadge(c.category)),
+      h('td', { class: 'num' }, n(c.queries)), h('td', { class: 'num' }, `${(100 * c.share).toFixed(1)} %`),
+      h('td', { class: 'num' }, c.active_hours === null || c.active_hours === undefined ? NA : n(c.active_hours)),
+      h('td', { class: 'num' }, c.background ? h('span', { class: 'muted' }, 'background')
+        : c.estimate_seconds ? h('span', { title: `from: ${c.estimated_services.join(', ')}` }, fmtEstimate(c.estimate_seconds),
+          h('span', { class: 'small muted' }, ` (${c.estimate_confidence})`))
+          : h('span', { class: 'muted', title: c.services_without_estimate.length
+            ? `not reliably determinable for: ${c.services_without_estimate.join(', ')}` : 'lookups of this category belong to no single service' }, 'no estimate')));
+    const head = h('thead', null, h('tr', null, h('th', null, 'Category'), h('th', { class: 'num' }, 'Lookups'), h('th', { class: 'num' }, 'Share'),
+      h('th', { class: 'num', title: 'Clock hours with at least one allowed lookup' }, 'Active hours'),
+      h('th', { class: 'num', title: 'Sum of the per-service DNS estimates' }, 'Est. activity')));
+    // native append() would print a null as the text "null" - h() skips it
+    clear(detailBox).append(...[
+      h('div', { class: 'card-head' }, h('h2', null, r.client.name), h('a', { class: 'small', href: `#/dns/client/${r.client.id}` }, 'all details →')),
+      h('div', { class: 'small muted' }, `${n(r.queries)} lookups, ${n(r.blocked)} of them blocked`),
+      fg.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' }, head, h('tbody', null, fg.map(row))))
+        : naBox('Only background lookups in this range.'),
+      bg.length ? h('details', { class: 'glossary' }, h('summary', null, `Background, not use (${(100 * bg.reduce((a, c) => a + c.share, 0)).toFixed(1)} % of the lookups)`),
+        h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' }, h('tbody', null, bg.map(row))))) : null,
+      r.minutes_note ? h('div', { class: 'small muted' }, r.minutes_note) : null,
+      h('div', { class: 'small muted' }, 'Active hours: clock hours with at least one allowed lookup of the category. '
+        + 'Est. activity: only where single services allow a DNS-based estimate (see the activity phases on the device page); '
+        + 'categories from the UT1 lists (adult, gambling, dating, ...) never get one.')].filter(Boolean));
   }
   await load();
 }

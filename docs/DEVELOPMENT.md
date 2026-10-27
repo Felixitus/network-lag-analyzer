@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 358, must be green)
+python3 -m pytest tests -q                    # all tests (currently 363, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -72,6 +72,7 @@ backend/
     line.py               internet line: FRITZ!Box event log, outages from our pings, error deltas
     pi_health.py          the Pi itself (sysfs/procfs, no root), and where LAN losses lie
     presence.py           when which device was in the network, new and unnamed devices
+    category_usage.py     categories per device: lookups, active hours, estimates - kept apart
     backfill.py           fills gaps afterwards from Pi-hole's log (DNS minutes, presence by DNS hours)
   data/domain_categories.yaml   shipped category rules (hand-maintained)
   database/
