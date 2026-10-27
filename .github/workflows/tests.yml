@@ -34,5 +34,23 @@ jobs:
         run: bash -n install.sh
       - name: shellcheck
         run: shellcheck -S error install.sh
-      - name: Zeilenenden (LF)
+      - name: Line endings (LF)
         run: "! git ls-files --eol | grep -v 'frontend/vendor' | grep -E 'i/crlf|w/crlf'"
+
+  frontend:
+    # The frontend has no build step, so nothing else would notice a syntax error:
+    # twice a page stayed blank because of one, and only a look at the browser caught it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: JavaScript syntax (ES modules)
+        run: |
+          echo '{"type": "module"}' > frontend/package.json
+          status=0
+          for f in $(git ls-files 'frontend/js/*.js' 'frontend/js/**/*.js'); do
+            node --check "$f" || status=1
+          done
+          exit $status
