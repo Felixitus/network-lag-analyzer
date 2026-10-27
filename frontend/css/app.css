@@ -398,3 +398,10 @@ dialog.modal h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-
 .rule-form summary, .glossary summary { cursor: pointer; font-weight: 600; }
 .rule-form[open] summary { margin-bottom: 8px; }
 .glossary .list { margin-top: 10px; }
+
+/* ---------------------------------------------------------------- DNS: categories per device */
+.stack-bar { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--surface-2); margin: 6px 0 4px; }
+.stack-bar span { display: block; height: 100%; min-width: 1px; }
+.stack-bar span.bg { background: repeating-linear-gradient(135deg, var(--axis) 0 3px, var(--grid) 3px 6px); }
+.device-cats li.click { cursor: pointer; border-radius: 8px; padding: 8px; }
+.device-cats li.click:hover, .device-cats li.selected { background: var(--surface-2); }

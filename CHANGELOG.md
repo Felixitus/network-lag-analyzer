@@ -6,6 +6,11 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Categories per device** (DNS usage → Categories per device): every device with a bar
+  of its lookups per category, background in grey; per device a table of lookups and
+  share, active hours (clock hours with an allowed lookup) and - only where single
+  services allow it - the estimated activity, kept as three separate columns. UT1 and
+  background categories never get an estimate.
 - **DNS: what a domain is and where that comes from.** Every domain opens its details:
   category with a one-line definition, service or provider, the matching rule and its
   source (shipped list, UT1 list, your rule), the confidence and what it means, the

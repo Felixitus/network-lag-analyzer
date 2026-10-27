@@ -125,6 +125,23 @@ each domain's primary category, so they add up to 100 %.
 
 ---
 
+## Categories per device
+
+*DNS usage → Categories per device* lists every device with a bar of how its lookups
+split into categories; background (shared infrastructure, network checks, telemetry,
+updates, ...) is one grey part unless shown one by one. A device's breakdown keeps
+three different things apart:
+
+| Column | Where from | What it is not |
+|---|---|---|
+| Lookups, share | counted exactly from the Pi-hole log | not visits, not volume |
+| Active hours | clock hours with at least one allowed lookup of the category (activity minutes, 31 days) | not hours of use - one lookup makes an active hour |
+| Est. activity | sum of the per-service estimates below, where they give a number | not screen or usage time |
+
+Categories without single services - the UT1 categories adult, gambling, dating, VPN,
+malware - never get an estimate: their lookups are kept per hour only, and a list entry
+names no service whose phases could be judged. Background categories never get one either.
+
 ## Activity phases (estimated)
 
 Per device and service (client detail page):

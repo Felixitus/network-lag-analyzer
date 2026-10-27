@@ -284,3 +284,29 @@ def test_status_counts_per_name_in_both_ftl_schemas(tmp_path, legacy):
     ftl.c.close()
     assert FtlQueryLog(str(tmp_path / "ftl.db")).status_counts("ads.example", now - 86400) == {1: 2, 2: 1}
     assert FtlQueryLog(str(tmp_path / "ftl.db")).status_counts("missing.example", now - 86400) == {}
+
+
+def test_category_overview_lists_every_device_with_its_split(client):
+    _wait_for_dns_demo(client)
+    r = client.get("/api/dns/categories").json()
+    assert r["clients"] and "not usage time" in r["note"]
+    for c in r["clients"]:
+        assert abs(sum(x["share"] for x in c["categories"]) - 1) < 1e-9
+        assert c["foreground_queries"] == sum(x["queries"] for x in c["categories"] if not x["background"])
+        assert c["client"]["basis"] != "local"
+
+
+def test_device_categories_keep_lookups_hours_and_estimates_apart(client):
+    _wait_for_dns_demo(client)
+    cid = client.get("/api/dns/categories").json()["clients"][0]["client"]["id"]
+    r = client.get(f"/api/dns/clients/{cid}/categories?start={time.time() - 7 * 86400}").json()
+    cats = {c["category"]: c for c in r["categories"]}
+    assert sum(c["queries"] for c in cats.values()) == r["queries"] > 0
+    for c in cats.values():
+        if c["background"]:
+            assert c["estimate_seconds"] is None            # background never becomes "activity"
+        assert c["active_hours"] is None or c["active_hours"] >= 0
+        assert c["description"] or c["category"] == "not_itemized"
+    assert any(c["active_hours"] for c in cats.values())
+    long = client.get(f"/api/dns/clients/{cid}/categories?start={time.time() - 60 * 86400}").json()
+    assert all(c["active_hours"] is None for c in long["categories"]) and long["minutes_note"]
