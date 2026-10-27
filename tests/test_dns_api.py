@@ -56,7 +56,7 @@ def test_dns_overview_has_totals_categories_and_recent_queries(client):
     assert o["totals"]["queries"] > 0 and o["totals"]["known_clients"] >= 4
     assert o["domains_resolution"] == "hour"
     cats = {c["category"] for c in o["categories"]}
-    assert {"ads_tracking", "other"} <= cats
+    assert {"ads_tracking", "infrastructure"} <= cats
     assert abs(sum(c["share"] for c in o["categories"]) - 1) < 1e-9
     assert o["recent"] and {"domain", "client", "outcome", "category"} <= set(o["recent"][0])
     week = client.get(f"/api/dns/overview?start={time.time() - 7 * 86400}").json()
@@ -228,3 +228,59 @@ def test_client_list_carries_connection_and_sources(client):
     _wait_for_dns_demo(client)
     phone = next(c for c in client.get("/api/dns/clients").json()["clients"] if c["mac"] == "02:00:00:00:00:42")
     assert "simulated" in phone["sources"]
+
+
+def test_domain_detail_says_what_it_is_where_from_and_who_asked(client):
+    _wait_for_dns_demo(client)
+    r = client.get("/api/dns/domain?name=d1demo.cloudfront.net").json()
+    c = r["classification"]
+    assert (c["primary"], c["service_name"], c["source"], c["confidence"]) == \
+        ("infrastructure", "Amazon CloudFront (CDN)", "builtin", "low")
+    assert "cannot be told" in c["description"] and "Shipped rule file" in c["source_text"]
+    assert "not which service" in c["confidence_text"]
+    assert r["queries"] > 0 and r["clients"] and all(x["queries"] > 0 for x in r["clients"])
+    assert r["pihole"]["error"] is None and sum(s["count"] for s in r["pihole"]["statuses"]) > 0
+    assert all(s["text"] for s in r["pihole"]["statuses"])
+    assert client.get("/api/dns/domain?name=not%20a%20domain").status_code == 400
+
+
+def test_blocked_domain_shows_how_pihole_blocked_it(client):
+    _wait_for_dns_demo(client)
+    r = client.get("/api/dns/domain?name=securepubads.g.doubleclick.net").json()
+    kinds = {s["kind"] for s in r["pihole"]["statuses"]}
+    assert "blocked" in kinds and any("blocklist" in s["text"] for s in r["pihole"]["statuses"])
+
+
+def test_uncategorized_lists_unknown_names_bundled_per_owner(client):
+    _wait_for_dns_demo(client)
+    r = client.get("/api/dns/uncategorized?start=%d" % (time.time() - 7 * 86400)).json()
+    groups = {g["group"]: g for g in r["groups"]}
+    assert set(groups) == {"weather.example", "telemetry.example"}
+    assert all(g["queries"] > 0 and g["name_count"] >= 1 and g["names"] for g in groups.values())
+    assert 0 < r["unknown_queries"] < r["queries"]
+
+
+def test_group_name_keeps_two_part_suffixes_together():
+    from backend.analysis.dns_usage import group_name
+    assert group_name("a.b.example.com") == "example.com"
+    assert group_name("shop.example.co.uk") == "example.co.uk"
+    assert group_name("lan") == "lan"
+
+
+def test_rules_summary_explains_every_category(client):
+    r = client.get("/api/dns/rules").json()
+    assert set(r["category_info"]) == set(r["categories"])
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_status_counts_per_name_in_both_ftl_schemas(tmp_path, legacy):
+    from backend.collectors.ftl_queries import FtlQueryLog
+    from ftl_fake import FakeFtl
+    now = time.time()
+    ftl = FakeFtl(tmp_path / "ftl.db", legacy=legacy)
+    ftl.add([(now - 60, "192.0.2.10", "ads.example", 1), (now - 50, "192.0.2.10", "ads.example", 1),
+             (now - 40, "192.0.2.11", "ads.example", 2), (now - 30, "192.0.2.10", "other.example", 2),
+             (now - 90000, "192.0.2.10", "ads.example", 5)])          # older than the window
+    ftl.c.close()
+    assert FtlQueryLog(str(tmp_path / "ftl.db")).status_counts("ads.example", now - 86400) == {1: 2, 2: 1}
+    assert FtlQueryLog(str(tmp_path / "ftl.db")).status_counts("missing.example", now - 86400) == {}

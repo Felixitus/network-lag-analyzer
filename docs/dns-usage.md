@@ -104,8 +104,22 @@ Rule based and offline. Layers, highest priority first:
 
 The most specific rule wins (`youtubei.googleapis.com` beats `googleapis.com`); for the
 same name the higher layer wins. Every domain shows the rule, the layer and the
-confidence. Shared infrastructure (CDNs, cloud hosting, big platforms) is "Other" with
-low confidence and never attributed to a service. SDK domains such as
+confidence. Categories that are never someone's use are kept apart:
+
+* **Shared infrastructure** (CDNs and cloud platforms) names the provider - "Amazon
+  CloudFront (CDN)", "Akamai", "Google", "Apple", "Microsoft" - with low confidence and
+  never a service: it says who delivered something, not which service was behind it.
+  On the test Pi CloudFront alone was 17 % of all lookups.
+* **Network & connectivity checks**: captive portal detection (Amazon devices: 9 % of all
+  lookups on the test Pi), time servers, reverse lookups, names inside the home network.
+* **Ads, tracking & telemetry** includes device and app telemetry, crash reports and ad SDKs.
+* **Not categorized yet** ("unknown") means no rule matched - not that a name is harmless.
+
+Click any domain for its details: what it is and what its category means, the rule and
+the source behind it, how sure that rule is, which devices looked it up, and how Pi-hole
+answered it in the last 24 hours (cache, forwarded, blocked by a blocklist, a regex or
+your denylist). From there a rule can be set for the name or its owner. The overview
+lists the busiest names without a rule, bundled per owner, and explains the terms. SDK domains such as
 `graph.facebook.com` count as ads & tracking, not as Facebook use. Category shares use
 each domain's primary category, so they add up to 100 %.
 

@@ -6,6 +6,20 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **DNS: what a domain is and where that comes from.** Every domain opens its details:
+  category with a one-line definition, service or provider, the matching rule and its
+  source (shipped list, UT1 list, your rule), the confidence and what it means, the
+  devices that looked it up, and how Pi-hole answered it in the last 24 hours (cache,
+  forwarded, blocked by blocklist, regex or denylist). A rule can be set from there.
+- **Clear separation of what is not use:** "Other" is split into *Shared
+  infrastructure* (one entry per provider - CloudFront, Akamai, Google, Apple,
+  Microsoft, ...) and *Network & connectivity checks* (captive portal detection, time
+  servers, reverse lookups, local names). Both are background for activity phases and
+  drawn in grey. New rules for telemetry and ad SDKs, Amazon and Samsung TV device
+  services, TikTok EU, Prime Video and Netflix CDNs; iCloud Private Relay counts as VPN.
+- **Not categorized yet:** the busiest names without a rule, bundled per owner, with
+  their share of the lookups; a glossary explains lookups, blocks, retries, "IP only",
+  categories and what DNS cannot see.
 - **More categories from the UT1 lists**: adult content, gambling, dating, malware &
   phishing, and VPN / proxy / DNS-over-HTTPS servers (devices that may resolve past
   Pi-hole), besides the existing mappings. The import now writes a hash index searched

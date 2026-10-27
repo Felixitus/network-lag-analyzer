@@ -40,6 +40,19 @@ DUPLICATE_STATUS = {12, 13, 14}
 Outcome = Literal["allowed", "blocked", "duplicate", "unknown"]
 
 
+# What each FTL status code (Pi-hole v6) means, for people.
+STATUS_TEXT = {
+    1: "blocked by a blocklist (gravity)", 2: "forwarded to the upstream DNS server", 3: "answered from the cache",
+    4: "blocked by a regex rule", 5: "blocked by your denylist", 6: "blocked by the upstream server (blocking IP)",
+    7: "blocked by the upstream server (null answer)", 8: "blocked by the upstream server (NXDOMAIN)",
+    9: "blocked by a blocklist (via CNAME)", 10: "blocked by a regex rule (via CNAME)",
+    11: "blocked by your denylist (via CNAME)", 12: "retry of an earlier query", 13: "retry (DNSSEC)",
+    14: "duplicate of a query in progress", 15: "blocked because the database was busy",
+    16: "special domain answered by Pi-hole itself (e.g. Private Relay or DoH canary)",
+    17: "answered from the cache (stale)", 18: "blocked by the upstream server (EDE 15)",
+}
+
+
 def outcome(status: int | None) -> Outcome:
     if status in BLOCKED_STATUS:
         return "blocked"
@@ -167,6 +180,22 @@ class FtlQueryLog:
             if r is None:
                 return c.execute(f"SELECT MAX(id) FROM {self._table()}").fetchone()[0] or 0
             return r - 1
+
+    def status_counts(self, domain: str, since: float) -> dict[int, int]:
+        """How Pi-hole answered one name since `since`: FTL status code → count.
+        The time range uses the index; the name is filtered in that range only."""
+        with self.connect() as c:
+            if self.schema().normalized:
+                ids = [r[0] for r in c.execute("SELECT id FROM domain_by_id WHERE domain = ?", (domain,))]
+                if not ids:
+                    return {}
+                sql = (f"SELECT status, COUNT(*) FROM query_storage WHERE timestamp >= ? "
+                       f"AND domain IN ({','.join('?' * len(ids))}) GROUP BY status")
+                args: list = [since, *ids]
+            else:
+                sql = "SELECT status, COUNT(*) FROM queries WHERE timestamp >= ? AND domain = ? GROUP BY status"
+                args = [since, domain]
+            return {int(s): n for s, n in c.execute(sql, args)}
 
     def client_ids(self, ips: Iterable[str]) -> list[int]:
         """All `client_by_id` ids for these IPs. One IP has several ids when its name changed."""

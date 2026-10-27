@@ -27,7 +27,8 @@ from typing import Iterable
 # Categories where lookups say nothing about a person using something: updates,
 # trackers, devices phoning home, shared infrastructure, unknown names.
 # VPN/DoH and malware lookups say a connection exists or was tried, not that anyone used something.
-BACKGROUND_CATEGORIES = {"ads_tracking", "os_updates", "smart_home", "vpn", "threat", "other", "unknown"}
+BACKGROUND_CATEGORIES = {"ads_tracking", "os_updates", "smart_home", "vpn", "threat", "network", "infrastructure",
+                         "other", "unknown"}
 # Messengers and cloud sync keep background connections and look up names
 # while the phone is in a pocket.
 BACKGROUND_PRONE = {"communication", "cloud"}
