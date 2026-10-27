@@ -21,8 +21,10 @@ how long, or how much data followed.
 | FRITZ!Box host list (TR-064) | read-only, optional | second, independent view of the devices |
 | Own database `/var/lib/network-lag-analyzer/nla.sqlite3` | read/write | counters, IP history, aliases, settings |
 
-Pi-hole is never modified. The service runs as user `nla`, which is a member of the
-group `pihole` for read access only. Never use `sudo sqlite3` on Pi-hole's files (it
+The statistics never modify Pi-hole. The service runs as user `nla`, which is a member of
+the group `pihole` for read access only. The optional *Pi-hole actions* (pause blocking,
+allow/block a domain, restart DNS, update blocklists) go through Pi-hole's own v6 API with
+an app password, only to the Pi-hole on this Pi, each after a confirmation and logged. Never use `sudo sqlite3` on Pi-hole's files (it
 leaves root-owned `-wal`/`-shm` files behind and locks FTL out of its own database).
 
 Pi-hole's official API (v6) is not used for the statistics. Large ranges through the

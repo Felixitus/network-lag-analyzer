@@ -47,7 +47,30 @@ function ruleForm(name, cls, ctx, suggestion) {
       h('div', { class: 'small muted' }, 'Your rules win over the shipped list and the UT1 list for the same name.')));
 }
 
+function piholeButtons(name) {
+  const box = h('section', { class: 'stack-sm', style: { display: 'none' } });
+  api(`api/pihole/domain?name=${encodeURIComponent(name)}`).then(st => {
+    box.style.display = '';
+    const act = async (list, action, q) => {
+      if (!window.confirm(q)) return;
+      try {
+        await api('api/pihole/domain', { method: 'POST', body: { domain: name, list, action, confirm: true } });
+        toast('Pi-hole updated'); openDomain(name, lastCtx);
+      } catch (e) { toast(`Pi-hole: ${e.message}`, 6000); }
+    };
+    box.append(h('h3', null, 'In Pi-hole'), h('div', { class: 'row' },
+      st.allow ? h('button', { class: 'btn', type: 'button', onclick: () => act('allow', 'remove', `Remove ${name} from Pi-hole's allowlist?`) }, 'Remove from allowlist')
+        : h('button', { class: 'btn', type: 'button', onclick: () => act('allow', 'add', `Always allow ${name} for all devices?`) }, 'Always allow'),
+      st.deny ? h('button', { class: 'btn', type: 'button', onclick: () => act('deny', 'remove', `Remove ${name} from Pi-hole's denylist?`) }, 'Remove from denylist')
+        : h('button', { class: 'btn', type: 'button', onclick: () => act('deny', 'add', `Block ${name} for all devices?`) }, 'Block'),
+      h('span', { class: 'small muted' }, 'exactly this name, for all devices')));
+  }).catch(() => null);           // actions off or Pi-hole not reachable: no buttons
+  return box;
+}
+
+let lastCtx = null;
 export async function openDomain(name, ctx) {
+  lastCtx = ctx;
   const dlg = ensureDialog();
   const close = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, '✕');
   clear(dlg).append(h('div', { class: 'modal-head' }, h('h2', { class: 'mono' }, name), close), h('div', { class: 'skeleton' }, 'Loading…'));
@@ -83,6 +106,7 @@ export async function openDomain(name, ctx) {
         : r.pihole.statuses.length ? h('ul', { class: 'list' }, r.pihole.statuses.map(s => h('li', { class: 'row small' },
           h('span', { class: `badge ${KIND_CLASS[s.kind] || ''}` }, s.kind), h('span', null, s.text), h('span', { class: 'spacer' }), h('b', null, n(s.count)))))
           : h('div', { class: 'small muted' }, 'Not looked up in the last 24 hours.')),
+    piholeButtons(name),
     ruleForm(name, c, ctx, ctx.suggestion),
     h('div', { class: 'small muted' }, r.note));
   dlg.lastChild.replaceWith(body);

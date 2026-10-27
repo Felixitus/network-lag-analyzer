@@ -6,6 +6,12 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Pi-hole actions** (off by default, Setup → Pi-hole actions with an app password
+  from Pi-hole): pause blocking for 5/15/60 minutes, switch it on again, restart DNS and
+  update the blocklists on the DNS page; "Always allow" / "Block" in a domain's details.
+  Only through Pi-hole's own v6 API, only to the Pi-hole on this Pi, one session per
+  action, each after a confirmation and logged with the user. The FTL database stays
+  read-only.
 - **DNS past Pi-hole per device:** the DNS overview lists devices whose numbers are
   probably incomplete, and the device page says so: lookups of VPN, proxy and
   DNS-over-HTTPS services or iCloud Private Relay, active in the FRITZ!Box without any

@@ -183,8 +183,12 @@ sudo userdel nla
 
 Pi-hole is not touched by either.
 
-**Pi-hole is not modified.** The installer touches neither `/etc/pihole`, dnsmasq/FTL nor
-the Pi-hole web server. The default port 8088 does not collide with Pi-hole (80/443).
+**Pi-hole is not modified by the installer or the statistics.** The installer touches
+neither `/etc/pihole`, dnsmasq/FTL nor the Pi-hole web server. The default port 8088 does
+not collide with Pi-hole (80/443). Only if you switch on *Setup → Pi-hole actions* (with an
+app password from Pi-hole) can the DNS pages pause blocking, allow or block a domain,
+restart DNS or update the blocklists - through Pi-hole's own API, each after a
+confirmation and logged with your user name.
 
 ---
 
