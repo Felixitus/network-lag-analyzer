@@ -15,6 +15,8 @@ import struct
 from collections import defaultdict
 from time import time as time_now
 
+from .tls import TRUNCATED, parse_sni
+
 RX, TX, RXP, TXP, UDP, LAN, RETR = range(7)
 ETH_IPV4, ETH_IPV6, ETH_VLAN, ETH_QINQ = 0x0800, 0x86DD, 0x8100, 0x88A8
 PROTO_TCP, PROTO_UDP = 6, 17
@@ -54,7 +56,7 @@ class Flow:
     __slots__ = ("first", "last", "mac", "proto", "lip", "lport", "rip", "rport",
                  "bu", "bd", "pu", "pd", "retrans", "resets", "max_up", "max_down",
                  "last_down", "max_gap", "fin", "win_bytes", "win_pkts_up", "win_pkts_down",
-                 "sec_pkts_up", "sec_pkts_down", "sec_gap")
+                 "sec_pkts_up", "sec_pkts_down", "sec_gap", "sni", "sni_done")
 
     def __init__(self, ts: float, mac: str, proto: int, lip: bytes, lport: int, rip: bytes, rport: int):
         self.first = self.last = ts
@@ -69,6 +71,8 @@ class Flow:
         self.win_pkts_up = self.win_pkts_down = 0
         self.sec_pkts_up = self.sec_pkts_down = 0
         self.sec_gap = 0.0
+        self.sni: str | None = None
+        self.sni_done = False
 
 
 def ip_str(b: bytes) -> str:
@@ -106,6 +110,8 @@ class PacketAnalyzer:
         self._mac_cache: dict[bytes, str] = {}
         self.clock_offset = 0.0
         self.packets = 0
+        # TLS ClientHellos seen, with a server name, and cut off by the snaplen
+        self.sni_stats = {"hellos": 0, "named": 0, "truncated": 0}
         self.ignored = 0
         self._cand_t = 0.0
 
@@ -294,6 +300,17 @@ class PacketAnalyzer:
                 f.resets += 1
             if flags & TCP_FIN:
                 f.fin = True
+            if payload > 0 and up and not f.sni_done:
+                # Only the first payload the client sends: that is where a ClientHello is.
+                f.sni_done = True
+                name = parse_sni(data[l4 + doff:])
+                if name is not None:
+                    self.sni_stats["hellos"] += 1
+                    if name == TRUNCATED:
+                        self.sni_stats["truncated"] += 1
+                    else:
+                        self.sni_stats["named"] += 1
+                        f.sni = name
             if payload > 0:
                 g["tcp_segs"] += scale
                 end = (seq + payload) % SEQ_MOD
@@ -393,13 +410,13 @@ class PacketAnalyzer:
     def flow_tuple(self, f: Flow) -> tuple:
         return (round(f.first, 3), round(f.last, 3), "tcp" if f.proto == PROTO_TCP else "udp", f.mac,
                 ip_str(f.lip), f.lport, ip_str(f.rip), f.rport, f.bu, f.bd, f.pu, f.pd, f.retrans, f.resets,
-                round(f.max_gap * 1000, 1) if f.proto == PROTO_UDP else None, None)
+                round(f.max_gap * 1000, 1) if f.proto == PROTO_UDP else None, None, f.sni)
 
     def _flow_dict(self, f: Flow, recent: int = 0) -> dict:
         return {"proto": "tcp" if f.proto == PROTO_TCP else "udp", "mac": f.mac, "local_ip": ip_str(f.lip),
                 "local_port": f.lport, "remote_ip": ip_str(f.rip), "remote_port": f.rport,
                 "bytes_up": f.bu, "bytes_down": f.bd, "recent_bytes": recent, "retrans": f.retrans,
-                "first": round(f.first, 1), "last": round(f.last, 1)}
+                "first": round(f.first, 1), "last": round(f.last, 1), "sni": f.sni}
 
     def take_macip(self) -> dict[str, str]:
         out, self._macip_new = self._macip_new, {}

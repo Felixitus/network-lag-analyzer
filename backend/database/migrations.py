@@ -191,6 +191,12 @@ def _v12_compress_incidents(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE incidents SET analysis=? WHERE id=?", (enc_analysis(a), iid))
 
 
+def _v13_flow_sni(conn: sqlite3.Connection) -> None:
+    """Version 13: the TLS server name of a connection, next to the DNS guess."""
+    if _table_exists(conn, "network_flows") and "sni" not in _columns(conn, "network_flows"):
+        conn.execute("ALTER TABLE network_flows ADD COLUMN sni TEXT")
+
+
 def _is_real(conn: sqlite3.Connection, table: str, column: str) -> bool:
     for r in conn.execute(f"PRAGMA table_info({table})"):
         if r[1] == column:
@@ -207,6 +213,7 @@ STEPS: list[tuple[int, str, object]] = [
     (10, "Source column for presence periods", _v10_presence_source),
     (11, "Key columns of fritz_events first", _v11_fritz_events_order),
     (12, "Incident analyses compressed, events by reference", _v12_compress_incidents),
+    (13, "TLS server name of connections", _v13_flow_sni),
 ]
 
 

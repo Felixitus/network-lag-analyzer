@@ -129,6 +129,20 @@ each domain's primary category, so they add up to 100 %.
 
 ---
 
+## Measured connections (TLS server names)
+
+DNS lookups are an estimate; the FRITZ!Box capture can measure. Every HTTPS connection
+starts with a ClientHello that names the server in plain text (SNI). The capture reads
+it from the first packet of each connection, and the device page shows per service the
+sessions (a pause of more than 2 minutes ends one), how long a connection was open and
+how many bytes went through - measured, not estimated.
+
+Limits, shown on the page: the name is only readable with **snaplen ≈ 600** (Setup →
+FRITZ!Box; the default 128 cuts it off, which costs about 4× capture data for full-size
+packets), connections are kept 7 days (`retention.flow_days`), and QUIC (HTTP/3 over UDP
+443, used heavily by YouTube and Google) encrypts its ClientHello - its share of the
+traffic is shown as not covered. A connection being open is not a person watching.
+
 ## DNS past Pi-hole
 
 A device that resolves names elsewhere has incomplete numbers here. The DNS overview

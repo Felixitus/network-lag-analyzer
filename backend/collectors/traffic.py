@@ -360,7 +360,7 @@ class CaptureWorker:
             "packets": self.analyzer.packets, "ignored": self.analyzer.ignored, "level": self.analyzer.level,
             "router_macs": router, "linktype": self.parser.linktype, "format": self.parser.format,
             "flows": len(self.analyzer.flows), "cpu_seconds": cpu_s, "deep_capture": self.ring is not None,
-            "dropped": self.dropped,
+            "dropped": self.dropped, "sni": dict(self.analyzer.sni_stats),
             "ts": time.time(),
         }))
 

@@ -114,7 +114,9 @@ class FritzCfg(BaseModel):
     tr064_port: int = 49000
     capture_enabled: bool = True
     capture_interface: str = "1-lan"   # LAN bridge of the FRITZ!Box
-    snaplen: int = Field(128, ge=64, le=256)
+    # Bytes kept per packet. 128 is enough for traffic per device; reading TLS server names
+    # (SNI) needs ~600, at about 4× the capture data for full-size packets.
+    snaplen: int = Field(128, ge=64, le=1024)
     poll_interval: float = Field(2.0, ge=1, le=60)
     hostlist_interval: float = Field(120, ge=30, le=3600)
 

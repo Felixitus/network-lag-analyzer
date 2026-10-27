@@ -6,6 +6,13 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Measured connections per service** on the device page: the TLS server name (SNI)
+  is read from the first packet of every connection in the FRITZ!Box capture (new column
+  `network_flows.sni`, schema 13), and connections are grouped into sessions per service
+  (a pause > 2 minutes starts a new one) with duration and bytes - measured, not
+  estimated. Needs `fritzbox.snaplen` ≈ 600 (allowed up to 1024 now; the default 128
+  cuts the name off, and the page says so). QUIC (HTTP/3) is not covered and shown as
+  such. The DNS guess for a connection's name stays in `dns_name`, apart from the SNI.
 - **Pi-hole actions** (off by default, Setup → Pi-hole actions with an app password
   from Pi-hole): pause blocking for 5/15/60 minutes, switch it on again, restart DNS and
   update the blocklists on the DNS page; "Always allow" / "Block" in a domain's details.

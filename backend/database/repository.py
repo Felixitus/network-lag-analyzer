@@ -237,8 +237,8 @@ def decode_row(row) -> dict:
     return {k: dec(row[k], k) for k in row.keys()}
 INSERT_FLOW = (
     "INSERT INTO network_flows(ts_start, ts_end, proto, mac, local_ip, local_port, remote_ip, "
-    "remote_port, bytes_up, bytes_down, pkts_up, pkts_down, retrans, resets, max_gap_ms, dns_name) "
-    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    "remote_port, bytes_up, bytes_down, pkts_up, pkts_down, retrans, resets, max_gap_ms, dns_name, sni) "
+    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 )
 
 

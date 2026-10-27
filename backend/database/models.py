@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -169,7 +169,8 @@ CREATE TABLE IF NOT EXISTS network_flows (
     retrans     INTEGER NOT NULL,
     resets      INTEGER NOT NULL,
     max_gap_ms  REAL,
-    dns_name    TEXT
+    dns_name    TEXT,                    -- guessed: the name a device last looked up for this IP
+    sni         TEXT                     -- measured: server name from the TLS ClientHello (schema 13)
 );
 CREATE INDEX IF NOT EXISTS ix_flows_time ON network_flows(ts_end, ts_start);
 CREATE INDEX IF NOT EXISTS ix_flows_mac ON network_flows(mac, ts_end);

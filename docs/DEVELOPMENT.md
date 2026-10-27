@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 402, must be green)
+python3 -m pytest tests -q                    # all tests (currently 409, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -53,7 +53,8 @@ backend/
     ping.py               ICMP, one socket, kernel timestamps, probes spread over the interval
     traffic.py            capture process (separate process!), PcapRing
     pcapstream.py         pcap / pcap-modified / pcapng parser
-    flows.py              packet analysis, flows, retransmissions
+    flows.py              packet analysis, flows, retransmissions, TLS server name of each flow
+    tls.py                server name (SNI) from a ClientHello, "truncated" when the snaplen cut it
     fritzbox.py           TR-064 + capture_notimeout
     pihole.py             FTL DB read-only (lag context per minute)
     ftl_queries.py        FTL query log read-only, v5/v6 schema, time ranges on the index only
@@ -79,6 +80,7 @@ backend/
     pi_health.py          the Pi itself (sysfs/procfs, no root), and where LAN losses lie
     presence.py           when which device was in the network, new and unnamed devices
     dns_bypass.py         signs that a device resolves names past Pi-hole
+    connections.py        measured sessions per service from the TLS server names
     category_usage.py     categories per device: lookups, active hours, estimates - kept apart
     backfill.py           fills gaps afterwards from Pi-hole's log (DNS minutes, presence by DNS hours)
   data/domain_categories.yaml   shipped category rules (hand-maintained)
@@ -149,11 +151,10 @@ Do not walk into them again - the tests for them are there on purpose.
 
 ## Open / next
 
-* **Read SNI from the TLS ClientHello** instead of guessing names from DNS. Needed:
-  `snaplen` from 128 to ~600 (the upper limit in `config.py` is still 256),
-  a parser in the capture process, result into `network_flows.dns_name`. After that:
-  build sessions from flows (gap > 2 min = new session) for "when, how long,
-  how often, how much" per service.
+* SNI is read from the TLS ClientHello (`collectors/tls.py`, column `network_flows.sni`,
+  sessions in `analysis/connections.py`) - but only with `fritzbox.snaplen` ≈ 600; the
+  default 128 cuts the name off. Decide whether to raise the default once the extra
+  capture load on the Pi is measured.
 * QUIC/HTTP3 (UDP 443) is not covered by the SNI approach - either decrypt Initial
   packets (RFC 9001) or block UDP 443 and force the TCP fallback.
 

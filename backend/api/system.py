@@ -59,7 +59,7 @@ class FritzTest(BaseModel):
     username: str = Field("", max_length=64)
     password: str = Field("", max_length=128)
     capture_interface: str = Field("1-lan", pattern=r"^[A-Za-z0-9_\-\.]{1,32}$")
-    snaplen: int = Field(128, ge=64, le=256)
+    snaplen: int = Field(128, ge=64, le=1024)
 
 
 @router.post("/setup/fritzbox-test")
