@@ -526,6 +526,13 @@ async def bypass(request: Request, start: float | None = Query(None), end: float
     end = time.time() if end is None else end
     start = end - 7 * 86400 if start is None else start
     start, end = _range(start, end)
+    data = await bypass_report(core, start, end)
+    return {**data, "note": "Signs, not proof: lookups of VPN/DoH services, FRITZ!Box activity without any Pi-hole query, "
+                            "and hours in the network without lookups. What these devices resolved elsewhere is not visible."}
+
+
+async def bypass_report(core, start: float, end: float) -> dict:
+    """Bypass signs per device, plus lookups of known malware/phishing domains (also for the weekly report)."""
     t0, t1 = usage.hour_range(start, end)
     d0, d1 = usage.day_range(t0, t1)
 
@@ -549,6 +556,7 @@ async def bypass(request: Request, start: float | None = Query(None), end: float
             for h in range(max(s, w0) // 3600, (min(e, t1) - 1) // 3600 + 1):
                 present.setdefault(dev, set()).add(h)
         vpn: dict[int, dict] = {}
+        threat: dict[int, dict] = {}
         canary: dict[int, int] = {}
         for cid, name, q_, b in rows:
             if not name:
@@ -556,8 +564,9 @@ async def bypass(request: Request, start: float | None = Query(None), end: float
             if name == dns_bypass.CANARY or name.endswith("." + dns_bypass.CANARY):
                 canary[cid] = canary.get(cid, 0) + q_
                 continue
-            if core.classifier.classify(name).primary == "vpn":
-                v = vpn.setdefault(cid, {"n": 0, "names": []})
+            primary = core.classifier.classify(name).primary
+            if primary in ("vpn", "threat"):
+                v = (vpn if primary == "vpn" else threat).setdefault(cid, {"n": 0, "names": []})
                 v["n"] += q_
                 v["names"].append((q_, name))
         clients = {}
@@ -589,15 +598,15 @@ async def bypass(request: Request, start: float | None = Query(None), end: float
                                 "present_hours": None, "dns_hours": 0, **a, "text": dns_bypass.LEVEL_TEXT[a["level"]]})
         order = {"bypassing": 0, "partial": 1, "complete": 2}
         out.sort(key=lambda x: (order[x["level"]], x["client"]["name"] or ""))
-        return {"start": t0, "end": t1, "devices": out,
+        threats = [{"client": clients[cid], "lookups": v["n"], "names": [nm for _q, nm in sorted(v["names"], reverse=True)[:5]]}
+                   for cid, v in sorted(threat.items(), key=lambda kv: -kv[1]["n"]) if cid in clients]
+        return {"start": t0, "end": t1, "devices": out, "threats": threats,
                 "counts": {k: sum(1 for x in out if x["level"] == k) for k in order},
                 "presence_note": None if presence_from and presence_from <= t0 else
                 ("The 'in the network but quiet' check covers the time since presence is recorded "
                  f"({time.strftime('%Y-%m-%d %H:%M', time.localtime(w0))})." if presence_from else
                  "Presence is not recorded yet - the 'in the network but quiet' check is not possible.")}
-    data = await _cached(("bypass", t0, t1, core.classifier.fingerprint), build)
-    return {**data, "note": "Signs, not proof: lookups of VPN/DoH services, FRITZ!Box activity without any Pi-hole query, "
-                            "and hours in the network without lookups. What these devices resolved elsewhere is not visible."}
+    return await _cached(("bypass", t0, t1, core.classifier.fingerprint), build)
 
 
 # ===================================================================== categories

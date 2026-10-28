@@ -13,7 +13,7 @@ from collections import deque
 from typing import Any
 
 from . import __version__
-from .analysis import backfill, bufferbloat, daily, line, overview, pi_health, presence
+from .analysis import backfill, bufferbloat, daily, line, overview, pi_health, presence, weekly
 from .analysis.alerts import Alerts, Message
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report, dismiss_reason
@@ -751,7 +751,40 @@ class Core:
                 await self.db.write(lambda c: repo.set_setting(c, "notified_devices", done))
         for m in msgs:
             await self._send(m)
+        if n.weekly_report:
+            last = await self.db.read(lambda c: repo.get_setting(c, "weekly_report_last", None))
+            if weekly.due(now, last, n.weekly_day, n.weekly_hour):
+                # remember first: a report that fails on every channel is not retried every 30 s
+                await self.db.write(lambda c: repo.set_setting(c, "weekly_report_last", now))
+                await self.send_weekly_report(now)
         return now
+
+    async def weekly_report(self, now: float) -> dict:
+        """The past seven days up to the start of this hour, as data and as text."""
+        end = int(now) // 3600 * 3600
+        start = end - weekly.WEEK
+        warn = self.cfg.thresholds.ping_warning
+        r = await self.db.read(lambda c: weekly.collect(c, start, end, warn))
+        r.update(start=start, end=end)
+        r["incidents"] = [(CATEGORY_LABELS.get(c, c), k) for c, k in r["incidents"]]
+        acked = await self.db.read(lambda c: repo.get_setting(c, presence.ACK_KEY, {}))
+        r["new_devices"] = presence.new_devices(self.devices.all(), acked, start)
+        r["dns"] = None
+        if self.dns_usage is not None:
+            from .api import dns as dns_api     # the bypass signs are assembled there, for the DNS page too
+            try:
+                r["dns"] = await dns_api.bypass_report(self, start, end)
+            except Exception as e:  # noqa: BLE001 - the rest of the report is still worth sending
+                log.exception("Weekly report: DNS part failed")
+                r["dns_error"] = type(e).__name__
+        else:
+            r["dns_error"] = "DNS usage is not recorded"
+        r["title"], r["text"] = weekly.render(r)
+        return r
+
+    async def send_weekly_report(self, now: float) -> dict:
+        r = await self.weekly_report(now)
+        return await self._send(Message(f"weekly:{r['end']}", r["title"], r["text"], "low", "report"))
 
     async def _send(self, m: Message) -> dict:
         from .collectors import notify as nt

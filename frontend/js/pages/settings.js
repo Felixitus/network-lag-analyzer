@@ -420,6 +420,9 @@ export async function mount(main, { refreshStatus }) {
     { path: 'notify.line', label: 'Internet line (DSL lost, disconnected)', type: 'bool' },
     { path: 'notify.new_device', label: 'New device in the network', type: 'bool' },
     { path: 'notify.cooldown_minutes', label: 'Repeat an ongoing alert after (min)', type: 'number' },
+    { path: 'notify.weekly_report', label: 'Weekly report', type: 'bool', help: 'Outages, worst hours, new devices and DNS signs of the past 7 days' },
+    { path: 'notify.weekly_day', label: '… on (0 = Monday … 6 = Sunday)', type: 'number' },
+    { path: 'notify.weekly_hour', label: '… from (hour)', type: 'number' },
   ]);
   const nOut = h('div', { class: 'small' });
   const nTest = h('button', { class: 'btn', type: 'button' }, 'Send test message');
@@ -431,6 +434,26 @@ export async function mount(main, { refreshStatus }) {
     } catch (e) { nOut.textContent = e.message; }
     nTest.disabled = false;
   });
+  const wOut = h('pre', { class: 'small', style: { whiteSpace: 'pre-wrap', display: 'none' } });
+  const wPreview = h('button', { class: 'btn', type: 'button' }, 'Preview weekly report');
+  wPreview.addEventListener('click', async () => {
+    wPreview.disabled = true;
+    try {
+      const r = await api('api/notify/report');
+      wOut.textContent = `${r.title}\n\n${r.text}`;
+    } catch (e) { wOut.textContent = e.message; }
+    wOut.style.display = '';
+    wPreview.disabled = false;
+  });
+  const wSend = h('button', { class: 'btn', type: 'button' }, 'Send weekly report now');
+  wSend.addEventListener('click', async () => {
+    wSend.disabled = true;
+    try {
+      const r = await api('api/notify/report', { method: 'POST', body: {} });
+      clear(nOut).append(...Object.entries(r.result).map(([ch, err]) => h('div', null, statusIcon(!err), ` ${ch}: ${err || 'sent'}`)));
+    } catch (e) { nOut.textContent = e.message; }
+    wSend.disabled = false;
+  });
   const nLog = h('ul', { class: 'list small' });
   api('api/notify').then(r => {
     if (!r.log.length) { nLog.append(h('li', { class: 'muted' }, 'No messages sent since the last start.')); return; }
@@ -440,7 +463,7 @@ export async function mount(main, { refreshStatus }) {
   }).catch(() => null);
   main.append(h('div', { style: { height: '16px' } }), section('Notifications',
     'Messages to your phone when something needs attention - after a minimum duration, repeated at most once per cooldown, with an "all clear" when it is over. Save first, then send a test.',
-    nf, nTest), nOut, h('details', null, h('summary', { class: 'small', style: { cursor: 'pointer' } }, 'Last messages'), nLog));
+    nf, h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } }, nTest, wPreview, wSend)), nOut, wOut, h('details', null, h('summary', { class: 'small', style: { cursor: 'pointer' } }, 'Last messages'), nLog));
 
   const thr = form(cfg, [
     { path: 'thresholds.ping_warning', label: 'Ping warning (ms)', type: 'number' },

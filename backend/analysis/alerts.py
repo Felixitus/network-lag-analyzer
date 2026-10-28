@@ -16,7 +16,7 @@ class Message:
     title: str
     body: str
     priority: str = "default"         # low | default | high
-    kind: str = "alert"               # alert | repeat | resolved | event | test
+    kind: str = "alert"               # alert | repeat | resolved | event | test | report
 
 
 @dataclass
