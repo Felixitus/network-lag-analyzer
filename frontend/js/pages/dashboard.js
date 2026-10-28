@@ -147,7 +147,7 @@ export async function mount(main, { store }) {
     }
   }
   async function loadIncidents() {
-    const r = await api('api/incidents?limit=6');
+    const r = await api('api/incidents?limit=5');
     renderIncidents(r.incidents);
   }
   await loadIncidents();

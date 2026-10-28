@@ -96,7 +96,7 @@ function backupCard(cfg) {
     body.append(r.backups.length ? h('ul', { class: 'list small' }, r.backups.map(b => h('li', { class: 'row' },
       h('span', { class: 'mono' }, b.name), h('span', { class: 'spacer' }), h('span', null, fmtBytes(b.size)),
       h('span', { class: 'muted' }, b.config ? '+ config.yaml' : '')))) : null);
-    body.append(h('div', { class: 'small muted' }, `In ${r.dir}. Copy them off the Pi now and then - a backup on the same SD card does not survive the card. Restore: see README, "Backup and restore".`));
+    body.append(h('div', { class: 'small muted' }, `In ${r.dir}. Copy them off the Pi now and then - a backup on the same SD card does not survive the card. Restore: see docs/operations.md, "Backup and restore".`));
   }
   run.addEventListener('click', async () => {
     run.disabled = true; toast('Backing up…');
@@ -105,7 +105,9 @@ function backupCard(cfg) {
     run.disabled = false;
   });
   load();
-  return h('div', { class: 'stack' }, section('Backups', 'A consistent copy of the database and config.yaml, checked after writing. Older automatic backups are removed; your own copies are never touched.', bf, run), body);
+  const card = section('Backups', 'A consistent copy of the database and config.yaml, checked after writing. Older automatic backups are removed; your own copies are never touched.', bf, run);
+  card.append(body);
+  return card;
 }
 
 function databaseCard() {
@@ -372,7 +374,8 @@ export async function mount(main, { refreshStatus }) {
   });
   main.append(h('div', { style: { height: '16px' } }), section('FRITZ!Box & traffic source',
     'Prerequisite: Home Network → Network → Network Settings → "Allow access for applications". The Pi only sees foreign traffic this way (or via port mirroring).',
-    fb, h('div', { class: 'row' }, testBtn)), testOut);
+    fb, h('div', { class: 'row' }, testBtn)));
+  main.lastElementChild.append(testOut);
 
   // ---------------------------------------------------------------- measurement
   const meas = form(cfg, [
@@ -464,9 +467,11 @@ export async function mount(main, { refreshStatus }) {
       h('div', { class: 'secondary' }, m.body),
       h('div', { class: 'muted' }, Object.entries(m.result).map(([ch, err]) => `${ch}: ${err || 'sent'}`).join(' · ') || 'no channel'))));
   }).catch(() => null);
-  main.append(h('div', { style: { height: '16px' } }), section('Notifications',
+  const notif = section('Notifications',
     'Messages to your phone when something needs attention - after a minimum duration, repeated at most once per cooldown, with an "all clear" when it is over. Save first, then send a test.',
-    nf, h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } }, nTest, wPreview, wSend)), nOut, wOut, h('details', null, h('summary', { class: 'small', style: { cursor: 'pointer' } }, 'Last messages'), nLog));
+    nf, h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } }, nTest, wPreview, wSend));
+  notif.append(nOut, wOut, h('details', null, h('summary', { class: 'small', style: { cursor: 'pointer' } }, 'Last messages'), nLog));
+  main.append(h('div', { style: { height: '16px' } }), notif);
 
   const thr = form(cfg, [
     { path: 'thresholds.ping_warning', label: 'Ping warning (ms)', type: 'number' },
@@ -519,6 +524,37 @@ export async function mount(main, { refreshStatus }) {
 
   // ---------------------------------------------------------------- account
   main.append(h('div', { style: { height: '16px' } }), await accountCard());
+  foldSections(main, wiz);
+}
+
+// A dozen open forms made this the longest page of all. Every section but the diagnosis
+// folds; which ones are open is remembered per browser.
+const OPEN_KEY = 'nla-setup-open';
+function foldSections(main, keep) {
+  let open = [];
+  try { open = JSON.parse(localStorage.getItem(OPEN_KEY) || '[]'); } catch { /* private mode */ }
+  for (const card of main.querySelectorAll(':scope > .card.stack')) {
+    const head = card.firstElementChild;
+    const title = head?.querySelector('h3')?.textContent || head?.textContent;
+    if (card === keep || !head || !title) continue;
+    card.classList.add('fold');
+    head.classList.add('fold-head');
+    head.setAttribute('role', 'button');
+    head.setAttribute('tabindex', '0');
+    const set = isOpen => {
+      card.classList.toggle('folded', !isOpen);
+      head.setAttribute('aria-expanded', String(isOpen));
+    };
+    set(open.includes(title));
+    const toggle = () => {
+      const isOpen = card.classList.contains('folded');
+      set(isOpen);
+      open = isOpen ? [...new Set([...open, title])] : open.filter(t => t !== title);
+      try { localStorage.setItem(OPEN_KEY, JSON.stringify(open)); } catch { /* private mode */ }
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  }
 }
 
 async function accountCard() {
@@ -548,7 +584,7 @@ async function accountCard() {
   });
   card.append(
     h('p', { class: 'small muted' }, 'Signed in as ' + st.username + '. Changing the password signs out every other browser. ',
-      'A forgotten password can only be reset on the Raspberry Pi (python -m backend.account set, see README).'),
+      'A forgotten password can only be reset on the Raspberry Pi (python -m backend.account set, see the README).'),
     h('div', { class: 'form-grid' },
       h('div', { class: 'field' }, h('label', null, 'Username'), user),
       h('div', { class: 'field' }, h('label', null, 'Current password'), cur),

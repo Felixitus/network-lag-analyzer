@@ -77,7 +77,7 @@ function happenings(data) {
       i.source === 'user' ? 'Lag reported' : (i.title || `Incident #${i.id}`)), sub: i.cause })),
     ...data.restarts.map(r => ({ ts: r.ts, el: h('span', null, r.label), sub: null })),
     ...(data.new_devices || []).map(d => ({ ts: d.ts, el: h('a', { href: '#/devices' }, `New device: ${d.name}`), sub: d.mac })),
-  ].sort((a, b) => b.ts - a.ts).slice(0, 12);
+  ].sort((a, b) => b.ts - a.ts).slice(0, 8);
   if (!items.length) return h('div', { class: 'empty' }, 'No incidents and no restarts in this time span.');
   return h('ul', { class: 'list' }, ...items.map(it => h('li', null,
     h('div', { class: 'row' }, it.el, h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, `${fmtDate(it.ts)} ${fmtTime(it.ts, false)}`)),
