@@ -116,3 +116,19 @@ def test_dismissed_incident_leaves_no_row_but_keeps_its_events(tmp_path, monkeyp
         assert rows[0] == 0 and rows[1] is not None and rows[1][0] is None
         assert all(x["id"] != 4242 for x in core.recent_incidents)
         assert c.get("/api/status").json()["incidents_dismissed"] == {"blip": 1}
+
+
+def test_incidents_left_open_by_a_stopped_service_are_closed_on_start(tmp_path):
+    """Six such rows painted every chart on the Pi red - each drawn as a band up to "now"."""
+    import sqlite3
+    from backend.core import INTERRUPTED_TITLE, close_orphaned_incidents
+    from backend.database.models import SCHEMA
+    c = sqlite3.connect(tmp_path / "db.sqlite3")
+    c.executescript(SCHEMA)
+    c.execute("INSERT INTO incidents(id, source, ts_start, ts_end, title) VALUES (1, 'auto', 1000, NULL, 'Ongoing incident')")
+    c.execute("INSERT INTO incidents(id, source, ts_start, ts_end, title) VALUES (2, 'auto', 5000, NULL, 'Ongoing incident')")
+    c.execute("INSERT INTO incidents(id, source, ts_start, ts_end, title, cause) VALUES (3, 'auto', 9000, 9010, 'x', 'y')")
+    c.execute("INSERT INTO events(id, type, ts_start, ts_end, severity, incident_id) VALUES (1, 'PING_SPIKE', 1001, 1042, 'warning', 1)")
+    assert close_orphaned_incidents(c) == 2
+    rows = c.execute("SELECT id, ts_end, title, cause FROM incidents ORDER BY id").fetchall()
+    assert rows == [(1, 1042, INTERRUPTED_TITLE, None), (2, 5000, INTERRUPTED_TITLE, None), (3, 9010, "x", "y")]

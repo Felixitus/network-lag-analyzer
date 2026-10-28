@@ -104,9 +104,13 @@ function markerPlugin(getMarkers) {
         for (const b of m.bands) {
           const x0 = u.valToPos(b.t0, 'x', true), x1 = u.valToPos(Math.max(b.t1, b.t0 + 1), 'x', true);
           if (x1 < u.bbox.left || x0 > u.bbox.left + u.bbox.width) continue;
-          ctx.fillStyle = withAlpha(b.color || t.critical, b.alpha || 0.12);
-          const l = Math.max(x0, u.bbox.left), r = Math.min(x1, u.bbox.left + u.bbox.width);
-          ctx.fillRect(l, u.bbox.top, Math.max(2, r - l), u.bbox.height);
+          // A faint wash plus a solid strip at the bottom: a full-strength band hid the lines
+          // whenever an incident covered most of the chart.
+          const l = Math.max(x0, u.bbox.left), r = Math.min(x1, u.bbox.left + u.bbox.width), w = Math.max(2, r - l);
+          ctx.fillStyle = withAlpha(b.color || t.critical, (b.alpha || 0.12) * 0.5);
+          ctx.fillRect(l, u.bbox.top, w, u.bbox.height);
+          ctx.fillStyle = withAlpha(b.color || t.critical, 0.85);
+          ctx.fillRect(l, u.bbox.top + u.bbox.height - 3 * devicePixelRatio, w, 3 * devicePixelRatio);
         }
         ctx.restore();
       },

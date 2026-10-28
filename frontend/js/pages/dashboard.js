@@ -143,7 +143,7 @@ export async function mount(main, { store }) {
       incList.append(h('li', { class: 'inc-row' }, h('a', { href: `#/incident/${i.id}` },
         h('div', { class: 'row' }, h('span', { class: 'title' }, i.source === 'user' ? 'Lag reported' : (i.title || `Incident #${i.id}`)),
           h('span', { class: 'spacer' }), h('span', { class: 'when' }, ago(i.ts_start)))),
-        h('div', { class: 'row small secondary' }, i.cause || 'running…', confBadge(i.confidence))));
+        h('div', { class: 'row small secondary' }, i.cause || (i.ts_end ? 'not analyzed' : 'running…'), confBadge(i.confidence))));
     }
   }
   async function loadIncidents() {

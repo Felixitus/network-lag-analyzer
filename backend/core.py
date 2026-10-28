@@ -67,6 +67,25 @@ class Broadcaster:
                 pass  # a slow client loses frames, but blocks nothing
 
 
+INTERRUPTED_TITLE = "Incident (interrupted by a restart)"
+# Which page a notification links to, by the first part of its key.
+PAGE_OF_ALERT = {"router_loss": "#/line", "internet_down": "#/line", "line": "#/line", "fritz": "#/line",
+                 "pihole_down": "#/dns", "pi_health": "#/pi", "device": "#/devices", "weekly": "#/"}
+
+
+def close_orphaned_incidents(c) -> int:
+    """Incidents still open in the database when the service starts.
+
+    The correlator keeps the open incident in memory only, so a stop in the middle of one left
+    a row without an end. The UI drew each as a band up to "now" - six of them painted every
+    chart on the Pi red, one for a month. They end where their last event ended, or where they
+    began; no cause is made up for them.
+    """
+    return c.execute(
+        "UPDATE incidents SET title=?, ts_end=COALESCE((SELECT MAX(COALESCE(e.ts_end, e.ts_start)) FROM events e "
+        "WHERE e.incident_id = incidents.id), ts_start) WHERE ts_end IS NULL", (INTERRUPTED_TITLE,)).rowcount
+
+
 class Core:
     def __init__(self, config_path: str | None = None):
         self.config_path = config_path
@@ -154,6 +173,9 @@ class Core:
         from .api.security import migrate_legacy
         if await self.db.write(lambda c: migrate_legacy(c, self.cfg.security.password_hash)):
             log.warning("Login: the previous password now belongs to the user 'admin' (usernames are new)")
+        closed = await self.db.write(close_orphaned_incidents)
+        if closed:
+            log.info("Closed %d incident(s) left open by the last run", closed)
         await self.db.read(self._load_state)
         await self.db.write(self._log_start)
         self._init_network()
@@ -791,7 +813,8 @@ class Core:
 
     async def _send(self, m: Message) -> dict:
         from .collectors import notify as nt
-        res = await asyncio.to_thread(nt.deliver, self.cfg.notify, m.title, m.body, m.priority)
+        res = await asyncio.to_thread(nt.deliver, self.cfg.notify, m.title, m.body, m.priority,
+                                      kind=m.kind, link=self.ui_url(PAGE_OF_ALERT.get(m.key.split(":")[0], "")))
         self.notify_log.appendleft({"ts": time.time(), "key": m.key, "title": m.title, "body": m.body, "kind": m.kind,
                                     "result": res})
         for ch, err in res.items():
@@ -1645,6 +1668,13 @@ class Core:
                     pass
             log.warning("Removed %d orphaned PCAP files (%.0f MB)", len(orphans), freed / 1e6)
 
+    def ui_url(self, page: str = "") -> str | None:
+        """Address of the web UI for links in notifications, None if it is not known."""
+        host = self.cfg.server.host
+        if host in ("auto", "0.0.0.0", "::"):
+            host = self.pi_ip
+        return f"http://{host}:{self.cfg.server.port}/{page}" if host else None
+
     # ================================================================== path measurement
     def trace_targets(self) -> list[dict]:
         if not self.scheduler:
@@ -1739,11 +1769,13 @@ class Core:
                 new_password = True
         if "pihole" in patch and patch["pihole"].get("api_password") == "********":
             patch["pihole"].pop("api_password")
+        kept_secrets: set[str] = set()
         if "notify" in patch:
             from .config import NOTIFY_SECRETS
             for k in NOTIFY_SECRETS:            # the UI shows secrets masked; unchanged means keep
-                if patch["notify"].get(k) == "********":
-                    patch["notify"].pop(k)
+                if patch["notify"].get(k) in ("********", None):
+                    patch["notify"].pop(k, None)
+                    kept_secrets.add(k)
         overrides = await self.db.read(lambda c: repo.get_setting(c, "config_overrides", {}))
         merged = deep_merge(overrides, patch)
         new_cfg = build_config(self.yaml_data, merged)   # validates (raises on errors)
@@ -1754,6 +1786,13 @@ class Core:
                 and fritz_target(new_cfg) != fritz_target(self.cfg)):
             raise ValueError("The FRITZ!Box address is changing - please re-enter the FRITZ!Box password "
                              "as well.")
+        # The same for the notification secrets: a kept SMTP password or ntfy token only goes to the
+        # server it was entered for.
+        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username"), "SMTP password"),
+                                     ("ntfy_token", ("ntfy_url",), "ntfy token")):
+            if (secret in kept_secrets and getattr(self.cfg.notify, secret) and getattr(new_cfg.notify, where[0])
+                    and any(getattr(new_cfg.notify, f) != getattr(self.cfg.notify, f) for f in where)):
+                raise ValueError(f"The server for the {label} is changing - please re-enter the {label} as well.")
         await self.db.write(lambda c: repo.set_setting(c, "config_overrides", merged))
         old = self.cfg
         self.cfg = new_cfg

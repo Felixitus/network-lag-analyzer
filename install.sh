@@ -78,7 +78,8 @@ if [[ ! -x "$APP_DIR/venv/bin/python" ]]; then
   python3 -m venv "$APP_DIR/venv"
 fi
 "$APP_DIR/venv/bin/pip" install --quiet --upgrade pip
-"$APP_DIR/venv/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"
+# eager: indirect packages (certifi, h11, ...) are brought up to date too, not only on a fresh venv
+"$APP_DIR/venv/bin/pip" install --quiet --upgrade --upgrade-strategy eager -r "$APP_DIR/requirements.txt"
 
 # ------------------------------------------------------------------ configuration & data
 mkdir -p "$CONF_DIR" "$DATA_DIR"

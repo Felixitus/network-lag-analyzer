@@ -93,9 +93,11 @@ async def login(request: Request, body: LoginBody, response: Response):
     account = await core.db.read(s.get_account)
     if account is None:
         raise HTTPException(403, "No account set up yet - create it on the Raspberry Pi (see README)")
+    # Counted before the check: attempts sent in parallel would otherwise all pass the limit
+    # while the first ones are still being verified.
+    _login_fails.setdefault(ip, []).append(now)
     ok = await asyncio.to_thread(s.verify_login, account, body.username, body.password)
     if not ok:
-        _login_fails.setdefault(ip, []).append(now)
         await asyncio.sleep(FAIL_DELAY)
         # Same message for wrong username and wrong password.
         raise HTTPException(401, "Wrong username or password")

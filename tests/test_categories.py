@@ -69,7 +69,7 @@ def test_unknown_domain_has_no_source_and_no_confidence(clf):
 
 def test_local_names_are_their_own_service(clf):
     assert clf.classify("printer.lan").service == "local_network"
-    assert clf.classify("12.68.168.192.in-addr.arpa").service == "local_network"
+    assert clf.classify("20.178.168.192.in-addr.arpa").service == "local_network"
 
 
 def test_matching_ignores_case_and_trailing_dot(clf):
@@ -198,7 +198,7 @@ def test_category_breakdown_adds_up_and_keeps_folded_domains_apart(clf):
     ("d1abc.cloudfront.net", "infrastructure", "Amazon CloudFront (CDN)"),
     ("fireoscaptiveportal.com", "network", "Connectivity checks (captive portal detection)"),
     ("printer.lan", "network", "Names inside the home network and reverse lookups"),
-    ("10.68.168.192.in-addr.arpa", "network", "Names inside the home network and reverse lookups"),
+    ("2.178.168.192.in-addr.arpa", "network", "Names inside the home network and reverse lookups"),
     ("mask.icloud.com", "vpn", "iCloud Private Relay"),
 ])
 def test_infrastructure_and_network_lookups_are_told_apart_from_use(clf, domain, category, name):
