@@ -60,7 +60,7 @@ def test_capture_takes_the_name_from_the_first_client_packet_only():
     later, olen2 = eth_tcp(CLIENT, ROUTER, "192.0.2.42", "203.0.113.7", 50000, 443, client_hello("other.example"))
     a.process(t + 0.1, later, olen2)
     f = next(iter(a.flows.values()))
-    assert f.sni == "i.ytimg.com" and a.sni_stats == {"hellos": 1, "named": 1, "truncated": 0}
+    assert f.sni == "i.ytimg.com" and (a.sni_stats["hellos"], a.sni_stats["named"], a.sni_stats["truncated"]) == (1, 1, 0)
     assert a.flow_tuple(f)[16] == "i.ytimg.com"
     short = PacketAnalyzer(local_nets=["192.0.2.0/24"], router_macs=[ROUTER])
     short.process(t, pkt[:128], olen)                    # what snaplen 128 leaves
@@ -87,7 +87,9 @@ def test_sessions_merge_connections_closer_than_two_minutes():
 
 def test_coverage_names_what_is_not_seen():
     cv = connections.coverage([flow(0, 1, "a.example"), flow(0, 1, None), flow(0, 1, None, proto="udp")])
-    assert round(cv["named_share"], 3) == 0.333 and round(cv["quic_share"], 3) == 0.333
+    assert round(cv["named_share"], 3) == 0.333 and round(cv["quic_unnamed_share"], 3) == 0.333
+    named_quic = connections.coverage([flow(0, 1, "a.example", proto="udp"), flow(0, 1, None)])
+    assert named_quic["quic_unnamed_bytes"] == 0 and named_quic["named_share"] == 0.5
     assert connections.coverage([])["named_share"] is None
 
 

@@ -664,7 +664,7 @@ function connectionsCard(mac) {
     const cv = r.coverage;
     card.append(h('div', { class: 'small muted' }, cv.bytes
       ? `${fmtBytesShort(cv.named_bytes)} of ${fmtBytesShort(cv.bytes)} (${(100 * cv.named_share).toFixed(0)} %) of this device's traffic have a server name`
-        + (cv.quic_bytes ? `; ${(100 * cv.quic_share).toFixed(0)} % is QUIC (HTTP/3), which cannot be named.` : '.')
+        + (cv.quic_unnamed_bytes ? `; ${(100 * cv.quic_unnamed_share).toFixed(0)} % is QUIC (HTTP/3) without a readable name.` : '.')
       : `No connections recorded in this range (kept ${r.retention_days} days).`));
     if (!r.services.length) { card.append(naBox('No connection with a server name in this range.')); card.append(h('div', { class: 'small muted' }, r.note)); return; }
     card.append(h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },

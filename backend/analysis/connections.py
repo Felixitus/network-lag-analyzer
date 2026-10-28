@@ -6,7 +6,7 @@ connection's start to the last one's end; a pause of more than two minutes witho
 connection to it starts a new session.
 
 Not covered, and said so: connections without a readable server name (snaplen too small,
-non-TLS), and QUIC (HTTP/3 over UDP 443), whose ClientHello is encrypted.
+non-TLS, a QUIC connection whose Initial packets were not seen or cut off).
 """
 from __future__ import annotations
 
@@ -52,6 +52,9 @@ def coverage(flows: list[dict]) -> dict:
     """How much of the device's traffic the server names explain."""
     total = sum(f["bytes_up"] + f["bytes_down"] for f in flows)
     named = sum(f["bytes_up"] + f["bytes_down"] for f in flows if f.get("sni"))
-    quic = sum(f["bytes_up"] + f["bytes_down"] for f in flows if f["proto"] == "udp" and f["remote_port"] == 443)
-    return {"bytes": total, "named_bytes": named, "quic_bytes": quic,
-            "named_share": named / total if total else None, "quic_share": quic / total if total else None}
+    quic = [f for f in flows if f["proto"] == "udp" and f["remote_port"] == 443]
+    quic_bytes = sum(f["bytes_up"] + f["bytes_down"] for f in quic)
+    unnamed = sum(f["bytes_up"] + f["bytes_down"] for f in quic if not f.get("sni"))
+    return {"bytes": total, "named_bytes": named, "quic_bytes": quic_bytes, "quic_unnamed_bytes": unnamed,
+            "named_share": named / total if total else None,
+            "quic_unnamed_share": unnamed / total if total else None}

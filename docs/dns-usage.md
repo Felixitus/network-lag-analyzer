@@ -139,9 +139,15 @@ how many bytes went through - measured, not estimated.
 
 Limits, shown on the page: the name is only readable with **snaplen ≈ 600** (Setup →
 FRITZ!Box; the default 128 cuts it off, which costs about 4× capture data for full-size
-packets), connections are kept 7 days (`retention.flow_days`), and QUIC (HTTP/3 over UDP
-443, used heavily by YouTube and Google) encrypts its ClientHello - its share of the
-traffic is shown as not covered. A connection being open is not a person watching.
+packets), connections are kept 7 days (`retention.flow_days`). A connection being open is
+not a person watching.
+
+QUIC (HTTP/3 over UDP 443, used heavily by YouTube and Google) encrypts its ClientHello,
+but with keys that RFC 9001 derives from the packet itself - on purpose, any observer can.
+The capture decrypts the client's first Initial packets and reads the name from them, also
+when the browser shuffles the hello over two or three packets. Not named: QUIC connections
+that began before the capture started, and those whose fragment with the name was cut
+off by the snaplen; their share is shown on the page.
 
 ## DNS past Pi-hole
 
@@ -207,9 +213,9 @@ log in the background (about 3 minutes on the test Pi); the page says so meanwhi
   bypasses Pi-hole completely.
 * **Shared infrastructure**: lookups to CDNs cannot be attributed to a service.
 
-A more precise source is planned: the server name from the TLS handshake (SNI) of the
-FRITZ!Box capture, which shows connections instead of lookups (see "Open / next" in
-[DEVELOPMENT.md](DEVELOPMENT.md)). QUIC/HTTP3 would still be missing from it.
+A more precise source is the server name from the TLS and QUIC handshakes in the
+FRITZ!Box capture, which shows connections instead of lookups - see "Measured connections"
+above (needs snaplen ≈ 600).
 
 ---
 

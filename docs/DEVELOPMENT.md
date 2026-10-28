@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 413, must be green)
+python3 -m pytest tests -q                    # all tests (currently 420, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -55,6 +55,7 @@ backend/
     pcapstream.py         pcap / pcap-modified / pcapng parser
     flows.py              packet analysis, flows, retransmissions, TLS server name of each flow
     tls.py                server name (SNI) from a ClientHello, "truncated" when the snaplen cut it
+    quic.py               the same for QUIC: decrypts the client's Initial packets (RFC 9001)
     fritzbox.py           TR-064 + capture_notimeout
     pihole.py             FTL DB read-only (lag context per minute)
     ftl_queries.py        FTL query log read-only, v5/v6 schema, time ranges on the index only
@@ -151,12 +152,10 @@ Do not walk into them again - the tests for them are there on purpose.
 
 ## Open / next
 
-* SNI is read from the TLS ClientHello (`collectors/tls.py`, column `network_flows.sni`,
-  sessions in `analysis/connections.py`) - but only with `fritzbox.snaplen` ≈ 600; the
-  default 128 cuts the name off. Decide whether to raise the default once the extra
-  capture load on the Pi is measured.
-* QUIC/HTTP3 (UDP 443) is not covered by the SNI approach - either decrypt Initial
-  packets (RFC 9001) or block UDP 443 and force the TCP fallback.
+* SNI is read from the TLS ClientHello and the QUIC Initial packets (`collectors/tls.py`,
+  `collectors/quic.py`, column `network_flows.sni`, sessions in `analysis/connections.py`) -
+  but only with `fritzbox.snaplen` ≈ 600; the default 128 cuts the name off. Decide
+  whether to raise the default once the extra capture load on the Pi is measured.
 
 ## Notes
 

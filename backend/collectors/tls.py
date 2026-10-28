@@ -6,7 +6,8 @@ enough of each packet: the name often sits 200-500 bytes into the payload (brows
 shuffle the extensions), so with the default snaplen of 128 bytes it is cut off. Then
 `parse_sni` says "truncated", and the UI can tell the user to raise the snaplen.
 
-QUIC (HTTP/3 over UDP 443) encrypts its ClientHello; it is not covered.
+QUIC (HTTP/3 over UDP 443) carries the same ClientHello, without the record header, in
+its Initial packets - `quic.py` decrypts those and hands the result to `parse_sni_handshake`.
 """
 from __future__ import annotations
 
@@ -21,7 +22,18 @@ def parse_sni(p: bytes) -> str | None:
     # TLS record: type 22 (handshake), version 3.x; handshake type 1 (ClientHello)
     if len(p) < 6 or p[0] != 0x16 or p[1] != 0x03 or p[5] != 0x01:
         return None
-    i = 5 + 4 + 2 + 32                   # handshake header, client version, random
+    return _client_hello(p, 5)
+
+
+def parse_sni_handshake(p: bytes) -> str | None:
+    """`p` = the handshake stream from offset 0 (QUIC CRYPTO frames), no record header."""
+    if not p or p[0] != 0x01:
+        return None
+    return _client_hello(p, 0)
+
+
+def _client_hello(p: bytes, start: int) -> str | None:
+    i = start + 4 + 2 + 32               # handshake header, client version, random
     try:
         if len(p) < i + 1:
             return TRUNCATED
