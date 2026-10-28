@@ -1,6 +1,8 @@
 """Notifications: state, the last messages, and a test message to every configured channel."""
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, HTTPException, Request
 
 from ..analysis.alerts import Message
@@ -25,3 +27,19 @@ async def notify_test(request: Request):
     res = await core._send(Message("test", "Test message",
                                    "If you can read this, notifications from the Network Lag Analyzer arrive.", "default", "test"))
     return {"result": res}
+
+
+@router.get("/report")
+async def weekly_report_preview(request: Request):
+    """The weekly report as it would be sent now - without sending it."""
+    core = request.app.state.core
+    r = await core.weekly_report(time.time())
+    return {"title": r["title"], "text": r["text"], "start": r["start"], "end": r["end"]}
+
+
+@router.post("/report")
+async def weekly_report_send(request: Request):
+    core = request.app.state.core
+    if not nt.channels(core.cfg.notify):
+        raise HTTPException(400, "No channel configured - enter an ntfy address, a Telegram bot or an SMTP server first.")
+    return {"result": await core.send_weekly_report(time.time())}

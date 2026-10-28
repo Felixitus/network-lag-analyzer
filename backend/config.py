@@ -154,6 +154,10 @@ class NotifyCfg(BaseModel):
     new_device: bool = True
     pi_health: bool = True
     line: bool = True
+    # A summary of the past week: outages, worst hours, new devices, DNS signs
+    weekly_report: bool = True
+    weekly_day: int = Field(0, ge=0, le=6)               # 0 = Monday
+    weekly_hour: int = Field(8, ge=0, le=23)
 
     @field_validator("ntfy_url")
     @classmethod
