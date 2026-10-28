@@ -13,7 +13,7 @@ from collections import deque
 from typing import Any
 
 from . import __version__
-from .analysis import backfill, bufferbloat, daily, line, overview, pi_health, presence, weekly
+from .analysis import backfill, bufferbloat, daily, line, overview, path, pi_health, presence, weekly
 from .analysis.alerts import Alerts, Message
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report, dismiss_reason
@@ -28,6 +28,7 @@ from .collectors.fritzbox import FritzClient, FritzError
 from .collectors.ftl_queries import FtlQueryLog
 from .collectors.pihole import PiholeReader, read_dhcp_leases
 from .collectors.ping import IcmpProber, ProbeScheduler, ProbeTarget
+from .collectors.traceroute import Tracer
 from .config import Config, build_config, fritz_target, load_yaml
 from .database import repository as repo
 from .database.repository import Database
@@ -131,6 +132,8 @@ class Core:
         self._last_bloat = 0
         self.db_guard: dict | None = None      # state of the size limit, for /api/status
         self.clock_jumps: list[dict] = []      # detected jumps of the system clock
+        self.tracer = Tracer()
+        self._trace_last: dict[int, float] = {}  # target id → start of its last automatic path measurement
         self.loop: asyncio.AbstractEventLoop | None = None
         self.simulator = None
         self.setup_done = False
@@ -1084,6 +1087,8 @@ class Core:
         self.db.enqueue(self.INCIDENT_SQL, self._incident_params(inc))
         self._remember_incident(inc)
         self.broadcaster.publish("incident", inc.to_dict() | {"state": "open"})
+        # Measured now, while the problem is on: a traceroute after it is over shows a clean path.
+        self.start_traces("incident")
 
     def _incident_closed(self, inc: Incident, events: list[Event]) -> None:
         protected = self._protect_pcap_for(inc, events)
@@ -1194,6 +1199,7 @@ class Core:
                        confidence=result["confidence"], analysis=result,
                        session_id=self.gaming.id if self.gaming else None)
         inc.title = "Lag reported"
+        self.start_traces("report")
         protected = False
         if self.cfg.deep_capture.enabled and self.capture_proc is not None:
             self.capture_command("protect", reported - 300, reported, inc.id)
@@ -1638,6 +1644,45 @@ class Core:
                 except OSError:
                     pass
             log.warning("Removed %d orphaned PCAP files (%.0f MB)", len(orphans), freed / 1e6)
+
+    # ================================================================== path measurement
+    def trace_targets(self) -> list[dict]:
+        if not self.scheduler:
+            return []
+        return [{"target_id": t.target_id, "address": t.resolved or t.address, "kind": t.kind, "name": t.name}
+                for t in self.scheduler.targets]
+
+    def start_traces(self, reason: str) -> None:
+        """Automatic path measurement to the worst targets of the moment, in the background."""
+        tc = self.cfg.traceroute
+        if not tc.enabled or self.cfg.dev_mode or self.loadguard.level >= 2 or self.tracer.busy or self.loop is None:
+            return
+        now = time.time()
+        picks = [t for t in path.pick_targets(self.trace_targets(), self.rows_between(now - 15, now), tc.targets)
+                 if now - self._trace_last.get(t["target_id"], 0) >= tc.min_interval_s]
+        if not picks:
+            return
+        for t in picks:
+            self._trace_last[t["target_id"]] = now
+        self.tasks = [t for t in self.tasks if not t.done()]
+        self.tasks.append(self.loop.create_task(self.run_traces(picks, reason), name="traceroute"))
+
+    async def run_traces(self, picks: list[dict], reason: str) -> list[dict]:
+        tc = self.cfg.traceroute
+        self.tracer.rounds, self.tracer.max_hops = tc.rounds, tc.max_hops
+        out = []
+        for t in picks:
+            try:
+                r = await self.tracer.trace(t["address"])
+                r["id"] = await self.db.write(lambda c, r=r, t=t: repo.save_trace(c, reason, t["target_id"], r))
+                r.update(target_id=t["target_id"], reason=reason)
+                v = path.assess(r)
+                log.info("Path measurement to %s (%s): %s", t.get("name") or t["address"], reason,
+                         v["findings"][0] if v["findings"] else v["verdict"])
+                out.append(r)
+            except Exception:  # noqa: BLE001 - one failed measurement must not stop the others
+                log.exception("Path measurement to %s failed", t["address"])
+        return out
 
     async def _system_loop(self) -> None:
         last_health = 0.0

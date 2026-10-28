@@ -248,3 +248,17 @@ def test_enabled_deep_capture_keeps_the_running_ring_files(tmp_path):
         assert len(list(d.glob("*.pcap"))) == 3
     finally:
         core.db.close()
+
+
+def test_files_keep_only_the_headers_even_when_the_capture_sends_more(tmp_path):
+    """snaplen 600 is for reading server names; on the SD card it would be 4× the writes
+    and the start of every packet's content."""
+    import struct
+    r = ring(tmp_path, keep=128)
+    r.write(1_700_000_000.0, bytes(range(256)) * 3, 1514, 1)
+    r.close()
+    (f,) = tmp_path.glob("*.pcap")
+    raw = f.read_bytes()
+    assert struct.unpack_from("<I", raw, 16)[0] == 128                   # snaplen in the file header
+    incl, orig = struct.unpack_from("<II", raw, 24 + 8)
+    assert (incl, orig) == (128, 1514) and len(raw) == 24 + 16 + 128

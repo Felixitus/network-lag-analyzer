@@ -1,7 +1,7 @@
 // Incident list and detail view.
 import { api, clear, CONF_LABEL, confBadge, deviceColor, EVENT_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtMbit, fmtMs, fmtRate, fmtTime, h, SERIES, ago } from '../lib.js';
 import { chartCard, fmt, timeChart } from '../charts.js';
-import { buildMarkers, latencyUnderLoad, segmented } from './common.js';
+import { buildMarkers, latencyUnderLoad, pathView, segmented, upstreamTable } from './common.js';
 
 export async function mount(main, ctx) {
   if (ctx.route === 'incident' || ctx.args[0]) return detail(main, parseInt(ctx.args[0] || ctx.args[1], 10));
@@ -144,6 +144,19 @@ async function detail(main, id) {
       h('div', { class: 'card-head' }, h('h2', null, 'Latency under load'),
         h('span', { class: 'sub' }, 'Extra ping compared to a quiet line, within the analysis window')),
       latencyUnderLoad(m.latency_under_load, { showAdvice: true })));
+  }
+
+  if ((d.traceroutes || []).length) {
+    main.append(h('div', { class: 'card stack', style: { marginTop: '16px' } },
+      h('div', { class: 'card-head' }, h('h2', null, 'Path to the target'),
+        h('span', { class: 'sub' }, 'traceroute measured while the incident was on')),
+      ...d.traceroutes.map(pathView)));
+  }
+  if (d.dns_upstreams && d.dns_upstreams.available && d.dns_upstreams.servers.length) {
+    main.append(h('div', { class: 'card stack', style: { marginTop: '16px' } },
+      h('div', { class: 'card-head' }, h('h2', null, 'Upstream DNS servers'),
+        h('span', { class: 'sub' }, "reply times from Pi-hole's log, one minute around the incident")),
+      upstreamTable(d.dns_upstreams.servers)));
   }
 
   // ---------------------------------------------------------------- chart of the time window

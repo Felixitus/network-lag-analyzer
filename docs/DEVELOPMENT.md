@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 429, must be green)
+python3 -m pytest tests -q                    # all tests (currently 444, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -51,6 +51,7 @@ backend/
   config.py               Pydantic models, EDITABLE_SECTIONS, CONFIG_ALIASES
   collectors/
     ping.py               ICMP, one socket, kernel timestamps, probes spread over the interval
+    traceroute.py         path measurement (mtr style): raw ICMP socket, rising TTL, loss per hop
     traffic.py            capture process (separate process!), PcapRing
     pcapstream.py         pcap / pcap-modified / pcapng parser
     flows.py              packet analysis, flows, retransmissions, TLS server name of each flow
@@ -68,6 +69,7 @@ backend/
     correlation.py        incidents, lag report, timeline
     root_cause.py         cause rules + recommendations
     bufferbloat.py        latency under load per direction
+    path.py               reading a path measurement: where losses begin, which targets to measure
     daily.py              daily summary (long-term)
     dns_clients.py        DNS query → device attribution (mac / ip / local) + own IP history
     dns_ingest.py         FTL log → hourly/daily counters per device, crash-safe position
@@ -82,6 +84,7 @@ backend/
     pi_health.py          the Pi itself (sysfs/procfs, no root), and where LAN losses lie
     presence.py           when which device was in the network, new and unnamed devices
     dns_bypass.py         signs that a device resolves names past Pi-hole
+    dns_upstreams.py      reply times per upstream DNS server, from FTL's reply_time
     connections.py        measured sessions per service from the TLS server names
     category_usage.py     categories per device: lookups, active hours, estimates - kept apart
     backfill.py           fills gaps afterwards from Pi-hole's log (DNS minutes, presence by DNS hours)
@@ -91,7 +94,8 @@ backend/
     migrations.py         numbered steps, backup copy before rebuilding
     backup.py             automatic, checked backups with rotation (only backup-auto-* files)
     repository.py         writer thread, enc/dec, aggregation, retention
-  api/                    FastAPI + SSE (dns.py: DNS usage per device, dns_export.py: CSV/XLSX)
+  api/                    FastAPI + SSE (dns.py: DNS usage per device, dns_export.py: CSV/XLSX,
+                          paths.py: path measurements)
     security.py           mandatory login, server-side sessions, CSRF, headers
     auth.py               login/logout/password change, /api/health
   account.py              CLI: create the login account on the Pi (never via the web UI)
@@ -156,10 +160,11 @@ Do not walk into them again - the tests for them are there on purpose.
 
 ## Open / next
 
-* SNI is read from the TLS ClientHello and the QUIC Initial packets (`collectors/tls.py`,
-  `collectors/quic.py`, column `network_flows.sni`, sessions in `analysis/connections.py`) -
-  but only with `fritzbox.snaplen` ≈ 600; the default 128 cuts the name off. Decide
-  whether to raise the default once the extra capture load on the Pi is measured.
+* `fritzbox.snaplen` is 600 since the server names (TLS, QUIC) need it. Measured on the Pi 4
+  (5 min each, 2026-10-28): service CPU 8.0 % of one core at 128 and at 600, capture input
+  93 → 298 KiB/s, PCAP ring writes 126 → 331 KiB/s (10 → 27 GB/day) - hence
+  `deep_capture.snaplen` = 128, which keeps the writes where they were. Watch the capture
+  input on busy evenings; the load guard throttles if parsing falls behind.
 
 ## Notes
 

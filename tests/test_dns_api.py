@@ -330,3 +330,21 @@ def test_dns_bypass_api_flags_a_device_pihole_never_saw(client):
     flagged = [d for d in r["devices"] if d["level"] == "bypassing"]
     assert flagged and any("never asked Pi-hole" in x for d in flagged for x in d["reasons"])
     assert r["counts"]["bypassing"] == len(flagged) and "not proof" in r["note"]
+
+
+def test_upstream_reply_times_come_from_the_demo_log_and_need_no_extra_queries(client):
+    _wait_for_dns_demo(client)
+    r = client.get("/api/dns/upstreams").json()
+    assert r["available"] is True and r["bucket"] == 3600
+    by = {s["upstream"]: s for s in r["servers"]}
+    assert set(by) == {"192.0.2.53", "198.51.100.53"}
+    assert by["192.0.2.53"]["median_ms"] < by["198.51.100.53"]["median_ms"]
+    assert all(s["answered"] <= s["forwarded"] and s["series"] for s in r["servers"])
+    assert client.get(f"/api/dns/upstreams?start={time.time() - 40 * 86400}").status_code == 400
+
+
+def test_path_measurements_are_listed_but_not_run_on_demo_data(client):
+    r = client.get("/api/traceroutes").json()
+    assert r["traceroutes"] == [] and r["enabled"] is True
+    resp = client.post("/api/traceroutes", json={"target_id": 1}, headers=csrf(client))
+    assert resp.status_code == 400 and "demo mode" in resp.json()["detail"]

@@ -206,7 +206,8 @@ def _is_real(conn: sqlite3.Connection, table: str, column: str) -> bool:
 
 # (version, description, function) - sorted ascending.
 # Versions 4 (DNS usage tables), 5 (activity minutes), 6 (login sessions), 7 (internet line),
-# 8 (Pi health) and 9 (presence) only add new tables, which SCHEMA creates after the steps.
+# 8 (Pi health), 9 (presence) and 14 (path measurements) only add new tables, which SCHEMA
+# creates after the steps.
 STEPS: list[tuple[int, str, object]] = [
     (3, "More compact storage (INTEGER units, device_id, slim device_traffic)",
      _v3_compact_storage),

@@ -19,6 +19,25 @@ versions follow [SemVer](https://semver.org/).
   without data says so. The settings page previews the report and can send it at once.
   If the Pi is off at that hour, the report follows when it is back the same day.
 
+- **Path measurement at incidents** (traceroute in the style of mtr): when an incident starts
+  or a lag is reported, the Pi measures the path to the worst targets of the moment - every
+  hop ten times - and the incident shows from which hop on packets are lost or delayed, and
+  whether that hop is in your network, usually your provider's, or further along. A hop that
+  only drops traceroute answers while later hops are fine is said to be harmless. At most
+  one automatic measurement per target every 5 minutes, none at load guard level 2 or
+  higher; the internet line page can start one by hand.
+- **Upstream DNS servers**: how fast the servers behind Pi-hole answer (median, 95 %, slowest,
+  queries without a recorded reply), read from Pi-hole's own log - nothing extra is sent.
+  On the DNS page as a table and chart per server, and with each incident for the minute
+  around it.
+
+### Changed
+- **The FRITZ!Box capture now sends 600 bytes per packet by default** (was 128), so that the
+  server names of TLS and QUIC connections are readable out of the box. The PCAP files of
+  the deep capture still keep only 128 bytes per packet (`deep_capture.snaplen`): the rest
+  is read in memory and never written to the SD card. A snaplen set in the UI or in
+  `config.yaml` stays as it is.
+
 ### Fixed
 - Stopping or restarting the service no longer hangs for 20 s until systemd kills the
   capture process: SIGTERM now interrupts a read of the FRITZ!Box capture stream at once,

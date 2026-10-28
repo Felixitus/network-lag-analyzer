@@ -138,9 +138,8 @@ sessions (a pause of more than 2 minutes ends one), how long a connection was op
 how many bytes went through - measured, not estimated.
 
 Limits, shown on the page: the name is only readable with **snaplen ≈ 600** (Setup →
-FRITZ!Box; the default 128 cuts it off, which costs about 4× capture data for full-size
-packets), connections are kept 7 days (`retention.flow_days`). A connection being open is
-not a person watching.
+FRITZ!Box, the default since this version; 128 cuts it off), connections are kept 7 days
+(`retention.flow_days`). A connection being open is not a person watching.
 
 QUIC (HTTP/3 over UDP 443, used heavily by YouTube and Google) encrypts its ClientHello,
 but with keys that RFC 9001 derives from the packet itself - on purpose, any observer can.
@@ -215,7 +214,7 @@ log in the background (about 3 minutes on the test Pi); the page says so meanwhi
 
 A more precise source is the server name from the TLS and QUIC handshakes in the
 FRITZ!Box capture, which shows connections instead of lookups - see "Measured connections"
-above (needs snaplen ≈ 600).
+above.
 
 ---
 

@@ -9,18 +9,20 @@ domain carries the rule, the rule layer and the confidence that produced it.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from ..analysis import activity, category_usage as cu, client_match, dns_bypass, dns_usage as usage
+from ..analysis import activity, category_usage as cu, client_match, dns_bypass, dns_upstreams, dns_usage as usage
 from ..analysis.categories import normalize_domain, valid_domain
-from ..collectors.ftl_queries import STATUS_TEXT, outcome
+from ..collectors.ftl_queries import STATUS_TEXT, FtlQueryLog, outcome
 from ..database import repository as repo
 
 router = APIRouter(prefix="/api/dns")
+log = logging.getLogger(__name__)
 
 NOTE = ("Counts of DNS queries logged by Pi-hole. They show that a device looked up a name, "
         "not how long or how much it used the service. Lookups that bypass Pi-hole "
@@ -682,3 +684,41 @@ async def delete_rule(request: Request, domain: str):
     core.reload_classifier(overrides)
     _invalidate()
     return {"domain": d, **core.classifier.classify(d).to_dict()}
+
+
+# ===================================================================== upstream servers
+UPSTREAM_MAX_RANGE = 31 * 86400
+
+
+def upstream_bucket(span: float) -> int:
+    return 300 if span <= 6 * 3600 else 3600 if span <= 3 * 86400 else 6 * 3600
+
+
+def ftl_log(core) -> FtlQueryLog | None:
+    if core.dns_usage is not None:
+        return core.dns_usage.ftl
+    return FtlQueryLog(core.cfg.pihole.ftl_db) if core.cfg.pihole.enabled else None
+
+
+async def upstream_report(core, start: float, end: float) -> dict:
+    """Reply times per upstream server in [start, end). Raises nothing: a failure is `error`."""
+    ftl = ftl_log(core)
+    if ftl is None:
+        return {"available": False, "error": "Not available: Pi-hole integration disabled"}
+    try:
+        rows = await asyncio.to_thread(ftl.forwarded, start, end)
+    except Exception as e:  # noqa: BLE001 - FTL busy, unreadable, or not an FTL database
+        log.warning("Upstream reply times not readable: %s", e)
+        return {"available": False, "error": "Not available: Pi-hole's query log is not readable right now"}
+    if rows is None:
+        return {"available": False, "error": "Not available: this Pi-hole version records no reply times"}
+    return {"available": True, **dns_upstreams.summarize(rows, start, end, time.time(), upstream_bucket(end - start))}
+
+
+@router.get("/upstreams")
+async def upstreams(request: Request, start: float | None = Query(None), end: float | None = Query(None)):
+    core = core_of(request)
+    start, end = _range(start, end)
+    if end - start > UPSTREAM_MAX_RANGE:
+        raise HTTPException(400, "Range too long - at most 31 days")
+    return await _cached(("upstreams", round(start) // 60, round(end) // 60), lambda: upstream_report(core, start, end))

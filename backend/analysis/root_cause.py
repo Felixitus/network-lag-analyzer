@@ -613,8 +613,8 @@ RECOMMENDATIONS: dict[str, dict] = {
         "steps": [
             "Only one target was affected - your own line and the router were fine.",
             "If it is the game or matchmaking server: choose another server or region.",
-            "Otherwise no local action makes sense; if the pattern repeats, a traceroute to the target "
-            "during the problem helps.",
+            "Otherwise no local action makes sense. The path measurement of this incident (below) shows "
+            "from which hop on packets were lost.",
         ],
     },
     "game_server": {

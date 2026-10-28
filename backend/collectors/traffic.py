@@ -40,7 +40,11 @@ PACKET_MR_PROMISC = 1
 
 
 class PcapRing:
-    """Ring buffer of pcap files (headers only thanks to snaplen).
+    """Ring buffer of pcap files, headers only.
+
+    `keep` bytes of each packet go to disk, independent of the snaplen of the capture:
+    the analysis needs ~600 bytes to read TLS and QUIC server names, but on the SD card
+    that would be four times the writes - and the start of every packet's content.
 
     Two budgets, both hard:
 
@@ -61,7 +65,8 @@ class PcapRing:
     """
 
     def __init__(self, directory: str, max_files: int, file_size: int, emit,
-                 max_total: int = 0, protected_paths: Iterable[str] = ()):
+                 max_total: int = 0, protected_paths: Iterable[str] = (), keep: int = 128):
+        self.keep = keep
         self.dir = Path(directory)
         self.dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.dir, 0o750)
@@ -121,7 +126,7 @@ class PcapRing:
     def write(self, ts: float, data: bytes, orig_len: int, linktype: int) -> None:
         if self.fh is None or self.cur is None or self.cur["size"] >= self.file_size or linktype != self.linktype:
             self._rotate(ts, linktype)
-        rec = pcap_record(ts, data, orig_len)
+        rec = pcap_record(ts, data[:self.keep], orig_len)
         self.fh.write(rec)
         self.cur["size"] += len(rec)
         self.cur["ts_end"] = ts
@@ -133,7 +138,7 @@ class PcapRing:
         path = self.dir / name
         self.fh = open(path, "wb", buffering=1024 * 1024)
         os.chmod(path, 0o640)
-        self.fh.write(pcap_global_header(linktype))
+        self.fh.write(pcap_global_header(linktype, self.keep))
         self.cur = {"path": str(path), "ts_start": ts, "ts_end": ts, "size": 24, "protected": False}
         self.files.append(self.cur)
         self.emit(("pcap", {"op": "new", **self.cur}))
@@ -397,7 +402,7 @@ class CaptureWorker:
             self.ring = PcapRing(os.path.join(self.cfg["data_dir"], "pcap"), dc["max_files"],
                                  dc["file_size_mb"] * 1024 * 1024, self.emit,
                                  max_total=dc.get("max_total_mb", 0) * 1024 * 1024,
-                                 protected_paths=self.cfg.get("protected_pcaps") or ())
+                                 protected_paths=self.cfg.get("protected_pcaps") or (), keep=dc.get("snaplen", 128))
         elif not on and self.ring is not None:
             self.ring.close()
             self.ring = None

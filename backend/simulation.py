@@ -210,7 +210,11 @@ CREATE TABLE IF NOT EXISTS network (id INTEGER PRIMARY KEY NOT NULL, hwaddr TEXT
   macVendor TEXT, aliasclient_id INTEGER);
 CREATE TABLE IF NOT EXISTS network_addresses (network_id INTEGER NOT NULL, ip TEXT UNIQUE NOT NULL,
   lastSeen INTEGER NOT NULL, name TEXT, nameUpdated INTEGER);
+CREATE TABLE IF NOT EXISTS forward_by_id (id INTEGER PRIMARY KEY, forward TEXT NOT NULL);
 """
+# Demo upstreams (documentation addresses): a quick one, and a slower one that now and then
+# leaves a query without reply.
+_DEMO_UPSTREAMS = ((1, "192.0.2.53#53", 14.0, 0.002), (2, "198.51.100.53#53", 38.0, 0.03))
 # service → (domains, fixed status or None). Status 1 = blocked, 2 = forwarded, 3 = cached.
 _SERVICES = {
     "steam": (["store.steampowered.com", "steamcommunity.com", "cdn.steamstatic.com", "api.steampowered.com"], None),
@@ -289,8 +293,17 @@ def build_demo_ftl(path: str, now: float, days: float = 8) -> None:
             c.execute("INSERT OR IGNORE INTO client_by_id (ip, name) VALUES (?, NULL)", (ip,))
         dom = {d: i for i, d in c.execute("SELECT id, domain FROM domain_by_id")}
         cli = {ip: i for i, ip in c.execute("SELECT id, ip FROM client_by_id")}
-        c.executemany("INSERT INTO query_storage (timestamp, type, status, domain, client) VALUES (?,1,?,?,?)",
-                      [(ts, st, dom[d], cli[ip]) for ts, ip, d, st in rows])
+        c.executemany("INSERT OR IGNORE INTO forward_by_id (id, forward) VALUES (?,?)",
+                      [(i, f) for i, f, _ms, _lost in _DEMO_UPSTREAMS])
+
+        def fwd(st: int) -> tuple:
+            if st != 2:
+                return (None, None)
+            i, _f, ms, lost = rng.choice(_DEMO_UPSTREAMS)
+            return (i, None if rng.random() < lost else rng.lognormvariate(0, 0.5) * ms / 1000)
+        c.executemany("INSERT INTO query_storage (timestamp, type, status, domain, client, forward, reply_time) "
+                      "VALUES (?,1,?,?,?,?,?)",
+                      [(ts, st, dom[d], cli[ip], *fwd(st)) for ts, ip, d, st in rows])
         c.execute("UPDATE network_addresses SET lastSeen = ?", (int(now),))
         c.commit()
     finally:

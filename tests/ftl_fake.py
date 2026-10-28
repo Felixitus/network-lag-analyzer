@@ -21,6 +21,7 @@ CREATE TABLE domain_by_id (id INTEGER PRIMARY KEY, domain TEXT NOT NULL);
 CREATE UNIQUE INDEX domain_by_id_domain_idx ON domain_by_id(domain);
 CREATE TABLE client_by_id (id INTEGER PRIMARY KEY, ip TEXT NOT NULL, name TEXT);
 CREATE UNIQUE INDEX client_by_id_client_idx ON client_by_id(ip,name);
+CREATE TABLE forward_by_id (id INTEGER PRIMARY KEY, forward TEXT NOT NULL);
 CREATE VIEW queries AS SELECT q.id, q.timestamp, q.status, d.domain, c.ip AS client
   FROM query_storage q LEFT JOIN domain_by_id d ON q.domain = d.id LEFT JOIN client_by_id c ON q.client = c.id;
 """
@@ -60,6 +61,21 @@ class FakeFtl:
             cid = self.c.execute("SELECT id FROM client_by_id WHERE ip=? AND name IS ?", (ip, name)).fetchone()[0]
             self.c.execute("INSERT INTO query_storage (timestamp, type, status, domain, client) VALUES (?,1,?,?,?)",
                            (int(ts), status, did, cid))
+        self.c.commit()
+        return self
+
+    def forwarded(self, rows):
+        """Forwarded queries: (ts, upstream "ip#port", reply time in seconds or None)."""
+        for ts, fwd, reply in rows:
+            if self.legacy:
+                self.c.execute("INSERT INTO queries (timestamp, type, status, domain, client, forward) "
+                               "VALUES (?,1,2,'example.com','192.0.2.10',?)", (int(ts), fwd))
+                continue
+            r = self.c.execute("SELECT id FROM forward_by_id WHERE forward=?", (fwd,)).fetchone()
+            fid = r[0] if r else self.c.execute("INSERT INTO forward_by_id (forward) VALUES (?)", (fwd,)).lastrowid
+            self.add([(ts, "192.0.2.10", "example.com", 2)])
+            self.c.execute("UPDATE query_storage SET forward=?, reply_time=? WHERE id=(SELECT MAX(id) FROM query_storage)",
+                           (fid, reply))
         self.c.commit()
         return self
 

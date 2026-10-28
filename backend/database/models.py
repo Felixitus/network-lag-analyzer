@@ -19,7 +19,7 @@ This was not changed for tidiness: on a Raspberry Pi every write saved
 goes straight into the lifetime of the SD card.
 """
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -399,4 +399,30 @@ CREATE TABLE IF NOT EXISTS pcap_files (
     protected   INTEGER NOT NULL DEFAULT 0,
     incident_id INTEGER
 );
+
+-- Path measurements. Shown with the incidents whose time they overlap, so they need no
+-- incident id: an incident can still be dismissed while its measurement is running.
+CREATE TABLE IF NOT EXISTS traceroutes (
+    id        INTEGER PRIMARY KEY,
+    ts        REAL NOT NULL,
+    reason    TEXT NOT NULL,              -- incident | report | manual
+    target_id INTEGER,
+    address   TEXT NOT NULL,
+    reached   INTEGER NOT NULL,
+    duration  REAL,
+    error     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_traceroutes_ts ON traceroutes(ts);
+
+CREATE TABLE IF NOT EXISTS traceroute_hops (
+    trace_id INTEGER NOT NULL,
+    ttl      INTEGER NOT NULL,
+    ip       TEXT,                        -- NULL: no answer
+    sent     INTEGER NOT NULL,
+    received INTEGER NOT NULL,
+    rtt_avg  INTEGER,                     -- 1/100 ms
+    rtt_min  INTEGER,
+    rtt_max  INTEGER,
+    PRIMARY KEY (trace_id, ttl)
+) WITHOUT ROWID;
 """
