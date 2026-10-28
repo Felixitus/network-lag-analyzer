@@ -12,7 +12,12 @@ import httpx
 
 
 class PiholeApiError(RuntimeError):
-    pass
+    """`kind` says what went wrong (no_password | rejected | no_session | http); the text adds details
+    for the log. The web UI shows a fixed text per kind (api/pihole.py), never the details."""
+
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
 
 
 class PiholeApi:
@@ -28,14 +33,14 @@ class PiholeApi:
 
     def _session(self, c: httpx.Client) -> str:
         if not self.password:
-            raise PiholeApiError("No Pi-hole app password configured")
+            raise PiholeApiError("no_password", "No Pi-hole app password configured")
         r = c.post(f"{self.base}/auth", json={"password": self.password})
         if r.status_code == 401:
-            raise PiholeApiError("Pi-hole rejected the app password")
+            raise PiholeApiError("rejected", "Pi-hole rejected the app password")
         r.raise_for_status()
         sid = ((r.json() or {}).get("session") or {}).get("sid")
         if not sid:
-            raise PiholeApiError("Pi-hole gave no session")
+            raise PiholeApiError("no_session", "Pi-hole gave no session")
         return sid
 
     def call(self, method: str, path: str, json: dict | None = None, timeout: float | None = None) -> dict:
@@ -50,7 +55,7 @@ class PiholeApi:
                         msg = (r.json().get("error") or {}).get("message") or ""
                     except ValueError:
                         pass
-                    raise PiholeApiError(f"Pi-hole answered HTTP {r.status_code} {msg}".strip())
+                    raise PiholeApiError("http", f"Pi-hole answered HTTP {r.status_code} {msg}".strip())
                 try:
                     return r.json() if r.content else {}
                 except ValueError:
