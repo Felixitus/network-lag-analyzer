@@ -27,15 +27,25 @@ def _api(core) -> PiholeApi:
     return PiholeApi(p.api_url, p.api_password)
 
 
-def _error_text(e: Exception) -> str:
-    """What the browser may see of a failure: our own Pi-hole messages, else only the kind of error.
+PUBLIC_ERRORS = {
+    "no_password": "No Pi-hole app password configured",
+    "rejected": "Pi-hole rejected the app password",
+    "no_session": "Pi-hole gave no session",
+    "http": "Pi-hole refused the request - details in the log",
+}
 
-    Texts of other exceptions can carry internal details (paths, addresses, library internals);
-    they go to the log only."""
+
+def _error_text(e: Exception) -> str:
+    """What the browser may see of a failure: a fixed text per kind of error, nothing of the exception.
+
+    Exception texts can carry internal details (paths, addresses, library internals, an error
+    message from Pi-hole); they go to the log only."""
+    log.warning("Pi-hole API call failed: %s", e, exc_info=not isinstance(e, PiholeApiError))
     if isinstance(e, PiholeApiError):
-        return str(e)[:200]
-    log.warning("Pi-hole API call failed", exc_info=e)
-    return f"{type(e).__name__} - Pi-hole not reachable, details in the log"
+        for kind, text in PUBLIC_ERRORS.items():
+            if e.kind == kind:
+                return text
+    return "Pi-hole not reachable - details in the log"
 
 
 async def _do(request: Request, action: str, fn, **detail):
@@ -112,7 +122,7 @@ async def domain_state(request: Request, name: str):
     try:
         return await asyncio.to_thread(_api(core).domain_state, d)
     except PiholeApiError as e:
-        raise HTTPException(502, str(e)) from None
+        raise HTTPException(502, _error_text(e)) from None
 
 
 @router.post("/blocking")

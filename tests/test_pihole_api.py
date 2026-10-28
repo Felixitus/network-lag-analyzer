@@ -130,5 +130,7 @@ def test_failures_show_our_own_text_but_never_internal_details(client, monkeypat
     monkeypatch.setattr(mod, "PiholeApi", lambda url, pw: Broken())
     client.app.state.core.cfg.pihole.api_enabled = True
     err = client.get("/api/pihole/state").json()["error"]
-    assert err.startswith("OSError") and "secret" not in err and "Errno" not in err
-    assert mod._error_text(mod.PiholeApiError("Pi-hole rejected the app password")) == "Pi-hole rejected the app password"
+    assert err == "Pi-hole not reachable - details in the log"
+    assert mod._error_text(mod.PiholeApiError("rejected", "x")) == "Pi-hole rejected the app password"
+    # Pi-hole's own error message stays in the log as well
+    assert mod._error_text(mod.PiholeApiError("http", "Pi-hole answered HTTP 400 /opt/x")) == mod.PUBLIC_ERRORS["http"]
