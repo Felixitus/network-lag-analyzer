@@ -306,6 +306,37 @@ def decode_line(row) -> dict:
     return d
 
 
+# ------------------------------------------------- path measurements
+def save_trace(conn: sqlite3.Connection, reason: str, target_id: int | None, t: dict) -> int:
+    cur = conn.execute("INSERT INTO traceroutes(ts, reason, target_id, address, reached, duration, error) "
+                       "VALUES (?,?,?,?,?,?,?)", (t["ts"], reason, target_id, t["address"], int(bool(t.get("reached"))),
+                                                  t.get("duration_s"), t.get("error")))
+    tid = cur.lastrowid
+    conn.executemany("INSERT INTO traceroute_hops(trace_id, ttl, ip, sent, received, rtt_avg, rtt_min, rtt_max) "
+                     "VALUES (?,?,?,?,?,?,?,?)",
+                     [(tid, h["ttl"], h.get("ip"), h["sent"], h["received"], enc(h.get("rtt_avg"), "rtt_avg"),
+                       enc(h.get("rtt_min"), "rtt_min"), enc(h.get("rtt_max"), "rtt_max")) for h in t.get("hops") or []])
+    return tid
+
+
+def load_traces(conn: sqlite3.Connection, t0: float | None = None, t1: float | None = None, limit: int = 20) -> list[dict]:
+    """Measurements started in [t0, t1], newest first, each with its hops (milliseconds)."""
+    rows = conn.execute("SELECT * FROM traceroutes WHERE ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT ?",
+                        (t0 or 0, t1 if t1 is not None else 1e12, limit)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["reached"] = bool(d["reached"])
+        d["hops"] = []
+        for h in conn.execute("SELECT * FROM traceroute_hops WHERE trace_id=? ORDER BY ttl", (d["id"],)):
+            h = decode_row(h)
+            h.pop("trace_id", None)
+            h["loss_pct"] = round(100 * (h["sent"] - h["received"]) / h["sent"], 1) if h["sent"] else None
+            d["hops"].append(h)
+        out.append(d)
+    return out
+
+
 # ------------------------------------------------- the Pi itself
 PI_COLS = ("boot_ts", "temp", "cpu_pct", "mem_avail_mb", "swap_used_mb", "disk_free_mb", "undervolt", "carrier",
            "speed_mbit", "carrier_changes", "rx_errors", "tx_errors", "sd_written_mb", "pihole_active")
@@ -469,6 +500,9 @@ def apply_retention(conn: sqlite3.Connection, now: float, ret: Any) -> dict[str,
         ("device_presence", "DELETE FROM device_presence WHERE ts_end < ?", now - ret.event_days * day),
         ("fritz_events", "DELETE FROM fritz_events WHERE ts < ?", now - ret.line_days * day),
         ("incidents", "DELETE FROM incidents WHERE ts_start < ?", now - ret.event_days * day),
+        ("traceroute_hops", "DELETE FROM traceroute_hops WHERE trace_id IN (SELECT id FROM traceroutes WHERE ts < ?)",
+         now - ret.event_days * day),
+        ("traceroutes", "DELETE FROM traceroutes WHERE ts < ?", now - ret.event_days * day),
     ]
     for name, sql, cut in stmts:
         out[name] = conn.execute(sql, (cut,)).rowcount

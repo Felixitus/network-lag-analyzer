@@ -52,7 +52,9 @@ fritzbox:
   password: ""
   capture_enabled: true
   capture_interface: 1-lan
-  snaplen: 128
+  # Bytes per packet the FRITZ!Box sends. 600 also reads the TLS/QUIC server names
+  # (measured connections per service); 128 is enough for traffic per device alone.
+  snaplen: 600
 
 capture:
   source: auto         # auto | fritzbox | local | none
@@ -142,6 +144,7 @@ deep_capture:
   # the number of incidents. max_total_mb is the upper limit for EVERYTHING together.
   max_total_mb: 1024   # hard limit for the whole pcap directory
   protected_days: 7    # incident captures are kept at most this long
+  snaplen: 128         # bytes per packet written to the files: headers only
   # For what a capture is kept at all:
   #   none     only for reported lag ("I JUST HAD LAG")
   #   critical additionally for critical incidents   (default)

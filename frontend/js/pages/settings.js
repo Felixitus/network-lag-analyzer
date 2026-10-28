@@ -350,7 +350,7 @@ export async function mount(main, { refreshStatus }) {
     { path: 'fritzbox.password', label: 'Password', type: 'password' },
     { path: 'fritzbox.capture_enabled', label: 'Use packet capture for traffic per device', type: 'bool', help: 'Headers only (snaplen), no content' },
     { path: 'fritzbox.capture_interface', label: 'Capture interface', help: 'Default "1-lan" (LAN bridge)' },
-    { path: 'fritzbox.snaplen', label: 'Snaplen (bytes per packet)', type: 'number', help: '128 is enough for traffic per device. 600 also reads the TLS server names (measured connections per service) - about 4× the capture data.' },
+    { path: 'fritzbox.snaplen', label: 'Snaplen (bytes per packet)', type: 'number', help: '600 (default) also reads the server names of TLS and QUIC connections (measured connections per service). 128 is enough for traffic per device alone and writes about a third of the capture data.' },
     { path: 'capture.source', label: 'Traffic source', type: 'select', options: [['auto', 'Automatic'], ['fritzbox', 'FRITZ!Box capture'], ['local', 'Local interface (mirror/gateway)'], ['none', 'None']] },
     { path: 'capture.local_interface', label: 'Local interface', help: 'Only for port mirroring or Pi as gateway' },
   ]);
@@ -385,6 +385,9 @@ export async function mount(main, { refreshStatus }) {
     { path: 'capacity.down_mbit', label: 'Download capacity (Mbit/s)', type: 'numauto', help: '"auto" = FRITZ!Box link rate. Entering the booked rate is more accurate.' },
     { path: 'capacity.up_mbit', label: 'Upload capacity (Mbit/s)', type: 'numauto' },
     { path: 'dns_probe.enabled', label: 'DNS monitoring', type: 'bool' },
+    { path: 'traceroute.enabled', label: 'Path measurement at incidents', type: 'bool', help: 'Traceroute to the worst targets when an incident starts or a lag is reported - shows from which hop on packets are lost.' },
+    { path: 'traceroute.rounds', label: 'Rounds per path measurement', type: 'number', help: 'Each hop is asked this often, one round per second' },
+    { path: 'traceroute.min_interval_s', label: 'At most one automatic measurement per target every (s)', type: 'number' },
   ]);
   main.append(h('div', { style: { height: '16px' } }), section('Measurement', null, meas));
 

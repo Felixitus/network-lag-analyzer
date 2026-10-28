@@ -257,6 +257,23 @@ class FtlQueryLog:
                                  "WHERE id > ? ORDER BY id LIMIT ?", (last_id, limit)).fetchall()
         return [_row(r) for r in rows]
 
+    def forwarded(self, start: float, end: float) -> list[tuple[float, str, float | None]] | None:
+        """Queries Pi-hole sent to an upstream server: (timestamp, upstream "ip#port", reply time in
+        seconds or None). None when this FTL version records no reply times."""
+        with self.connect() as c:
+            if self.schema().normalized:
+                if not _has_column(c, "query_storage", "reply_time"):
+                    return None
+                fwd = "COALESCE(f.forward, q.forward)" if _has_table(c, "forward_by_id") else "q.forward"
+                join = "LEFT JOIN forward_by_id f ON f.id = q.forward " if _has_table(c, "forward_by_id") else ""
+                sql = (f"SELECT q.timestamp, {fwd} AS fwd, q.reply_time FROM query_storage q {join}"
+                       "WHERE q.timestamp >= ? AND q.timestamp < ? AND q.status = 2")
+            else:
+                if not _has_column(c, "queries", "reply_time"):
+                    return None
+                sql = "SELECT timestamp, forward AS fwd, reply_time FROM queries WHERE timestamp >= ? AND timestamp < ? AND status = 2"
+            return [(float(r[0]), str(r[1]), r[2]) for r in c.execute(sql, (start, end)) if r[1]]
+
     def network(self) -> list[NetworkAddress]:
         with self.connect() as c:
             rows = c.execute(
@@ -276,3 +293,11 @@ class FtlQueryLog:
 def _row(r: sqlite3.Row) -> DnsQuery:
     return DnsQuery(id=r["id"], ts=float(r["timestamp"]), client=normalize_ip(str(r["client"])) or "",
                     domain=str(r["domain"] or "").lower().rstrip("."), status=r["status"])
+
+
+def _has_table(c: sqlite3.Connection, name: str) -> bool:
+    return c.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone() is not None
+
+
+def _has_column(c: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(r[1] == column for r in c.execute(f"PRAGMA table_info({table})"))

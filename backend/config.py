@@ -59,6 +59,17 @@ class ProbeCfg(BaseModel):
     timeout: float = Field(1.5, ge=0.3, le=5)
 
 
+class TracerouteCfg(BaseModel):
+    """Path measurement when an incident starts or a lag is reported: from which hop on is it lost?"""
+    enabled: bool = True
+    rounds: int = Field(10, ge=3, le=30)          # each TTL this often, one round per second
+    max_hops: int = Field(20, ge=5, le=30)
+    targets: int = Field(2, ge=1, le=3)           # the worst targets of the moment
+    # At most one automatic measurement per target in this time: a flapping line opens
+    # an incident every minute, and the path does not change that fast.
+    min_interval_s: int = Field(300, ge=60, le=3600)
+
+
 class DnsProbeCfg(BaseModel):
     enabled: bool = True
     interval: float = Field(5.0, ge=1, le=300)
@@ -114,9 +125,10 @@ class FritzCfg(BaseModel):
     tr064_port: int = 49000
     capture_enabled: bool = True
     capture_interface: str = "1-lan"   # LAN bridge of the FRITZ!Box
-    # Bytes kept per packet. 128 is enough for traffic per device; reading TLS server names
-    # (SNI) needs ~600, at about 4× the capture data for full-size packets.
-    snaplen: int = Field(128, ge=64, le=1024)
+    # Bytes the FRITZ!Box sends per packet. 128 is enough for traffic per device; the TLS and
+    # QUIC server names need ~600. Only the analysis reads that much: the PCAP files keep
+    # deep_capture.snaplen bytes.
+    snaplen: int = Field(600, ge=64, le=1024)
     poll_interval: float = Field(2.0, ge=1, le=60)
     hostlist_interval: float = Field(120, ge=30, le=3600)
 
@@ -265,6 +277,9 @@ class DeepCaptureCfg(BaseModel):
     # "critical" saves most of it: otherwise a short jitter blip freezes
     # 50 MB. Reported lags ("I JUST HAD LAG") are always kept.
     protect_auto: Literal["none", "critical", "all"] = "critical"
+    # Bytes of each packet written to the files - headers only. The FRITZ!Box may send more
+    # (fritzbox.snaplen, for the server names); that part is only read, never stored.
+    snaplen: int = Field(128, ge=64, le=1024)
 
 
 class LoadGuardCfg(BaseModel):
@@ -308,6 +323,7 @@ class Config(BaseModel):
     ])
     probe: ProbeCfg = ProbeCfg()
     dns_probe: DnsProbeCfg = DnsProbeCfg()
+    traceroute: TracerouteCfg = TracerouteCfg()
     gaming_pc: GamingPcCfg = GamingPcCfg()
     gaming: GamingCfg = GamingCfg()
     thresholds: Thresholds = Thresholds()
@@ -369,7 +385,7 @@ def fritz_target(cfg: Config) -> tuple[str, str | None]:
 
 # Fields that may be changed via the web UI (top-level keys).
 EDITABLE_SECTIONS = {
-    "gateway", "targets", "probe", "dns_probe", "gaming_pc", "gaming", "thresholds",
+    "gateway", "targets", "probe", "dns_probe", "traceroute", "gaming_pc", "gaming", "thresholds",
     "capacity", "fritzbox", "capture", "pihole", "dns_usage", "retention", "deep_capture",
     "load_guard", "local_networks", "lan_reference", "notify", "backup", "update_check",
 }

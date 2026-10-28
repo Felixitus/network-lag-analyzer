@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from ..analysis.events import EVENT_LABELS
 from ..analysis.root_cause import CATEGORY_LABELS
 from ..database import repository as repo
+from . import dns, paths
 
 router = APIRouter(prefix="/api")
 
@@ -84,6 +85,8 @@ async def incident(request: Request, incident_id: int):
         d["pcap_files"] = [dict(p) for p in c.execute(
             "SELECT id, ts_start, ts_end, size, protected FROM pcap_files WHERE ts_start <= ? AND COALESCE(ts_end, ts_start) >= ?",
             (t1, t0))]
+        # Started during the incident or a little after a lag report (the measurement starts when it is reported)
+        d["traceroutes"] = repo.load_traces(c, d["ts_start"] - 5, (d["ts_end"] or d["ts_start"]) + 30, limit=6)
         return d
     d = await core.db.read(q)
     if d is None:
@@ -102,6 +105,8 @@ async def incident(request: Request, incident_id: int):
                                key=lambda f: -f["recent_bytes"])[:20]
     for f in d["flows"]:
         f["device"] = core.devices.label(f["mac"])["name"] if f["mac"] else None
+    d["traceroutes"] = paths.with_assessment(d["traceroutes"], paths.target_names(core))
+    d["dns_upstreams"] = await dns.upstream_report(core, d["ts_start"] - 60, (d["ts_end"] or d["ts_start"]) + 60)
     d["deep_capture_enabled"] = core.cfg.deep_capture.enabled
     return d
 

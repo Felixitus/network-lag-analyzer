@@ -1,5 +1,5 @@
 // Shared building blocks of the pages.
-import { cssVar, fmtMs, h } from '../lib.js';
+import { cssVar, fmtDateTime, fmtMs, h } from '../lib.js';
 
 export const BLOAT_RANGES = [['1h', '1 H'], ['24h', '24 H'], ['7d', '7 D'], ['30d', '30 D']];
 
@@ -63,4 +63,43 @@ export function latencyUnderLoad(bb, { showAdvice = false } = {}) {
     rows.length < 2
       ? h('div', { class: 'small muted' }, 'The other direction was never heavily utilized in this time span.')
       : null);
+}
+
+// ------------------------------------------------------------------ path measurement (traceroute)
+const PATH_BADGE = { clean: ['good', 'path clean'], loss: ['critical', 'loss on the path'], delay: ['warning', 'delay on the path'],
+  unreached: ['warning', 'target not reached'], error: ['', 'not available'] };
+const REASON = { incident: 'at the start of an incident', report: 'after a lag report', manual: 'started by hand' };
+
+export function pathView(t) {
+  const [cls, label] = PATH_BADGE[t.verdict] || ['', t.verdict];
+  const head = h('div', { class: 'row' }, h('b', null, t.name || t.address), t.name ? h('span', { class: 'mono muted small' }, t.address) : null,
+    h('span', { class: 'spacer' }), h('span', { class: `badge ${cls}` }, label));
+  const sub = h('div', { class: 'small muted' }, `${fmtDateTime(t.ts)} · ${REASON[t.reason] || t.reason || ''}`,
+    t.duration != null || t.duration_s != null ? ` · ${Math.round(t.duration ?? t.duration_s)} s` : '');
+  const findings = h('ul', { class: 'evidence' }, (t.findings || []).map(f => h('li', null, f)));
+  if (!(t.hops || []).length) return h('div', { class: 'stack' }, head, sub, findings);
+  const ms = v => (v === null || v === undefined ? '–' : fmtMs(v, 1));
+  const table = h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
+    h('thead', null, h('tr', null, h('th', { class: 'num' }, 'Hop'), h('th', null, 'Address'), h('th', null, 'Segment'),
+      h('th', { class: 'num' }, 'Loss'), h('th', { class: 'num' }, 'Avg ms'), h('th', { class: 'num' }, 'Best'), h('th', { class: 'num' }, 'Worst'))),
+    h('tbody', null, t.hops.map(x => h('tr', null,
+      h('td', { class: 'num' }, x.ttl),
+      h('td', { class: 'mono' }, x.ip || h('span', { class: 'muted' }, 'no answer')),
+      h('td', { class: 'small secondary' }, x.segment_label || ''),
+      h('td', { class: 'num' }, x.received ? `${x.loss_pct} %` : '–'),
+      h('td', { class: 'num' }, ms(x.rtt_avg)), h('td', { class: 'num' }, ms(x.rtt_min)), h('td', { class: 'num' }, ms(x.rtt_max)))))));
+  return h('div', { class: 'stack' }, head, sub, findings, table);
+}
+
+// ------------------------------------------------------------------ upstream DNS servers
+export function upstreamTable(servers) {
+  const ms = v => (v === null || v === undefined ? '–' : fmtMs(v, 1));
+  return h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
+    h('thead', null, h('tr', null, h('th', null, 'Server'), h('th', { class: 'num' }, 'Forwarded'), h('th', { class: 'num' }, 'Median ms'),
+      h('th', { class: 'num' }, '95 % within'), h('th', { class: 'num' }, 'Slowest'), h('th', { class: 'num' }, 'No reply recorded'))),
+    h('tbody', null, servers.map(s => h('tr', null,
+      h('td', null, h('span', { class: 'mono' }, s.upstream), s.name ? h('div', { class: 'small muted' }, s.name) : null),
+      h('td', { class: 'num' }, s.forwarded.toLocaleString()),
+      h('td', { class: 'num' }, ms(s.median_ms)), h('td', { class: 'num' }, ms(s.p95_ms)), h('td', { class: 'num' }, ms(s.max_ms)),
+      h('td', { class: 'num' }, s.no_reply_pct === null ? '–' : `${s.no_reply_pct} %`))))));
 }

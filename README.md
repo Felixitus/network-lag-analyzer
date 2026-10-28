@@ -60,6 +60,8 @@ Everything runs locally. No cloud, no telemetry, no payload storage.
 | Traffic | upload/download per device, UDP share, TCP retransmissions (per direction), flows (metadata only) |
 | Events | `PING_SPIKE`, `PACKET_LOSS`, `HIGH_JITTER`, `HIGH_UPLOAD`, `HIGH_DOWNLOAD`, `TCP_RETRANSMISSION_SPIKE`, `CONNECTION_DROP`, `DNS_FAILURE`, `GATEWAY_LATENCY`, `INTERNET_LATENCY`, `GAME_FLOW_GAP` |
 | Incidents | automatic correlation + documented cause rules with confidence and evidence |
+| Path measurement | traceroute (mtr style) to the worst targets when an incident starts: from which hop on packets are lost, in your network or the provider's |
+| Upstream DNS | reply times per DNS server behind Pi-hole, from its own log - median, 95 %, queries without a reply |
 | Recommendations | a concrete action for every category - including whether you can fix it yourself or it is up to the provider |
 | Latency under load | bufferbloat metric per direction ("+120 ms under download load"), long-term history over weeks |
 | "I JUST HAD LAG" | immediately analyzes 10 s/30 s/60 s/5 min and creates an incident with a timeline |
@@ -226,8 +228,12 @@ source is missing, the UI says so - and the root cause analysis then names **no 
    enter user/password, click **"Test connection & capture"**, save.
 
 Technically, the Pi opens a permanent HTTP stream
-`/cgi-bin/capture_notimeout?ifaceorminor=1-lan&snaplen=128`. The FRITZ!Box sends a
-libpcap stream of its LAN bridge - with `snaplen=128` **headers only, no content**.
+`/cgi-bin/capture_notimeout?ifaceorminor=1-lan&snaplen=600`. The FRITZ!Box sends a
+libpcap stream of its LAN bridge with the first 600 bytes of each packet: the headers, and
+for new TLS and QUIC connections the server name they ask for. That part is only read in
+memory; the PCAP files of the deep capture keep **headers only** (128 bytes,
+`deep_capture.snaplen`). `fritzbox.snaplen: 128` sends headers only in the first place, at
+the price of no server names.
 Depending on FRITZ!OS this is either classic pcap or the "modified pcap" variant
 (magic `a1b2cd34`, 24-byte record headers); both are supported, as is pcapng. From it the Pi
 counts bytes/packets per MAC (upload = client → router, download = router → client)
@@ -413,6 +419,25 @@ The direction matters, because the actions are opposite:
 * **Download saturation** - the queue sits at the provider. Local prioritization
   cannot overtake packets that are already waiting there; the only thing that helps is
   slowing down the downloading device.
+
+### Path measurement: where on the way?
+
+The cause rules see whether one target or all of them suffer, and whether the router is
+fine. Where the path breaks they cannot see. So when an incident starts (or a lag is
+reported) the Pi measures the path to the worst targets of that moment, while the
+problem is still on: every hop ten times, one round per second, probes 25 ms apart.
+
+* Loss that begins at one hop and **lasts to the target** is located: "Losses begin at
+  hop 3 (… usually your provider)".
+* A hop that drops answers while later hops are fine is **not** the problem - routers
+  answer traceroutes at low priority. The incident says so instead of blaming it.
+* A hop that never answers is normal and says nothing.
+* The segment is read from the address: RFC 1918 = your network, 100.64.0.0/10 and the
+  first public hop = usually your provider, everything after = further along the path.
+
+It needs the raw ICMP socket the service already has (`CAP_NET_RAW`). At most one
+automatic measurement per target every 5 minutes, none at load guard level 2 or higher
+(`traceroute` in the settings). The internet line page starts one by hand.
 
 ### Latency under load (bufferbloat)
 
@@ -628,7 +653,8 @@ Restore: stop the service, copy the file back (`chown nla:nla`), start the servi
 * `/api/health` is the only data-free endpoint without login (for monitoring).
 * The FRITZ!Box password is never returned by the API and only sent to the address it was
   entered for. `config.yaml` has mode 0640 (root:nla).
-* Pi-hole database read-only. Payloads are never stored (snaplen, headers only).
+* Pi-hole database read-only. Payloads are never stored: the PCAP files keep 128 bytes per
+  packet, headers only (`deep_capture.snaplen`).
 * Meant for the LAN only - do **not** forward the port in the router. For remote access
   use a VPN (e.g. the FRITZ!Box's WireGuard VPN), then the page is reached like at home.
 * Exports (CSV/XLSX) neutralize cells that a spreadsheet would evaluate as formulas.

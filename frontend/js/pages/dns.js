@@ -2,7 +2,7 @@
 // Everything shown here are counts of DNS queries as Pi-hole logged them - not usage time, not traffic.
 import { api, clear, fmtDate, fmtDateTime, fmtTime, h, ago, toast, cssVar, NA } from '../lib.js';
 import { timeChart } from '../charts.js';
-import { naBox, segmented } from './common.js';
+import { naBox, segmented, upstreamTable } from './common.js';
 import { refreshNamesButton } from './devices.js';
 import { domainLink } from './dns_domain.js';
 
@@ -237,6 +237,7 @@ async function mountOverview(main) {
 
     body.append(h('div', { class: 'grid grid-2' }, clientsCard(cl), recentCard(o)));
     body.append(bypassCard());
+    body.append(upstreamCard());
     body.append(piholeCard());
     body.append(h('div', { class: 'grid grid-2' }, uncategorizedCard(load), glossaryCard()));
   }
@@ -386,6 +387,30 @@ function bypassCard() {
     }
     if (r.presence_note) card.append(h('div', { class: 'small muted' }, r.presence_note));
     card.append(h('div', { class: 'small muted' }, r.note));
+  }).catch(e => { card.lastChild.replaceWith(naBox(`Not available - ${e.message}`)); });
+  return card;
+}
+
+function upstreamCard() {
+  const card = h('div', { class: 'card stack' }, h('div', { class: 'card-head' }, h('h2', null, 'Upstream DNS servers'),
+    h('span', { class: 'sub' }, 'how fast the servers behind Pi-hole answer - from its log, nothing extra is sent')),
+  h('div', { class: 'skeleton' }, 'Loading…'));
+  api(`api/dns/upstreams?${qs()}`).then(r => {
+    card.lastChild.remove();
+    if (!r.available) { card.append(naBox(r.error)); return; }
+    (r.notes || []).forEach(x => card.append(h('div', { class: 'small secondary' }, `• ${x}`)));
+    if (!r.servers.length) return;
+    card.append(upstreamTable(r.servers));
+    const box = h('div');
+    card.append(h('div', { class: 'chart-title' }, h('h3', null, 'Median reply time'),
+      h('span', { class: 'muted small' }, `per ${r.bucket >= 3600 ? `${r.bucket / 3600} h` : `${r.bucket / 60} min`}, gaps = nothing forwarded`)), box);
+    const xs = [];
+    for (let t = Math.floor(r.start / r.bucket) * r.bucket; t < r.end; t += r.bucket) xs.push(t);
+    const shown = r.servers.slice(0, 6);
+    const chart = timeChart(box, shown.map((s, i) => ({ label: s.name ? `${s.upstream} (${s.name})` : s.upstream,
+      color: cssVar(`--series-${i + 1}`), fmt: v => `${v.toFixed(1)} ms` })), { height: 170, yFmt: v => `${v}`, yLabel: 'ms' });
+    chart.setData([xs, ...shown.map(s => { const by = new Map(s.series.map(p => [p.ts, p.median_ms])); return xs.map(t => by.get(t) ?? null); })]);
+    card.append(h('div', { class: 'small muted' }, '"No reply recorded": the server did not answer, or Pi-hole asked again and another server answered first. Answers from the cache never reach these servers.'));
   }).catch(e => { card.lastChild.replaceWith(naBox(`Not available - ${e.message}`)); });
   return card;
 }

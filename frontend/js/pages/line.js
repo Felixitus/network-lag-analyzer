@@ -1,7 +1,7 @@
 // Internet line: DSL values and errors from the FRITZ!Box, its event log, and outages measured by the Pi.
-import { api, clear, fmtDate, fmtDuration, fmtTime, h, SERIES } from '../lib.js';
+import { api, clear, fmtDate, fmtDuration, fmtTime, h, SERIES, toast } from '../lib.js';
 import { chartCard, fmt } from '../charts.js';
-import { segmented } from './common.js';
+import { naBox, pathView, segmented } from './common.js';
 
 let timer = null;
 export function unmount() { clearInterval(timer); }
@@ -72,6 +72,35 @@ function eventsCard(d, showAll, onToggle) {
   return card;
 }
 
+function pathCard() {
+  const list = h('div', { class: 'stack' }, h('div', { class: 'skeleton' }, 'Loading…'));
+  const select = h('select', { 'aria-label': 'Target' });
+  const btn = h('button', { class: 'btn', type: 'button' }, 'Measure path now');
+  const card = h('div', { class: 'card stack', style: { marginTop: '16px' } },
+    h('div', { class: 'card-head' }, h('div', null, h('h2', null, 'Path to the targets'),
+      h('div', { class: 'sub' }, 'Traceroute: from which hop on are packets lost? Measured automatically when an incident starts.')),
+    h('div', { class: 'row' }, select, btn)), list);
+  const show = r => {
+    clear(list);
+    if (!r.traceroutes.length) list.append(naBox(r.enabled ? 'No path measured yet - it runs with the next incident, or start one here.'
+      : 'Automatic path measurement is switched off in the settings.'));
+    r.traceroutes.slice(0, 3).forEach(t => list.append(pathView(t)));
+  };
+  const load = () => api('api/traceroutes?limit=3').then(r => {
+    if (!select.options.length) r.targets.forEach(t => select.append(h('option', { value: t.target_id }, t.name)));
+    btn.disabled = !r.targets.length;
+    show(r);
+  }).catch(e => { clear(list).append(naBox(`Not available - ${e.message}`)); });
+  btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = 'Measuring… (about 15 s)';
+    try { await api('api/traceroutes', { method: 'POST', body: { target_id: Number(select.value) } }); await load(); }
+    catch (e) { toast(e.message, 5000); }
+    finally { btn.disabled = false; btn.textContent = 'Measure path now'; }
+  };
+  load();
+  return card;
+}
+
 export async function mount(main) {
   let range = '24h', showAll = false;
   const top = h('div', { class: 'grid grid-2' });
@@ -95,7 +124,7 @@ export async function mount(main) {
     top,
     h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, rate.card, snr.card),
     h('div', { style: { marginTop: '16px' } }, errs.card),
-    bottom, note);
+    bottom, pathCard(), note);
   const ch = [rate.mount(), snr.mount(), errs.mount()];
 
   async function load() {
