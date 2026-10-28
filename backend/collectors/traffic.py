@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import signal
 import socket
 import struct
 import time
@@ -503,6 +504,30 @@ class CaptureWorker:
             s.close()
 
 
+STOP_GRACE_S = 10   # after SIGTERM: time for stopping the capture on the FRITZ!Box, then the kernel ends us
+
+
+class Terminated(BaseException):
+    """Raised by the SIGTERM handler: not an Exception, so no `except Exception` swallows it."""
+
+
+def term_handler(w: "CaptureWorker"):
+    """SIGTERM must leave a blocking read at once. Only setting `running = False` waited until the
+    next chunk: the FRITZ!Box sends the capture in bursts (~20 s apart) and the read may wait 30 s,
+    and stopping the capture on the box takes up to 13 s more - systemd killed the process after
+    20 s. The cleanup in `finally` still runs; SIGALRM's default action ends the process if it hangs."""
+    def on_term(*_):
+        w.running = False
+        if getattr(w, "_terminating", False):
+            return                      # a second SIGTERM (multiprocessing's terminate) must not
+        w._terminating = True           # interrupt the cleanup the first one started
+        alarm = getattr(signal, "alarm", None)
+        if alarm:
+            alarm(STOP_GRACE_S)
+        raise Terminated
+    return on_term
+
+
 def run_capture_process(cfg: dict, out_q, ctrl_q) -> None:
     """Entry point of the capture process."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -511,8 +536,11 @@ def run_capture_process(cfg: dict, out_q, ctrl_q) -> None:
         os.nice(5)  # Pi-hole and ICMP measurement take precedence
     except OSError:
         pass
-    import signal
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # stop only via ctrl_q / SIGTERM
     w = CaptureWorker(cfg, out_q, ctrl_q)
-    signal.signal(signal.SIGTERM, lambda *_: setattr(w, "running", False))
-    w.run()
+    signal.signal(signal.SIGTERM, term_handler(w))
+    try:
+        w.run()
+    except Terminated:
+        if w.ring:
+            w.ring.close()
