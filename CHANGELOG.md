@@ -19,6 +19,11 @@ versions follow [SemVer](https://semver.org/).
   without data says so. The settings page previews the report and can send it at once.
   If the Pi is off at that hour, the report follows when it is back the same day.
 
+### Fixed
+- Stopping or restarting the service no longer hangs for 20 s until systemd kills the
+  capture process: SIGTERM now interrupts a read of the FRITZ!Box capture stream at once,
+  while the capture is still stopped cleanly on the box.
+
 ## [1.3.0] - 2026-10-27
 
 Overview page, internet line, the Pi itself, devices and presence, notifications,

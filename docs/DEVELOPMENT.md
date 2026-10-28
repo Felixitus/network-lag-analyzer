@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 427, must be green)
+python3 -m pytest tests -q                    # all tests (currently 429, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -147,6 +147,9 @@ Do not walk into them again - the tests for them are there on purpose.
 * **FRITZ!OS 8 dropped TR-064 actions** (`GetAddonInfos`: HTTP 500, UPnP error 401
   "Invalid Action"). Every FRITZ!Box request needs a fallback or must fail on its own -
   one missing action once took the host list down with it.
+* **SIGTERM must interrupt the capture read.** Only setting a flag waited for the next chunk of
+  the bursty FRITZ!Box stream (up to 30 s), and systemd killed the process after 20 s. The
+  handler raises `Terminated` (a BaseException), the cleanup still runs, `alarm()` caps it.
 * **The stored FRITZ!Box password is bound to its address.** Changing the FRITZ!Box
   host or the gateway without re-entering the password is rejected; otherwise any
   LAN device could redirect the login to its own server.
