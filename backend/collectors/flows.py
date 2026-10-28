@@ -1,6 +1,7 @@
 """Packet analysis: traffic per device, flows, TCP retransmissions, game flow gaps.
 
-Works exclusively on header metadata. Payload is never read or stored.
+Works on header metadata. Payload is never stored; only the client's first payload of a
+connection is read for the server name (TLS ClientHello, QUIC Initial packets).
 
 Direction logic (capture on the LAN side of the router):
 * src_mac = client, dst_mac = router, peer public → upload (tx) of the client
@@ -15,6 +16,7 @@ import struct
 from collections import defaultdict
 from time import time as time_now
 
+from . import quic
 from .tls import TRUNCATED, parse_sni
 
 RX, TX, RXP, TXP, UDP, LAN, RETR = range(7)
@@ -56,7 +58,7 @@ class Flow:
     __slots__ = ("first", "last", "mac", "proto", "lip", "lport", "rip", "rport",
                  "bu", "bd", "pu", "pd", "retrans", "resets", "max_up", "max_down",
                  "last_down", "max_gap", "fin", "win_bytes", "win_pkts_up", "win_pkts_down",
-                 "sec_pkts_up", "sec_pkts_down", "sec_gap", "sni", "sni_done")
+                 "sec_pkts_up", "sec_pkts_down", "sec_gap", "sni", "sni_done", "quic")
 
     def __init__(self, ts: float, mac: str, proto: int, lip: bytes, lport: int, rip: bytes, rport: int):
         self.first = self.last = ts
@@ -73,6 +75,7 @@ class Flow:
         self.sec_gap = 0.0
         self.sni: str | None = None
         self.sni_done = False
+        self.quic: quic.QuicHello | None = None
 
 
 def ip_str(b: bytes) -> str:
@@ -110,8 +113,9 @@ class PacketAnalyzer:
         self._mac_cache: dict[bytes, str] = {}
         self.clock_offset = 0.0
         self.packets = 0
-        # TLS ClientHellos seen, with a server name, and cut off by the snaplen
-        self.sni_stats = {"hellos": 0, "named": 0, "truncated": 0}
+        # TLS ClientHellos seen, with a server name, and cut off by the snaplen; the same for QUIC
+        self.sni_stats = {"hellos": 0, "named": 0, "truncated": 0,
+                          "quic": 0, "quic_named": 0, "quic_truncated": 0, "quic_available": quic.AVAILABLE}
         self.ignored = 0
         self._cand_t = 0.0
 
@@ -291,6 +295,9 @@ class PacketAnalyzer:
                 if f.sec_gap > e[2]:
                     e[2] = f.sec_gap
 
+        if proto == PROTO_UDP and up and rport == 443 and not f.sni_done and quic.AVAILABLE:
+            self._quic_hello(f, data[l4 + 8:])
+
         if proto == PROTO_TCP and len(data) >= l4 + 14:
             seq = _unpack_I(data, l4 + 4)[0]
             doff = (data[l4 + 12] >> 4) * 4
@@ -327,6 +334,25 @@ class PacketAnalyzer:
                         g["retrans_up"] += scale
                     else:
                         g["retrans_down"] += scale
+
+    def _quic_hello(self, f: Flow, payload: bytes) -> None:
+        if f.quic is None:
+            if not payload or payload[0] & 0xC0 != 0xC0:     # not a long header: no handshake on this flow
+                f.sni_done = True
+                return
+            f.quic = quic.QuicHello()
+        name = f.quic.add(payload)
+        if name is None:
+            if f.quic.packets == 0 and f.pu > quic.MAX_PACKETS:
+                f.sni_done, f.quic = True, None              # never an Initial we could read
+            return
+        f.sni_done, f.quic = True, None                      # done: free the fragments
+        self.sni_stats["quic"] += 1
+        if name == TRUNCATED:
+            self.sni_stats["quic_truncated"] += 1
+        elif name != quic.NO_NAME:
+            self.sni_stats["quic_named"] += 1
+            f.sni = name
 
     def _vote_router(self, mac: bytes) -> None:
         if mac[0] & 1:

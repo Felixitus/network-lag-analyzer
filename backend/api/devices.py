@@ -138,15 +138,19 @@ async def device_connections(request: Request, mac: str, start: float | None = Q
     hint = None
     if cap.get("state") != "running":
         hint = "The traffic capture is not running - no connections are measured."
-    elif sni.get("hellos") and sni.get("truncated", 0) > sni.get("named", 0):
+    elif (sni.get("hellos", 0) + sni.get("quic", 0)
+          and sni.get("truncated", 0) + sni.get("quic_truncated", 0) > sni.get("named", 0) + sni.get("quic_named", 0)):
         hint = (f"Most TLS server names are cut off: the capture keeps {snaplen} bytes per packet. "
                 "Set Setup → FRITZ!Box → Snaplen to 600 (about 4× the capture data).")
+    elif sni and sni.get("quic_available") is False:
+        hint = "QUIC (HTTP/3) connections cannot be named: the Python package 'cryptography' is missing - run install.sh again."
     return {"mac": m, "start": start, "end": end, "services": connections.sessions(rows, core.classifier),
             "coverage": connections.coverage(rows), "capture": {"snaplen": snaplen, **sni}, "hint": hint,
             "retention_days": core.cfg.retention.flow_days,
             "note": "Measured from the FRITZ!Box capture: connections to the named servers and their bytes. A session "
-                    "ends after 2 minutes without a connection to the service. Not covered: connections without a "
-                    "readable server name and QUIC (HTTP/3)."}
+                    "ends after 2 minutes without a connection to the service. QUIC (HTTP/3) is named from its Initial "
+                    "packets. Not covered: connections without a readable server name, e.g. QUIC connections that "
+                    "began before the capture or were cut off."}
 
 
 @router.post("/devices/refresh-names")

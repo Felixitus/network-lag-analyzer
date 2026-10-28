@@ -4,3 +4,4 @@ httpx>=0.27
 pydantic>=2.5,<3
 PyYAML>=6.0
 psutil>=5.9
+cryptography>=38

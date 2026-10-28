@@ -5,6 +5,14 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **QUIC connections get their server name too** (HTTP/3, most of YouTube and Google):
+  the capture decrypts the client's Initial packets with the keys RFC 9001 derives from
+  the packet itself (v1 and v2), joins the ClientHello fragments that browsers shuffle
+  over several packets, and reads the name - also from packets cut off by the snaplen as
+  long as the name is inside. Needs the Python package `cryptography` (installed by
+  `install.sh`); the connections card shows what is still unnamed.
+
 ## [1.3.0] - 2026-10-27
 
 Overview page, internet line, the Pi itself, devices and presence, notifications,
