@@ -35,6 +35,8 @@ versions follow [SemVer](https://semver.org/).
   when the Pi-hole actions are switched on; otherwise the page says where to switch them on.
 
 ### Changed
+- **Shorter README**: requirements, installation and links; the technical details moved to
+  `docs/setup.md`, `docs/usage.md` and `docs/operations.md`, security notes to `SECURITY.md`.
 - **Long lists and tables scroll inside their card** (incidents, latest DNS queries, top
   domains, FRITZ!Box events, ...) instead of stretching the page to tens of thousands of
   pixels; table headers stay visible while scrolling. A footer with the project links.
@@ -167,6 +169,8 @@ automatic backups, a much more precise DNS section and measured connections per 
   has no build step, so a syntax error used to show up only as a blank page.
 
 ### Changed
+- **Shorter README**: requirements, installation and links; the technical details moved to
+  `docs/setup.md`, `docs/usage.md` and `docs/operations.md`, security notes to `SECURITY.md`.
 - **Smaller database:** incident analyses are stored zlib-compressed and without their
   copy of the events (those are in the events table). On a copy of the Pi's database:
   207 → 135 MB, the incidents 99 → 34 MB (schema 12; the migration takes about 45 s once
@@ -339,6 +343,8 @@ DNS usage per device (Pi-hole), mandatory login. Method and limits: `docs/dns-us
 - New `/api/health` for monitoring; it reveals nothing but up/down.
 
 ### Changed
+- **Shorter README**: requirements, installation and links; the technical details moved to
+  `docs/setup.md`, `docs/usage.md` and `docs/operations.md`, security notes to `SECURITY.md`.
 - The whole project is now in English: web UI, analysis texts and
   recommendations, log messages, API errors, comments, tests and documentation.
 - Dates are shown as `YYYY-MM-DD`, numbers with a decimal point.
