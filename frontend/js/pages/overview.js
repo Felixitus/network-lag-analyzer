@@ -1,6 +1,6 @@
 // Overview: one light per area, the last 24 h / 7 d as a timeline, incidents and restarts in it.
 import { api, clear, fmtDate, fmtTime, h } from '../lib.js';
-import { segmented } from './common.js';
+import { piholeCard, segmented } from './common.js';
 
 let timer = null;
 export function unmount() { clearInterval(timer); }
@@ -94,6 +94,7 @@ export async function mount(main) {
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Overview'),
       h('p', null, 'Everything at a glance - each light from the current measurements, the timeline from the stored ones.'))),
     lightsBox,
+    h('div', { style: { marginTop: '16px' } }, piholeCard({ compact: true })),
     h('div', { class: 'card stack', style: { marginTop: '16px' } },
       h('div', { class: 'card-head' }, h('div', null, h('h2', null, 'Timeline'),
         h('div', { class: 'sub' }, 'Hover a cell for the measured values')),

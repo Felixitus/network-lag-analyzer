@@ -31,7 +31,16 @@ versions follow [SemVer](https://semver.org/).
   On the DNS page as a table and chart per server, and with each incident for the minute
   around it.
 
+- **Pause Pi-hole blocking from the overview page** (5, 15 or 60 minutes, or switch it back on),
+  when the Pi-hole actions are switched on; otherwise the page says where to switch them on.
+
 ### Changed
+- **E-mail notifications are compact HTML**: a coloured strip for the kind of message (alert,
+  resolved, event, weekly report), sections and lists of the weekly report laid out, and a
+  button to the matching page of the analyzer. The subject starts with the message itself.
+  A plain text part is still included.
+- Incident bands in the charts are a faint wash with a solid strip at the bottom, so the lines
+  stay readable while an incident covers most of the chart.
 - **The FRITZ!Box capture now sends 600 bytes per packet by default** (was 128), so that the
   server names of TLS and QUIC connections are readable out of the box. The PCAP files of
   the deep capture still keep only 128 bytes per packet (`deep_capture.snaplen`): the rest
@@ -39,6 +48,10 @@ versions follow [SemVer](https://semver.org/).
   `config.yaml` stays as it is.
 
 ### Fixed
+- Incidents left open when the service stopped stayed "Ongoing" forever and were drawn as a
+  band up to now - on a long-running Pi that tinted every chart red. They are closed on start
+  where their last event ended, marked as interrupted, and get no made-up cause.
+- The Pi-hole card no longer shows the word "null" when there is no error.
 - Stopping or restarting the service no longer hangs for 20 s until systemd kills the
   capture process: SIGTERM now interrupts a read of the FRITZ!Box capture stream at once,
   while the capture is still stopped cleanly on the box.

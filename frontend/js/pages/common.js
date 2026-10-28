@@ -1,5 +1,5 @@
 // Shared building blocks of the pages.
-import { cssVar, fmtDateTime, fmtMs, h } from '../lib.js';
+import { api, cssVar, fmtDateTime, fmtMs, h, toast } from '../lib.js';
 
 export const BLOAT_RANGES = [['1h', '1 H'], ['24h', '24 H'], ['7d', '7 D'], ['30d', '30 D']];
 
@@ -27,7 +27,8 @@ const LAG_TYPES = new Set(['PING_SPIKE', 'PACKET_LOSS', 'HIGH_JITTER', 'CONNECTI
 export function buildMarkers(events = [], incidents = [], now = Date.now() / 1000) {
   const crit = cssVar('--critical'), warn = cssVar('--warning'), ctx = cssVar('--series-2');
   return {
-    bands: incidents.map(i => ({ t0: i.ts_start, t1: i.ts_end || now, color: i.source === 'user' ? warn : crit,
+    // An open incident reaches "now" only while it can really still be running.
+    bands: incidents.map(i => ({ t0: i.ts_start, t1: i.ts_end || Math.min(now, i.ts_start + 900), color: i.source === 'user' ? warn : crit,
       alpha: i.source === 'user' ? 0.18 : 0.12 })),
     ticks: events.map(e => ({ t: e.ts_start, color: LAG_TYPES.has(e.type) ? (e.severity === 'critical' ? crit : warn) : ctx })),
   };
@@ -102,4 +103,55 @@ export function upstreamTable(servers) {
       h('td', { class: 'num' }, s.forwarded.toLocaleString()),
       h('td', { class: 'num' }, ms(s.median_ms)), h('td', { class: 'num' }, ms(s.p95_ms)), h('td', { class: 'num' }, ms(s.max_ms)),
       h('td', { class: 'num' }, s.no_reply_pct === null ? '–' : `${s.no_reply_pct} %`))))));
+}
+
+// ------------------------------------------------------------------ Pi-hole actions
+async function piholeAction(path, body, question) {
+  if (!window.confirm(question)) return null;
+  try { const r = await api(`api/pihole/${path}`, { method: 'POST', body: { ...body, confirm: true } }); toast('Done'); return r; }
+  catch (e) { toast(`Pi-hole: ${e.message}`, 6000); return null; }
+}
+
+/** Pause or resume blocking, restart DNS, update lists. `compact`: blocking only (overview page). */
+export function piholeCard({ compact = false } = {}) {
+  const card = h('div', { class: 'card', style: { display: 'none' } });
+  const act = async (path, body, question) => { if (await piholeAction(path, body, question)) load(); };
+  function render(s) {
+    while (card.firstChild) card.removeChild(card.firstChild);
+    if (!s.enabled) {
+      if (compact) {
+        card.style.display = '';
+        card.append(h('div', { class: 'row small muted' }, 'Pi-hole blocking can be paused from here once the Pi-hole actions are switched on: ',
+          h('a', { href: '#/settings' }, 'Setup → Pi-hole actions')));
+      } else card.style.display = 'none';
+      return;
+    }
+    card.style.display = '';
+    const paused = s.blocking === 'disabled';
+    const st = h('span', { class: `badge ${s.error ? 'warning' : paused ? 'warning' : 'good'}` },
+      s.error ? 'not reachable' : paused ? `blocking paused${s.timer ? ` (${Math.ceil(s.timer / 60)} min left)` : ''}` : 'blocking on');
+    const btns = paused
+      ? [h('button', { class: 'btn primary', type: 'button', onclick: () => act('blocking', { enabled: true }, 'Switch blocking on again?') }, 'Switch blocking on')]
+      : [5, 15, 60].map(m => h('button', { class: 'btn', type: 'button',
+        onclick: () => act('blocking', { enabled: false, minutes: m }, `Pause blocking for ALL devices for ${m} minutes?`) }, `Pause ${m} min`));
+    if (compact) {
+      // DOM append() would print a null as the text "null"
+      card.append(...[h('div', { class: 'card-head' }, h('div', null, h('h2', null, 'Pi-hole blocking'),
+        h('div', { class: 'sub' }, 'Pause it when a site or app breaks because of a blocklist')), st),
+      h('div', { class: 'row', style: { flexWrap: 'wrap' } }, ...btns, h('span', { class: 'spacer' }),
+        h('a', { class: 'small', href: '#/dns' }, 'more Pi-hole actions →')),
+      s.error ? h('div', { class: 'small muted' }, s.error) : null].filter(Boolean));
+      return;
+    }
+    card.append(...[h('div', { class: 'card-head' }, h('h2', null, 'Pi-hole'), st),
+      h('div', { class: 'row' }, ...btns, h('span', { class: 'spacer' }),
+        h('button', { class: 'btn', type: 'button', onclick: () => act('restartdns', {}, "Restart Pi-hole's DNS service? Lookups fail for a few seconds.") }, 'Restart DNS'),
+        h('button', { class: 'btn', type: 'button', onclick: () => act('gravity', {}, 'Download the blocklists again now? Takes a minute or two.') }, 'Update blocklists')),
+      s.error ? h('div', { class: 'small muted' }, s.error) : null,
+      s.actions.length ? h('details', null, h('summary', { class: 'small', style: { cursor: 'pointer' } }, 'Last actions'),
+        h('ul', { class: 'list small' }, s.actions.map(a => h('li', null, `${fmtDateTime(a.ts)} · ${a.user} · ${a.action}${a.domain ? ` ${a.domain}` : ''} · ${a.ok ? 'ok' : a.error}`)))) : null].filter(Boolean));
+  }
+  const load = () => api('api/pihole/state').then(render).catch(() => null);
+  load();
+  return card;
 }

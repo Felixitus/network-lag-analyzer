@@ -31,7 +31,7 @@ async function list(main) {
         h('td', { class: 'num' }, `#${i.id}`),
         h('td', null, h('div', null, fmtDateTime(i.ts_start)), h('div', { class: 'small muted' }, ago(i.ts_start))),
         h('td', null, i.source === 'user' ? h('span', { class: 'badge warning' }, 'reported') : h('span', { class: 'badge' }, 'auto')),
-        h('td', null, h('div', null, i.title || '–'), h('div', { class: 'small secondary' }, i.cause || 'running…')),
+        h('td', null, h('div', null, i.title || '–'), h('div', { class: 'small secondary' }, i.cause || (i.ts_end ? 'not analyzed' : 'running…'))),
         h('td', null, confBadge(i.confidence)),
         h('td', { class: 'num' }, m.ping_peak != null ? `${fmtMs(m.ping_before)} → ${fmtMs(m.ping_peak)} ms` : '–'),
         h('td', { class: 'num' }, m.loss_pct != null ? `${m.loss_pct} %` : '–'),

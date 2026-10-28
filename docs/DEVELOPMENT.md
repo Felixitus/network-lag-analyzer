@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 444, must be green)
+python3 -m pytest tests -q                    # all tests (currently 448, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -154,6 +154,9 @@ Do not walk into them again - the tests for them are there on purpose.
 * **SIGTERM must interrupt the capture read.** Only setting a flag waited for the next chunk of
   the bursty FRITZ!Box stream (up to 30 s), and systemd killed the process after 20 s. The
   handler raises `Terminated` (a BaseException), the cleanup still runs, `alarm()` caps it.
+* **An incident open at shutdown stays open in the database.** The correlator keeps the open
+  incident in memory only; the row had no end, and the charts drew it as a band up to "now" -
+  six of them tinted every chart red for a month. `close_orphaned_incidents` ends them on start.
 * **The stored FRITZ!Box password is bound to its address.** Changing the FRITZ!Box
   host or the gateway without re-entering the password is rejected; otherwise any
   LAN device could redirect the login to its own server.

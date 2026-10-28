@@ -83,7 +83,7 @@ def test_link_verdict_tells_the_pis_own_cable_from_the_router():
 
 
 def test_lan_reference_must_be_a_private_address():
-    assert Config(lan_reference="192.168.68.131").lan_reference == "192.168.68.131"
+    assert Config(lan_reference="192.168.178.2").lan_reference == "192.168.178.2"
     assert Config(lan_reference="").lan_reference is None
     with pytest.raises(ValueError):
         Config(lan_reference="8.8.8.8")

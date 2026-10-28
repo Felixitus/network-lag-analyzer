@@ -2,7 +2,7 @@
 // Everything shown here are counts of DNS queries as Pi-hole logged them - not usage time, not traffic.
 import { api, clear, fmtDate, fmtDateTime, fmtTime, h, ago, toast, cssVar, NA } from '../lib.js';
 import { timeChart } from '../charts.js';
-import { naBox, segmented, upstreamTable } from './common.js';
+import { naBox, piholeCard, segmented, upstreamTable } from './common.js';
 import { refreshNamesButton } from './devices.js';
 import { domainLink } from './dns_domain.js';
 
@@ -336,36 +336,6 @@ async function mountCategories(main, selected) {
         + 'categories from the UT1 lists (adult, gambling, dating, ...) never get one.')].filter(Boolean));
   }
   await load();
-}
-
-// ------------------------------------------------------------------ Pi-hole actions
-async function piholeAction(path, body, question) {
-  if (!window.confirm(question)) return null;
-  try { const r = await api(`api/pihole/${path}`, { method: 'POST', body: { ...body, confirm: true } }); toast('Done'); return r; }
-  catch (e) { toast(`Pi-hole: ${e.message}`, 6000); return null; }
-}
-
-function piholeCard() {
-  const card = h('div', { class: 'card', style: { display: 'none' } });
-  api('api/pihole/state').then(s => {
-    if (!s.enabled) return;
-    card.style.display = '';
-    const paused = s.blocking === 'disabled';
-    const st = h('span', { class: `badge ${s.error ? 'warning' : paused ? 'warning' : 'good'}` },
-      s.error ? 'not reachable' : paused ? `blocking paused${s.timer ? ` (${Math.ceil(s.timer / 60)} min left)` : ''}` : 'blocking on');
-    const btns = paused
-      ? [h('button', { class: 'btn primary', type: 'button', onclick: async () => { if (await piholeAction('blocking', { enabled: true }, 'Switch blocking on again?')) location.reload(); } }, 'Switch blocking on')]
-      : [5, 15, 60].map(m => h('button', { class: 'btn', type: 'button',
-        onclick: async () => { if (await piholeAction('blocking', { enabled: false, minutes: m }, `Pause blocking for ALL devices for ${m} minutes?`)) location.reload(); } }, `Pause ${m} min`));
-    card.append(h('div', { class: 'card-head' }, h('h2', null, 'Pi-hole'), st),
-      h('div', { class: 'row' }, ...btns, h('span', { class: 'spacer' }),
-        h('button', { class: 'btn', type: 'button', onclick: () => piholeAction('restartdns', {}, 'Restart Pi-hole\'s DNS service? Lookups fail for a few seconds.') }, 'Restart DNS'),
-        h('button', { class: 'btn', type: 'button', onclick: () => piholeAction('gravity', {}, 'Download the blocklists again now? Takes a minute or two.') }, 'Update blocklists')),
-      s.error ? h('div', { class: 'small muted' }, s.error) : null,
-      s.actions.length ? h('details', null, h('summary', { class: 'small', style: { cursor: 'pointer' } }, 'Last actions'),
-        h('ul', { class: 'list small' }, s.actions.map(a => h('li', null, `${fmtDateTime(a.ts)} · ${a.user} · ${a.action}${a.domain ? ` ${a.domain}` : ''} · ${a.ok ? 'ok' : a.error}`)))) : null);
-  }).catch(() => null);
-  return card;
 }
 
 // ------------------------------------------------------------------ DNS past Pi-hole

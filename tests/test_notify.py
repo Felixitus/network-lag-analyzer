@@ -99,6 +99,26 @@ def test_secrets_are_masked_and_kept_when_saved_unchanged(client):
     assert core.cfg.notify.telegram_bot_token == "123:ABC" and core.cfg.notify.cooldown_minutes == 60
 
 
+def test_a_kept_smtp_password_or_ntfy_token_never_goes_to_a_new_server(client):
+    hdr = {"X-CSRF-Token": client.cookies.get("nla_csrf")}
+    r = client.put("/api/settings", json={"notify": {"smtp_host": "smtp.example", "smtp_username": "me",
+                                                     "smtp_password": "pw-1", "ntfy_url": "https://ntfy.example/t",
+                                                     "ntfy_token": "tk-1"}}, headers=hdr)
+    assert r.status_code == 200
+    for change in ({"smtp_host": "smtp.attacker.example"}, {"smtp_port": 2525}, {"smtp_username": "other"},
+                   {"ntfy_url": "https://ntfy.attacker.example/t"}):
+        r = client.put("/api/settings", json={"notify": {**change, "smtp_password": "********", "ntfy_token": "********"}},
+                       headers=hdr)
+        assert r.status_code == 422 and "re-enter" in r.json()["detail"], change
+    core = client.app.state.core
+    assert core.cfg.notify.smtp_host == "smtp.example" and core.cfg.notify.ntfy_url == "https://ntfy.example/t"
+    # entering the secret again with the new server is fine
+    r = client.put("/api/settings", json={"notify": {"smtp_host": "smtp2.example", "smtp_password": "pw-2"}}, headers=hdr)
+    assert r.status_code == 200 and core.cfg.notify.smtp_password == "pw-2"
+    r = client.put("/api/settings", json={"notify": {"smtp_host": "", "ntfy_url": ""}}, headers=hdr)
+    assert r.status_code == 200                   # switching a channel off needs no secret
+
+
 def test_internet_down_round_sends_once_then_all_clear(client, monkeypatch):
     core = client.app.state.core
     sent = []
@@ -126,3 +146,33 @@ def test_test_message_needs_a_channel(client):
     core.cfg.notify.telegram_bot_token = core.cfg.notify.telegram_chat_id = ""
     assert client.post("/api/notify/test", json={}, headers=hdr).status_code == 400
     assert client.get("/api/notify").json()["channels"] == []
+
+
+def test_mails_carry_a_compact_html_part_with_sections_and_a_link():
+    body = ("Measured 100 % of the week.\n\nINTERNET OUTAGES: none measured.\n\nNEW DEVICES: 2\n"
+            "- Laptop <Demo> (02:00:00:00:00:33)\n- Phone (02:00:00:00:00:44)\n\nFRITZ!Box: 1× DSL sync lost.")
+    out = nt.mail_html("Weekly report", body, "report", "http://192.0.2.55:8088/#/", when=0)
+    assert "INTERNET OUTAGES</div><div" in out and "none measured." in out
+    assert "NEW DEVICES · 2" in out and out.count("<li") == 2
+    assert "Laptop &lt;Demo&gt;" in out and "<Demo>" not in out           # text is escaped
+    assert "FRITZ!Box: 1× DSL sync lost." in out                          # mixed case is no heading
+    assert 'href="http://192.0.2.55:8088/#/"' in out and "<style" not in out
+
+
+def test_the_mail_subject_starts_with_the_message_and_has_a_text_part_too(monkeypatch):
+    sent = []
+
+    class FakeSmtp:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def send_message(self, m): sent.append(m)
+    monkeypatch.setattr(nt.smtplib, "SMTP", FakeSmtp)
+    c = cfg(smtp_host="smtp.example", mail_to="me@example.org", smtp_starttls=False)
+    res = nt.deliver(c, "Internet down", "No internet target answers pings.", "high", kind="alert",
+                     link="http://192.0.2.55:8088/#/line")
+    assert res == {"email": None}
+    m = sent[0]
+    assert m["Subject"] == "⚠ Internet down · Network Lag Analyzer"
+    assert m.get_body("plain").get_content().strip().endswith("http://192.0.2.55:8088/#/line")
+    assert "border-top:4px solid #d14343" in m.get_body("html").get_content()
