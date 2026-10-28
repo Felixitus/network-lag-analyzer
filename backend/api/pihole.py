@@ -27,6 +27,17 @@ def _api(core) -> PiholeApi:
     return PiholeApi(p.api_url, p.api_password)
 
 
+def _error_text(e: Exception) -> str:
+    """What the browser may see of a failure: our own Pi-hole messages, else only the kind of error.
+
+    Texts of other exceptions can carry internal details (paths, addresses, library internals);
+    they go to the log only."""
+    if isinstance(e, PiholeApiError):
+        return str(e)[:200]
+    log.warning("Pi-hole API call failed", exc_info=e)
+    return f"{type(e).__name__} - Pi-hole not reachable, details in the log"
+
+
 async def _do(request: Request, action: str, fn, **detail):
     core = request.app.state.core
     api = _api(core)
@@ -36,7 +47,7 @@ async def _do(request: Request, action: str, fn, **detail):
         res = await asyncio.to_thread(fn, api)
         entry["ok"] = True
     except (PiholeApiError, OSError, Exception) as e:  # noqa: BLE001 - reported, logged, kept in the list
-        entry.update(ok=False, error=f"{type(e).__name__}: {e}"[:200])
+        entry.update(ok=False, error=_error_text(e))
         res = None
     log.warning("Pi-hole action by %s: %s %s -> %s", user, action, detail, "ok" if entry["ok"] else entry["error"])
 
@@ -88,7 +99,7 @@ async def state(request: Request):
         try:
             out.update(await asyncio.to_thread(PiholeApi(p.api_url, p.api_password).blocking))
         except Exception as e:  # noqa: BLE001
-            out["error"] = f"{type(e).__name__}: {e}"[:200]
+            out["error"] = _error_text(e)
     return out
 
 
