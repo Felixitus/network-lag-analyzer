@@ -160,10 +160,11 @@ Do not walk into them again - the tests for them are there on purpose.
 
 ## Open / next
 
-* SNI is read from the TLS ClientHello and the QUIC Initial packets (`collectors/tls.py`,
-  `collectors/quic.py`, column `network_flows.sni`, sessions in `analysis/connections.py`) -
-  but only with `fritzbox.snaplen` ≈ 600; the default 128 cuts the name off. Decide
-  whether to raise the default once the extra capture load on the Pi is measured.
+* `fritzbox.snaplen` is 600 since the server names (TLS, QUIC) need it. Measured on the Pi 4
+  (5 min each, 2026-10-28): service CPU 8.0 % of one core at 128 and at 600, capture input
+  93 → 298 KiB/s, PCAP ring writes 126 → 331 KiB/s (10 → 27 GB/day) - hence
+  `deep_capture.snaplen` = 128, which keeps the writes where they were. Watch the capture
+  input on busy evenings; the load guard throttles if parsing falls behind.
 
 ## Notes
 

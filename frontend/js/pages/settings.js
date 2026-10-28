@@ -350,7 +350,7 @@ export async function mount(main, { refreshStatus }) {
     { path: 'fritzbox.password', label: 'Password', type: 'password' },
     { path: 'fritzbox.capture_enabled', label: 'Use packet capture for traffic per device', type: 'bool', help: 'Headers only (snaplen), no content' },
     { path: 'fritzbox.capture_interface', label: 'Capture interface', help: 'Default "1-lan" (LAN bridge)' },
-    { path: 'fritzbox.snaplen', label: 'Snaplen (bytes per packet)', type: 'number', help: '600 (default) also reads the server names of TLS and QUIC connections (measured connections per service). 128 is enough for traffic per device alone and writes about a third of the capture data.' },
+    { path: 'fritzbox.snaplen', label: 'Snaplen (bytes per packet)', type: 'number', help: '600 (default) also reads the server names of TLS and QUIC connections (measured connections per service). 128 is enough for traffic per device alone. Only read in memory: the PCAP files keep 128 bytes per packet.' },
     { path: 'capture.source', label: 'Traffic source', type: 'select', options: [['auto', 'Automatic'], ['fritzbox', 'FRITZ!Box capture'], ['local', 'Local interface (mirror/gateway)'], ['none', 'None']] },
     { path: 'capture.local_interface', label: 'Local interface', help: 'Only for port mirroring or Pi as gateway' },
   ]);
