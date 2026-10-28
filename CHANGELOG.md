@@ -35,6 +35,9 @@ versions follow [SemVer](https://semver.org/).
   when the Pi-hole actions are switched on; otherwise the page says where to switch them on.
 
 ### Changed
+- **Long lists and tables scroll inside their card** (incidents, latest DNS queries, top
+  domains, FRITZ!Box events, ...) instead of stretching the page to tens of thousands of
+  pixels; table headers stay visible while scrolling. A footer with the project links.
 - **E-mail notifications are compact HTML**: a coloured strip for the kind of message (alert,
   resolved, event, weekly report), sections and lists of the weekly report laid out, and a
   button to the matching page of the analyzer. The subject starts with the message itself.
