@@ -60,6 +60,16 @@ def client_keys(dcid: bytes, version: int = V1) -> tuple[bytes, bytes, bytes]:
             _expand_label(client, prefix + b"hp", 16))
 
 
+def header_mask(hp: bytes, sample: bytes) -> bytes:
+    """AES of one 16-byte sample with the header protection key (RFC 9001 §5.4.3).
+
+    The RFC calls this AES-ECB, but it is the bare block function on a single block, not
+    a mode for encrypting data. CTR with the sample as the counter block gives exactly the
+    same 16 bytes as the keystream over zeros - without ECB, which scanners rightly flag."""
+    enc = Cipher(algorithms.AES(hp), modes.CTR(sample)).encryptor()
+    return enc.update(b"\0" * 16) + enc.finalize()
+
+
 def _varint(b: bytes, i: int) -> tuple[int, int]:
     n = 1 << (b[i] >> 6)
     if i + n > len(b):
@@ -93,8 +103,7 @@ def decrypt_initial(p: bytes) -> bytes | None:
     if len(dcid) > 20 or pn_off + 20 > len(p):
         return None
     key, iv, hp = client_keys(dcid, version)
-    enc = Cipher(algorithms.AES(hp), modes.ECB()).encryptor()
-    mask = enc.update(p[pn_off + 4:pn_off + 20]) + enc.finalize()
+    mask = header_mask(hp, p[pn_off + 4:pn_off + 20])
     first = p[0] ^ (mask[0] & 0x0F)
     pn_len = (first & 0x03) + 1
     pn = bytes(a ^ b for a, b in zip(p[pn_off:pn_off + pn_len], mask[1:1 + pn_len]))

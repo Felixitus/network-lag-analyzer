@@ -9,7 +9,6 @@ from backend.collectors.flows import PacketAnalyzer
 from backend.collectors.tls import TRUNCATED
 
 pytest.importorskip("cryptography")
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes  # noqa: E402
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: E402
 
 ROUTER, CLIENT = "02:aa:aa:aa:aa:01", "02:00:00:00:00:42"
@@ -42,13 +41,18 @@ def initial(frames, version=quic.V1, pn=0, dcid=DCID, size=1200):
               + (0x4000 | (2 + len(payload) + 16)).to_bytes(2, "big") + pn.to_bytes(2, "big"))
     nonce = iv[:10] + bytes(a ^ b for a, b in zip(iv[10:], pn.to_bytes(2, "big")))
     ct = AESGCM(key).encrypt(nonce, payload, header)
-    enc = Cipher(algorithms.AES(hp), modes.ECB()).encryptor()
-    mask = enc.update(ct[2:18]) + enc.finalize()
+    mask = quic.header_mask(hp, ct[2:18])
     prot = bytearray(header)
     prot[0] ^= mask[0] & 0x0F
     prot[-2] ^= mask[1]
     prot[-1] ^= mask[2]
     return bytes(prot) + ct
+
+
+def test_header_mask_is_the_aes_block_function():
+    # RFC 9001 appendix A.2: sample d1b1c98dd7689fb8ec11d242b123dc9b -> mask 437b9aec36
+    _key, _iv, hp = quic.client_keys(DCID)
+    assert quic.header_mask(hp, bytes.fromhex("d1b1c98dd7689fb8ec11d242b123dc9b"))[:5].hex() == "437b9aec36"
 
 
 def test_initial_keys_match_rfc_9001():
