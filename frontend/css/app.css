@@ -408,15 +408,25 @@ dialog.modal h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-
 
 /* ---------------------------------------------------------------- long lists and tables */
 /* A list or table with hundreds of rows made pages tens of thousands of pixels tall; it now
-   scrolls inside its card and the page stays a page. Short ones are not affected. */
+   scrolls inside its card and the page stays a page. Short ones are not affected. No
+   overscroll containment: on a phone the list fills the screen, and a finger at its end
+   must move the page on, not get stuck. */
 main .card .table-wrap, main .card .list, main .card .timeline-list {
-  max-height: max(360px, 62vh); overflow-y: auto; overscroll-behavior: contain;
+  max-height: max(360px, 62vh); overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: var(--axis) transparent; }
 main .card .list .list, main .card .table-wrap .list { max-height: none; overflow: visible; }
 main .card .table-wrap thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-1); }
 main .card .table-wrap::-webkit-scrollbar, main .card .list::-webkit-scrollbar, main .card .timeline-list::-webkit-scrollbar { width: 8px; height: 8px; }
 main .card .table-wrap::-webkit-scrollbar-thumb, main .card .list::-webkit-scrollbar-thumb,
 main .card .timeline-list::-webkit-scrollbar-thumb { background: var(--axis); border-radius: 4px; }
+
+/* ---------------------------------------------------------------- Setup: folding sections */
+.card.fold > .fold-head { cursor: pointer; display: flex; gap: 10px; align-items: flex-start; user-select: none; }
+.card.fold > .fold-head::before { content: "▸"; color: var(--text-muted); transition: transform .15s; line-height: 1.2; }
+.card.fold:not(.folded) > .fold-head::before { transform: rotate(90deg); }
+.card.fold > .fold-head:hover h3 { color: var(--accent); }
+.card.fold.folded > :not(.fold-head) { display: none; }
+.card.fold.folded { padding-top: 12px; padding-bottom: 12px; }
 
 /* ---------------------------------------------------------------- footer */
 .site-foot { max-width: 1440px; margin: 0 auto; padding: 14px 24px 28px; border-top: 1px solid var(--border);

@@ -39,7 +39,9 @@ versions follow [SemVer](https://semver.org/).
   `docs/setup.md`, `docs/usage.md` and `docs/operations.md`, security notes to `SECURITY.md`.
 - **Long lists and tables scroll inside their card** (incidents, latest DNS queries, top
   domains, FRITZ!Box events, ...) instead of stretching the page to tens of thousands of
-  pixels; table headers stay visible while scrolling. A footer with the project links.
+  pixels; table headers stay visible while scrolling. The sections of the Setup page fold
+  (open ones are remembered per browser), Live and Overview show only the latest entries.
+  A footer with the project links.
 - **E-mail notifications are compact HTML**: a coloured strip for the kind of message (alert,
   resolved, event, weekly report), sections and lists of the weekly report laid out, and a
   button to the matching page of the analyzer. The subject starts with the message itself.
