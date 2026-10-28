@@ -12,6 +12,12 @@ versions follow [SemVer](https://semver.org/).
   over several packets, and reads the name - also from packets cut off by the snaplen as
   long as the name is inside. Needs the Python package `cryptography` (installed by
   `install.sh`); the connections card shows what is still unnamed.
+- **Weekly report** over the notification channels (Monday from 08:00 by default, Setup →
+  Notifications): how much of the week was measured, internet outages and FRITZ!Box line
+  events, the three worst hours by loss and ping, incident causes, new devices, devices
+  that probably resolve past Pi-hole and lookups of malware/phishing domains. A section
+  without data says so. The settings page previews the report and can send it at once.
+  If the Pi is off at that hour, the report follows when it is back the same day.
 
 ## [1.3.0] - 2026-10-27
 

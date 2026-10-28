@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 420, must be green)
+python3 -m pytest tests -q                    # all tests (currently 427, must be green)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -76,6 +76,7 @@ backend/
     activity.py           estimated activity phases per service (from dns_service_minutes)
     client_match.py       FRITZ!Box vs Pi-hole: can the per-device DNS numbers be trusted?
     alerts.py             when to notify: minimum duration, cooldown, all clear
+    weekly.py             the weekly report: measured share, outages, worst hours, new devices, DNS signs
     overview.py           status lights and the timeline of the overview page, restart log
     line.py               internet line: FRITZ!Box event log, outages from our pings, error deltas
     pi_health.py          the Pi itself (sysfs/procfs, no root), and where LAN losses lie
