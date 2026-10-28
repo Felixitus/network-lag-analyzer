@@ -119,3 +119,16 @@ def test_actions_are_off_by_default_and_need_a_confirmation(client, monkeypatch)
     # the saved password survives a save of the masked form
     client.put("/api/settings", json={"pihole": {"api_password": "********", "api_enabled": True}}, headers=hdr)
     assert client.app.state.core.cfg.pihole.api_password == "app-pw"
+
+
+def test_failures_show_our_own_text_but_never_internal_details(client, monkeypatch):
+    import backend.api.pihole as mod
+
+    class Broken:
+        def blocking(self):
+            raise OSError("[Errno 111] Connection refused: /opt/secret/path")
+    monkeypatch.setattr(mod, "PiholeApi", lambda url, pw: Broken())
+    client.app.state.core.cfg.pihole.api_enabled = True
+    err = client.get("/api/pihole/state").json()["error"]
+    assert err.startswith("OSError") and "secret" not in err and "Errno" not in err
+    assert mod._error_text(mod.PiholeApiError("Pi-hole rejected the app password")) == "Pi-hole rejected the app password"
