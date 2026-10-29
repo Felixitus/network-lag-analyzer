@@ -3,6 +3,7 @@
 #
 #   sudo ./install.sh              install or update
 #   sudo ./install.sh --uninstall  remove service and program (data is kept)
+#   sudo ./install.sh --no-backup  update without the database copy taken before the restart
 #
 # Pi-hole is NOT modified: no changes to /etc/pihole, dnsmasq,
 # lighttpd/FTL web server or the Pi-hole packages. Only missing
@@ -119,6 +120,16 @@ if command -v ss >/dev/null && ss -ltn "( sport = :$PORT )" | grep -q LISTEN; th
   if ! systemctl is-active --quiet "$SERVICE"; then
     warn "Port $PORT is already in use. Please change 'server.port' in $CONF_DIR/config.yaml."
   fi
+fi
+
+# ------------------------------------------------------------------ backup before the restart
+# As the service user: a copy written by root would leave root-owned -wal/-shm files behind.
+# The running service still has the old version loaded; a failed backup stops before it restarts.
+if [[ -f "$DATA_DIR/nla.sqlite3" && "${1:-}" != "--no-backup" ]]; then
+  info "Backing up the database before the restart"
+  (cd "$APP_DIR" && sudo -u "$SVC_USER" env NLA_CONFIG="$CONF_DIR/config.yaml" \
+    "$APP_DIR/venv/bin/python" -m backend.database.backup pre-update) \
+    || fail "No backup, so the service was not restarted. Free up space, or update without a copy: sudo ./install.sh --no-backup"
 fi
 
 # ------------------------------------------------------------------ systemd
