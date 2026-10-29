@@ -115,7 +115,8 @@ async def backups(request: Request):
     from ..database import backup as bk
     core = core_of(request)
     last = await core.db.read(lambda c: repo.get_setting(c, "last_backup", None))
-    return {"dir": str(core.backup_dir), "backups": await asyncio.to_thread(bk.list_backups, core.backup_dir),
+    return {"dir": str(core.backup_dir), "backups": await asyncio.to_thread(bk.list_backups, core.backup_dir,
+                                                                                 (bk.PREFIX, bk.UPDATE_PREFIX)),
             "last": last, "settings": core.cfg.backup.model_dump()}
 
 

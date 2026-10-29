@@ -5,6 +5,18 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **A backup before every update**: `install.sh` writes a checked copy of the database and of
+  `config.yaml` (`backups/backup-pre-update-*`, the two newest are kept) before it restarts the
+  service, and stops without a restart if the copy fails. `--no-backup` skips it. The copies
+  are listed under Setup → Backups next to the weekly ones.
+
+### Fixed
+- A backup that failed halfway no longer leaves an empty copy behind that looked like a backup.
+
+### Project
+- Dependabot keeps the pinned CI actions up to date (one grouped PR a month).
+
 ## [1.4.0] - 2026-10-29
 
 Path measurement at incidents, QUIC server names, a weekly report, HTML e-mails, the

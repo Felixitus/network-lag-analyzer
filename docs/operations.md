@@ -38,6 +38,11 @@ writes a checked copy of the database and of `config.yaml` to
 `/var/lib/network-lag-analyzer/backups/` and keeps the two newest. They are on the same
 SD card - copy one off the Pi now and then.
 
+**Before every update:** `install.sh` writes a checked copy (`backup-pre-update-*`, with
+`config.yaml`) to the same folder before it restarts the service, and keeps the two newest.
+If the copy fails - usually too little space - the service is not restarted.
+`sudo ./install.sh --no-backup` updates without it.
+
 Manual backup, while the service runs (SQLite's online backup is consistent; needs the
 `sqlite3` package):
 

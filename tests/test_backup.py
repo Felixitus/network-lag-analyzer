@@ -49,6 +49,52 @@ def test_rotation_keeps_the_newest_and_leaves_manual_copies(tmp_path):
         "backup-auto-20261015-0300.config.yaml", "backup-auto-20261015-0300.sqlite3", "my-own-copy.sqlite3"]
 
 
+def test_backups_before_updates_rotate_on_their_own(tmp_path):
+    """Three updates in a row must not push the weekly copies out, nor the other way round."""
+    d = tmp_path / "backups"
+    d.mkdir()
+    for name in ["backup-auto-20261015-0300", "backup-pre-update-20261020-1200", "backup-pre-update-20261021-1200",
+                 "backup-pre-update-20261022-1200"]:
+        (d / f"{name}.sqlite3").write_bytes(b"x")
+    assert bk.rotate(d, keep=2, prefix=bk.UPDATE_PREFIX) == ["backup-pre-update-20261020-1200.sqlite3"]
+    assert bk.rotate(d, keep=2) == []
+    listed = [b["name"] for b in bk.list_backups(d, (bk.PREFIX, bk.UPDATE_PREFIX))]
+    assert listed == ["backup-pre-update-20261022-1200.sqlite3", "backup-pre-update-20261021-1200.sqlite3",
+                      "backup-auto-20261015-0300.sqlite3"]
+    assert [b["name"] for b in bk.list_backups(d)] == ["backup-auto-20261015-0300.sqlite3"]
+
+
+def test_the_pre_update_backup_of_install_sh_writes_a_checked_copy(tmp_path, monkeypatch, capsys):
+    data = tmp_path / "data"
+    data.mkdir()
+    p, c = db(data)
+    c.close()
+    os.rename(p, data / "nla.sqlite3")
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(f"data_dir: {data.as_posix()}\n")
+    monkeypatch.setenv("NLA_CONFIG", str(cfg))
+    monkeypatch.delenv("NLA_DATA_DIR", raising=False)
+    monkeypatch.delenv("NLA_DEV_MODE", raising=False)
+    assert bk.main(["pre-update"]) == 0
+    copies = list((data / "backups").glob("backup-pre-update-*.sqlite3"))
+    assert len(copies) == 1 and "checked" in capsys.readouterr().out
+    assert sqlite3.connect(copies[0]).execute("SELECT COUNT(*) FROM t").fetchone() == (100,)
+    assert list((data / "backups").glob("backup-pre-update-*.config.yaml"))
+
+
+def test_a_failed_backup_leaves_no_half_copy_and_stops_install_sh(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "nla.sqlite3").write_bytes(b"not a database at all" * 100)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(f"data_dir: {data.as_posix()}\n")
+    monkeypatch.setenv("NLA_CONFIG", str(cfg))
+    monkeypatch.delenv("NLA_DATA_DIR", raising=False)
+    monkeypatch.delenv("NLA_DEV_MODE", raising=False)
+    assert bk.main(["pre-update"]) == 1
+    assert not list((data / "backups").glob("*.sqlite3"))
+
+
 def test_backup_refuses_without_space(tmp_path, monkeypatch):
     p, c = db(tmp_path)
     c.close()
