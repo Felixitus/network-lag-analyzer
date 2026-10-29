@@ -71,8 +71,14 @@ export async function mount(main, { args }) {
 
   main.append(h('div', { class: 'page-head' },
     h('div', null, h('h1', null, 'Timeline'),
-      h('p', null, 'All measurements on one time axis. Red bands = incidents, orange = reported lag, '
-        + 'ticks at the top = events. Clicking a band opens the incident, dragging zooms into the time span.')),
+      h('p', null, 'All measurements on one time axis. Clicking a band opens the incident, dragging zooms into the time span.'),
+      h('div', { class: 'tl-key small' },
+        h('span', null, h('i', { class: 'key-band crit' }), 'Incident'),
+        h('span', null, h('i', { class: 'key-band warn' }), 'Reported lag'),
+        h('span', null, h('i', { class: 'key-tri crit' }), 'Lag event, critical'),
+        h('span', null, h('i', { class: 'key-tri warn' }), 'Lag event, warning'),
+        h('span', null, h('i', { class: 'key-tri ctx' }), 'Context (load, DNS)'),
+        h('span', null, h('i', { class: 'key-gap' }), 'Not measured'))),
     h('div', { class: 'row' }, zoomOut, rangePicker)));
 
   // ---------------------------------------------------------------- readout bar

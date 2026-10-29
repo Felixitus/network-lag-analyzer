@@ -59,7 +59,7 @@ test('lag events are ticked by severity, context events in their own color', () 
     { ts_start: 2, type: 'PING_SPIKE', severity: 'warning' },
     { ts_start: 3, type: 'HIGH_UPLOAD', severity: 'critical' },
   ], []);
-  assert.deepEqual(m.ticks.map(t => t.color), ['#d00', '#d90', '#09c']);
+  assert.deepEqual(m.ticks.map(t => t.color), ['#d00', '#d90', '#999']);
 });
 
 test('copying works on plain HTTP in the LAN without the clipboard API', async () => {
@@ -81,4 +81,11 @@ test('a secure context uses the clipboard API and falls back when it refuses', a
   navigator.clipboard = { writeText: async () => { throw new Error('denied'); } };
   assert.equal(await lib.copyText('b'), true);
   assert.equal(document.copied, 'b');
+});
+
+test('events close together on the overview become one marker with their count', async () => {
+  const { clusters } = await import('../../frontend/js/pages/overview.js');
+  const c = clusters([{ ts: 500 }, { ts: 100 }, { ts: 130 }, { ts: 1000 }, { ts: 160 }], 50);
+  assert.deepEqual(c.map(g => g.map(e => e.ts)), [[100, 130], [160], [500], [1000]]);
+  assert.deepEqual(clusters([], 50), []);
 });

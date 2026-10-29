@@ -25,7 +25,7 @@ const LAG_TYPES = new Set(['PING_SPIKE', 'PACKET_LOSS', 'HIGH_JITTER', 'CONNECTI
 
 /** Incidents as bands, events as ticks (critical/warning/context). */
 export function buildMarkers(events = [], incidents = [], now = Date.now() / 1000) {
-  const crit = cssVar('--critical'), warn = cssVar('--warning'), ctx = cssVar('--series-2');
+  const crit = cssVar('--critical'), warn = cssVar('--warning'), ctx = cssVar('--text-muted');   // grey: context is not a lag
   return {
     // An open incident reaches "now" only while it can really still be running.
     bands: incidents.map(i => ({ t0: i.ts_start, t1: i.ts_end || Math.min(now, i.ts_start + 900), color: i.source === 'user' ? warn : crit,

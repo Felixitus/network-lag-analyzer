@@ -24,6 +24,33 @@ function cellTitle(t0, bucket, cell) {
   return cell ? `${span}: ${cell.text}` : `${span}: not measured`;
 }
 
+/** One lane per kind of event: in a single row they sat on top of each other. */
+function eventLanes(data) {
+  const lanes = [
+    { label: 'Incidents', many: '#/incidents', items: data.incidents.map(i => ({ ts: i.ts_start, href: `#/incident/${i.id}`,
+      cls: i.source === 'user' ? 'user' : 'inc', sym: '!',
+      text: `${i.source === 'user' ? 'Lag reported' : (i.title || 'Incident')}${i.cause ? ' - ' + i.cause : ''}` })) },
+    { label: 'FRITZ!Box', many: '#/line', items: (data.line_events || []).map(e => ({ ts: e.ts, href: '#/line', cls: 'line', sym: '◆',
+      text: `FRITZ!Box - ${e.label}` })) },
+    { label: 'New devices', many: '#/devices', items: (data.new_devices || []).map(d => ({ ts: d.ts, href: '#/devices', cls: 'newdev',
+      sym: '+', text: `new device ${d.name}` })) },
+    { label: 'Restarts', many: null, items: data.restarts.map(r => ({ ts: r.ts, href: null, cls: 'restart',
+      sym: r.kind === 'boot' ? '⏻' : '↻', text: r.label })) },
+  ];
+  return lanes.filter(l => l.items.length);
+}
+
+/** Events closer than `gap` seconds become one marker with their count. */
+export function clusters(items, gap) {
+  const out = [];
+  for (const e of [...items].sort((a, b) => a.ts - b.ts)) {
+    const last = out[out.length - 1];
+    if (last && e.ts - last[0].ts < gap) last.push(e);
+    else out.push([e]);
+  }
+  return out;
+}
+
 function timelineView(data) {
   const tl = data.timeline;
   const total = tl.end - tl.start;
@@ -35,25 +62,24 @@ function timelineView(data) {
       class: `otl-cell ${c ? `lvl-${c.level || 'unknown'}` : 'na'}`, title: cellTitle(tl.starts[i], tl.bucket, c) })));
     wrap.append(h('div', { class: 'otl-row' }, h('div', { class: 'otl-label' }, row.label), strip));
   }
-  // markers: incidents (click → incident), restarts
-  const marks = h('div', { class: 'otl-strip otl-marks' });
-  for (const i of data.incidents) {
-    marks.append(h('a', { class: `otl-mark inc ${i.source === 'user' ? 'user' : ''}`, href: `#/incident/${i.id}`,
-      style: { left: pos(i.ts_start) }, title: `${fmtDate(i.ts_start)} ${fmtTime(i.ts_start, false)}: ${i.source === 'user' ? 'Lag reported' : (i.title || 'Incident')}${i.cause ? ' - ' + i.cause : ''}` }, '▲'));
+  // Markers are 20 px wide whatever the screen: on a phone the strip is a fifth as wide, so
+  // "close together" is measured in pixels of the strip, not in a share of the time span.
+  const stripPx = Math.max(200, Math.min(window.innerWidth, 1440) - 230);
+  const gap = total * 24 / stripPx;
+  for (const lane of eventLanes(data)) {
+    const strip = h('div', { class: 'otl-strip otl-lane' });
+    for (const c of clusters(lane.items, gap)) {
+      const first = c[0];
+      const when = e => `${fmtDate(e.ts)} ${fmtTime(e.ts, false)}`;
+      const title = c.slice(0, 8).map(e => `${when(e)}: ${e.text}`).join('\n') + (c.length > 8 ? `\n… and ${c.length - 8} more` : '');
+      const attrs = { class: `otl-mark ${first.cls}${c.length > 1 ? ' many' : ''}`, title,
+        style: { left: `clamp(10px, ${pos(first.ts)}, calc(100% - 10px))` }, 'aria-label': title };
+      const href = c.length > 1 ? lane.many : first.href;
+      strip.append(href ? h('a', { ...attrs, href }, c.length > 1 ? String(c.length) : first.sym)
+        : h('span', attrs, c.length > 1 ? String(c.length) : first.sym));
+    }
+    wrap.append(h('div', { class: 'otl-row' }, h('div', { class: 'otl-label' }, lane.label), strip));
   }
-  for (const r of data.restarts) {
-    marks.append(h('span', { class: `otl-mark restart ${r.kind}`, style: { left: pos(r.ts) },
-      title: `${fmtDate(r.ts)} ${fmtTime(r.ts, false)}: ${r.label}` }, r.kind === 'boot' ? '⏻' : '↻'));
-  }
-  for (const e of data.line_events || []) {
-    marks.append(h('a', { class: 'otl-mark line', href: '#/line', style: { left: pos(e.ts) },
-      title: `${fmtDate(e.ts)} ${fmtTime(e.ts, false)}: FRITZ!Box - ${e.label}` }, '◆'));
-  }
-  for (const d of data.new_devices || []) {
-    marks.append(h('a', { class: 'otl-mark newdev', href: '#/devices', style: { left: pos(d.ts) },
-      title: `${fmtDate(d.ts)} ${fmtTime(d.ts, false)}: new device ${d.name}` }, '＋'));
-  }
-  wrap.append(h('div', { class: 'otl-row' }, h('div', { class: 'otl-label' }, 'Events'), marks));
   // axis: 6 labels
   const axis = h('div', { class: 'otl-strip otl-axis' });
   for (let k = 0; k <= 6; k++) {
@@ -66,9 +92,12 @@ function timelineView(data) {
 
 function legend() {
   const item = (cls, text) => h('span', { class: 'row small' }, h('span', { class: `otl-cell legend ${cls}` }), text);
+  const mark = (cls, sym, text) => h('span', { class: 'row small' }, h('span', { class: `otl-mark legend ${cls}` }, sym), text);
   return h('div', { class: 'row small muted', style: { flexWrap: 'wrap', gap: '14px' } },
     item('lvl-good', 'OK'), item('lvl-warning', 'Warning'), item('lvl-critical', 'Problem'), item('na', 'Not measured'),
-    h('span', null, '▲ Incident'), h('span', null, '◆ FRITZ!Box event'), h('span', null, '＋ New device'), h('span', null, '↻ Service started'), h('span', null, '⏻ Pi started'));
+    mark('inc', '!', 'Incident'), mark('user', '!', 'Lag reported'), mark('line', '◆', 'FRITZ!Box event'),
+    mark('newdev', '+', 'New device'), mark('restart', '↻', 'Service started'), mark('restart', '⏻', 'Pi started'),
+    mark('inc many', '3', 'Several close together'));
 }
 
 function happenings(data) {

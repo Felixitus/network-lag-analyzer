@@ -370,13 +370,22 @@ a.light:hover { border-color: var(--accent); }
 .otl-cell.lvl-critical { background: var(--critical); }
 .otl-cell.na { background: repeating-linear-gradient(135deg, var(--grid) 0 3px, transparent 3px 6px); }
 .otl-cell.legend { display: inline-block; flex: none; width: 14px; height: 14px; }
-.otl-marks { height: 20px; border-bottom: 1px solid var(--grid); }
-.otl-mark { position: absolute; transform: translateX(-50%); font-size: 12px; line-height: 20px; text-decoration: none; }
-.otl-mark.inc { color: var(--critical); }
-.otl-mark.inc.user { color: var(--warning-ink); }
-.otl-mark.restart { color: var(--text-secondary); }
-.otl-mark.line { color: var(--series-7); }
-.otl-mark.newdev { color: var(--series-3); font-weight: 700; }
+.otl-lane { height: 24px; background: linear-gradient(var(--grid), var(--grid)) center / 100% 1px no-repeat,
+  repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px calc(100% / 6)); }
+.otl-mark { position: absolute; top: 50%; transform: translate(-50%, -50%); min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; line-height: 1; color: #fff; background: var(--mark, var(--text-muted));
+  box-shadow: 0 0 0 2px var(--surface-1); text-decoration: none; cursor: default; }
+a.otl-mark { cursor: pointer; }
+.otl-mark:hover { text-decoration: none; z-index: 2; transform: translate(-50%, -50%) scale(1.15); }
+.otl-mark.inc { --mark: var(--critical); }
+.otl-mark.user { --mark: var(--warning); color: #1a1a1a; }
+.otl-mark.line { --mark: var(--series-7); }
+.otl-mark.newdev { --mark: var(--series-3); }
+.otl-mark.restart { --mark: var(--surface-2); color: var(--text-secondary); box-shadow: 0 0 0 2px var(--surface-1), inset 0 0 0 1px var(--border); }
+.otl-mark.many { font-variant-numeric: tabular-nums; }
+.otl-mark.legend { position: static; transform: none; min-width: 18px; height: 18px; font-size: 11px; box-shadow: none; }
+.otl-mark.legend.restart { box-shadow: inset 0 0 0 1px var(--border); }
 .phase-bar.from-dns { background: repeating-linear-gradient(135deg, var(--bar) 0 3px, transparent 3px 6px); opacity: .8; }
 .otl-axis { height: 16px; }
 .otl-axis span { position: absolute; transform: translateX(-50%); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
@@ -386,6 +395,7 @@ a.light:hover { border-color: var(--accent); }
   .lights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .otl-row { grid-template-columns: 76px minmax(0, 1fr); }
   .otl-strip { gap: 0; }
+  .otl-axis span:nth-child(even) { display: none; }
 }
 @media (forced-colors: active) { .otl-cell { forced-color-adjust: none; } }
 
@@ -431,6 +441,19 @@ main .card .timeline-list::-webkit-scrollbar-thumb { background: var(--axis); bo
 .card.fold > .fold-head:hover h3 { color: var(--accent); }
 .card.fold.folded > :not(.fold-head) { display: none; }
 .card.fold.folded { padding-top: 12px; padding-bottom: 12px; }
+
+/* ---------------------------------------------------------------- timeline key */
+.tl-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; color: var(--text-secondary); }
+.tl-key span { display: inline-flex; align-items: center; gap: 6px; }
+.tl-key i { display: inline-block; flex: none; }
+.key-band { width: 18px; height: 12px; border-radius: 2px; }
+.key-band.crit { background: var(--critical-wash); box-shadow: inset 0 -3px 0 var(--critical); }
+.key-band.warn { background: var(--warning-wash); box-shadow: inset 0 -3px 0 var(--warning); }
+.key-tri { width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 9px solid; }
+.key-tri.crit { border-top-color: var(--critical); }
+.key-tri.warn { border-top-color: var(--warning); }
+.key-tri.ctx { border-top-color: var(--text-muted); }
+.key-gap { width: 18px; height: 12px; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--axis) 0 3px, transparent 3px 6px); }
 
 /* ---------------------------------------------------------------- sign-in */
 /* Signed out, the navigation leads nowhere: every page would ask for the sign-in again */

@@ -19,6 +19,11 @@ versions follow [SemVer](https://semver.org/).
   certificate once and logs its fingerprint; the cookies are then `Secure`.
 
 ### Changed
+- **Clearer timelines.** On the overview every kind of event has its own lane (incidents,
+  FRITZ!Box, new devices, restarts) with round, colored markers; events close together become
+  one marker with their count, and the tooltip lists them. On the timeline page events are
+  triangles with a faint line down through the charts, context events are grey instead of
+  nearly red, and a key above the charts explains bands, triangles and gaps.
 - The sign-in screen: the footer stays at the bottom of the window, the fields are as wide as
   the card, and the navigation is hidden while signed out.
 - QUIC server names: fragments of the hello that touch anywhere are joined before the name is
