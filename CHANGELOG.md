@@ -5,6 +5,11 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-29
+
+A checked database backup before every update, a load guard that no longer throttles at an idle
+Pi, and more checks before a release.
+
 ### Added
 - **A backup before every update**: `install.sh` writes a checked copy of the database and of
   `config.yaml` (`backups/backup-pre-update-*`, the two newest are kept) before it restarts the

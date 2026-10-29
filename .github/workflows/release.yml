@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing a tag v1.2.3 publishes the release with that version's CHANGELOG section as notes.
-# Release tags can only be pushed by the owner (ruleset), and main only holds green commits.
+# Only the owner can push tags, release tags cannot be moved (ruleset), and main only holds green commits.
 on:
   push:
     tags: ["v*"]
