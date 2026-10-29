@@ -18,6 +18,7 @@ from pathlib import Path
 
 PREFIX = "backup-auto-"
 UPDATE_PREFIX = "backup-pre-update-"
+FILE_MODE = 0o640                      # like the database: settings and the login hash are inside
 
 
 def make_backup(db_path: str, dest_dir: Path, config_path: str | None = None, now: float | None = None,
@@ -48,9 +49,13 @@ def make_backup(db_path: str, dest_dir: Path, config_path: str | None = None, no
         # a half-written copy must not stand in the list as if it were a backup
         dst.unlink(missing_ok=True)
         raise
+    # Explicitly, not by umask: the service has 0027, but install.sh runs this through sudo with 0022.
+    os.chmod(dst, FILE_MODE)
     if config_path and os.path.isfile(config_path):
+        cfg_copy = dest_dir / f"{prefix}{stamp}.config.yaml"
         try:
-            shutil.copyfile(config_path, dest_dir / f"{prefix}{stamp}.config.yaml")
+            shutil.copyfile(config_path, cfg_copy)
+            os.chmod(cfg_copy, FILE_MODE)
         except OSError:
             pass                      # the database is the important part; the config may not be readable
     return {"path": str(dst), "size": dst.stat().st_size, "seconds": round(time.time() - t0, 1), "ts": now or time.time()}

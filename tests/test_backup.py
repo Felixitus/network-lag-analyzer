@@ -75,9 +75,16 @@ def test_the_pre_update_backup_of_install_sh_writes_a_checked_copy(tmp_path, mon
     monkeypatch.setenv("NLA_CONFIG", str(cfg))
     monkeypatch.delenv("NLA_DATA_DIR", raising=False)
     monkeypatch.delenv("NLA_DEV_MODE", raising=False)
-    assert bk.main(["pre-update"]) == 0
+    old = os.umask(0o022)                              # what sudo gives install.sh
+    try:
+        assert bk.main(["pre-update"]) == 0
+    finally:
+        os.umask(old)
     copies = list((data / "backups").glob("backup-pre-update-*.sqlite3"))
     assert len(copies) == 1 and "checked" in capsys.readouterr().out
+    if os.name == "posix":
+        for f in (data / "backups").iterdir():
+            assert f.stat().st_mode & 0o777 == 0o640, f.name
     assert sqlite3.connect(copies[0]).execute("SELECT COUNT(*) FROM t").fetchone() == (100,)
     assert list((data / "backups").glob("backup-pre-update-*.config.yaml"))
 
