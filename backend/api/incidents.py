@@ -1,14 +1,16 @@
 """Incidents, events, lag report and PCAP download."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import tempfile
 import zipfile
-from io import BytesIO
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel
 
 from ..analysis.events import EVENT_LABELS
@@ -132,13 +134,23 @@ async def incident_pcap(request: Request, incident_id: int):
     if len(files) == 1:
         return FileResponse(files[0], media_type="application/vnd.tcpdump.pcap",
                             filename=f"incident-{incident_id}.pcap")
-    buf = BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in files:
-            z.write(f, arcname=os.path.basename(f))
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="application/zip",
-                             headers={"Content-Disposition": f'attachment; filename="incident-{incident_id}-pcap.zip"'})
+    # Built in a temporary file in a thread: several 50 MB files zipped in memory went past the
+    # service's memory limit, and zipping in the event loop stalled the ping timestamps.
+    zpath = await asyncio.to_thread(_zip_files, files, os.path.join(core.cfg.data_dir, "pcap"))
+    return FileResponse(zpath, media_type="application/zip", filename=f"incident-{incident_id}-pcap.zip",
+                        background=BackgroundTask(os.unlink, zpath))
+
+
+def _zip_files(files: list[str], directory: str) -> str:
+    fd, zpath = tempfile.mkstemp(prefix=".download-", suffix=".zip", dir=directory)
+    try:
+        with os.fdopen(fd, "wb") as fh, zipfile.ZipFile(fh, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as z:
+            for f in files:
+                z.write(f, arcname=os.path.basename(f))
+    except BaseException:
+        os.unlink(zpath)
+        raise
+    return zpath
 
 
 @router.get("/events")

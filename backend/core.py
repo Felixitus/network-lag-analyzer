@@ -1401,7 +1401,10 @@ class Core:
         try:
             d = await asyncio.to_thread(fetch)
             latest = str(d.get("tag_name") or "").lstrip("v")
-            self.update_info = {"checked": time.time(), "latest": latest, "url": d.get("html_url"),
+            url = str(d.get("html_url") or "")
+            # the link ends up in the page: only a release page on GitHub, never another scheme or site
+            self.update_info = {"checked": time.time(), "latest": latest,
+                                "url": url if url.startswith("https://github.com/") else None,
                                 "newer": _version_tuple(latest) > _version_tuple(self.version)}
         except Exception as e:  # noqa: BLE001 - no internet is no reason for anything
             self.update_info = {"checked": time.time(), "error": f"{type(e).__name__}", "newer": False}
@@ -1645,9 +1648,18 @@ class Core:
         """Reconcile directory and database; remove orphans on both sides."""
         d = os.path.join(self.cfg.data_dir, "pcap")
         try:
-            on_disk = {os.path.join(d, f) for f in os.listdir(d) if f.endswith(".pcap")}
+            names = os.listdir(d)
         except OSError:
             return
+        on_disk = {os.path.join(d, f) for f in names if f.endswith(".pcap")}
+        # a download zip outlives its request only when the process died while sending it
+        for f in names:
+            p = os.path.join(d, f)
+            try:
+                if f.startswith(".download-") and time.time() - os.path.getmtime(p) > 3600:
+                    os.unlink(p)
+            except OSError:
+                pass
         known = await self.db.read(lambda c: {r["path"] for r in c.execute("SELECT path FROM pcap_files")})
         missing = known - on_disk
         if missing:
@@ -1788,8 +1800,10 @@ class Core:
             raise ValueError("The FRITZ!Box address is changing - please re-enter the FRITZ!Box password "
                              "as well.")
         # The same for the notification secrets: a kept SMTP password or ntfy token only goes to the
-        # server it was entered for.
-        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username"), "SMTP password"),
+        # server it was entered for, and only the way it was entered for (switching STARTTLS off would
+        # send it in the clear).
+        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username", "smtp_starttls"),
+                                      "SMTP password"),
                                      ("ntfy_token", ("ntfy_url",), "ntfy token")):
             if (secret in kept_secrets and getattr(self.cfg.notify, secret) and getattr(new_cfg.notify, where[0])
                     and any(getattr(new_cfg.notify, f) != getattr(self.cfg.notify, f) for f in where)):

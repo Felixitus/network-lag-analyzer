@@ -38,8 +38,10 @@ def client(env):
 def _no_failed_attempts():
     from backend.api import auth
     auth._login_fails.clear()
+    auth._last_ok_ip = None
     yield
     auth._login_fails.clear()
+    auth._last_ok_ip = None
 
 
 def csrf(c):
@@ -145,6 +147,30 @@ def test_many_addresses_together_are_throttled_too(client):
     for i in range(auth.LOGIN_MAX_FAILS_TOTAL):
         auth._login_fails.setdefault(f"198.51.100.{i}", []).append(now)   # other addresses
     assert login(client).status_code == 429
+
+
+def test_failures_of_other_devices_do_not_lock_out_the_last_successful_address(client):
+    from backend.api import auth
+    assert login(client).status_code == 200
+    logout(client)
+    now = time.time()
+    for i in range(auth.LOGIN_MAX_FAILS_TOTAL):
+        auth._login_fails.setdefault(f"198.51.100.{i}", []).append(now)
+    assert login(client).status_code == 200
+    logout(client)
+    for _ in range(auth.LOGIN_MAX_FAILS):                 # its own limit still applies
+        login(client, USER, "guessed-guessed")
+    assert login(client).status_code == 429
+
+
+def test_guessing_the_current_password_with_a_session_is_throttled(client):
+    login(client)
+    for _ in range(5):
+        assert client.post("/api/auth/password", json={"current_password": "guessed-guessed", "new_password": "x" * 12},
+                           headers=csrf(client)).status_code == 403
+    r = client.post("/api/auth/password", json={"current_password": PW, "new_password": "x" * 12}, headers=csrf(client))
+    assert r.status_code == 429
+    logout(client)
 
 
 def test_session_expires_after_the_idle_time(client):

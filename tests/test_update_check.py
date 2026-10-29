@@ -83,6 +83,7 @@ def test_check_now_asks_github_even_in_dev_mode(client, monkeypatch):
         def json(self):
             return {"tag_name": "v99.1.0", "html_url": "https://github.com/Felixitus/network-lag-analyzer/releases/y"}
     monkeypatch.setattr(httpx, "get", lambda *a, **k: calls.append(a) or R())
+    client.app.state.core.update_info = None          # no click a moment ago
     client.get("/")   # CSRF cookie
     r = client.post("/api/update/check", json={}, headers={"X-CSRF-Token": client.cookies.get("nla_csrf")})
     assert r.status_code == 200 and r.json()["latest"] == "99.1.0" and len(calls) == 1
@@ -99,3 +100,29 @@ def test_the_update_command_points_at_the_clone_install_sh_ran_from(tmp_path, mo
     assert core_mod._source_dir() == "/home/pi/network-lag-analyzer"
     (tmp_path / "opt" / "SOURCE_DIR").unlink()
     assert core_mod._source_dir() is None
+
+
+def test_a_release_link_that_is_not_on_github_is_dropped(client, monkeypatch):
+    import httpx
+    core = client.app.state.core
+
+    class R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"tag_name": "v99.2.0", "html_url": "javascript:alert(1)"}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: R())
+    info = run(core, core._check_update(force=True))
+    assert info["newer"] is True and info["url"] is None
+
+
+def test_clicking_check_now_again_right_away_does_not_ask_github_again(client, monkeypatch):
+    import time
+
+    import httpx
+    core = client.app.state.core
+    core.update_info = {"checked": time.time(), "latest": "1.0.0", "newer": False}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: pytest.fail("no request expected"))
+    r = client.post("/api/update/check", headers={"X-CSRF-Token": client.cookies.get("nla_csrf")})
+    assert r.status_code == 200 and r.json()["latest"] == "1.0.0"
