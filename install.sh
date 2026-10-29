@@ -162,11 +162,15 @@ if (cd "$APP_DIR" && "${ACCOUNT_CMD[@]}" show 2>/dev/null) | grep -q "No account
 fi
 
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+SCHEME=http
+if awk '/^server:/{s=1;next} /^[^[:space:]#]/{s=0} s&&/^[[:space:]]+https:[[:space:]]*true/{f=1} END{exit !f}' "$CONF_DIR/config.yaml"; then
+  SCHEME=https
+fi
 cat <<EOF
 
   Network Lag Analyzer is installed.
 
-  Web UI:         http://$(hostname):$PORT   or   http://${IP:-PI-IP-ADDRESS}:$PORT
+  Web UI:         $SCHEME://$(hostname):$PORT   or   $SCHEME://${IP:-PI-IP-ADDRESS}:$PORT
   Logs:           journalctl -u $SERVICE -f
   Configuration:  $CONF_DIR/config.yaml
   Data:           $DATA_DIR

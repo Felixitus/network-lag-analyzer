@@ -51,6 +51,10 @@ class ServerCfg(BaseModel):
     # the LAN - not every interface of the Pi. "0.0.0.0" listens everywhere.
     host: str = "auto"
     port: int = Field(8088, ge=1, le=65535)
+    # HTTPS with a self-signed certificate the Pi makes itself (data_dir/tls). The browser warns
+    # once; compare the fingerprint from the log. Only here, not in the web UI: a wrong switch
+    # there would lock the browser out.
+    https: bool = False
 
 
 class ProbeCfg(BaseModel):

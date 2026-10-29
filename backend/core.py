@@ -1687,7 +1687,8 @@ class Core:
         host = self.cfg.server.host
         if host in ("auto", "0.0.0.0", "::"):
             host = self.pi_ip
-        return f"http://{host}:{self.cfg.server.port}/{page}" if host else None
+        scheme = "https" if self.cfg.server.https else "http"
+        return f"{scheme}://{host}:{self.cfg.server.port}/{page}" if host else None
 
     # ================================================================== path measurement
     def trace_targets(self) -> list[dict]:
