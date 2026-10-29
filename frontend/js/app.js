@@ -1,6 +1,7 @@
 // Entry point: routing, live stream (SSE), banners, theme, login.
 import { api, clear, h, toast } from './lib.js';
 import { destroyAll } from './charts.js';
+import { updateCommand } from './pages/common.js';
 import * as overview from './pages/overview.js';
 import * as dashboard from './pages/dashboard.js';
 import * as timeline from './pages/timeline.js';
@@ -59,6 +60,15 @@ function connect() {
 }
 
 // ------------------------------------------------------------------ Banner
+/** Version at the bottom of every page, like Pi-hole - and a hint when a newer one is out. */
+function footVersion(s) {
+  const el = document.getElementById('foot-version');
+  if (!el) return;
+  const newer = s.update && s.update.newer;
+  el.replaceChildren(`v${s.version}`, newer ? h('span', { class: 'badge warning' }, `update to ${s.update.latest}`) : '');
+  el.title = newer ? 'A newer version is available - details on the Pi page' : 'Installed version - update check on the Pi page';
+}
+
 export async function refreshStatus() {
   try {
     store.status = await api('api/status');
@@ -74,10 +84,13 @@ export async function refreshStatus() {
       h('span', null, 'The setup wizard checks which data can actually be measured in your network. '),
       h('a', { href: '#/settings' }, 'Open setup →')));
   }
+  footVersion(s);
   if (s.update && s.update.newer) {
-    b.append(h('div', { class: 'banner info' }, h('b', null, `Version ${s.update.latest} is available`),
-      h('span', null, `You run ${s.version}. Update on the Pi: git pull && sudo ./install.sh `),
-      s.update.url ? h('a', { href: s.update.url, target: '_blank', rel: 'noopener noreferrer' }, 'What is new →') : null));
+    b.append(h('div', { class: 'banner info update' }, h('b', null, `Version ${s.update.latest} is available`),
+      h('div', { class: 'stack-sm' },
+        h('div', null, `You run ${s.version}. Run this on the Pi - settings and data are kept: `,
+          s.update.url ? h('a', { href: s.update.url, target: '_blank', rel: 'noopener noreferrer' }, 'what is new →') : null),
+        updateCommand(s))));
   }
   if (s.icmp && s.icmp.error) {
     b.append(h('div', { class: 'banner warn' }, h('b', null, 'Ping measurement not possible'), h('span', null, s.icmp.error)));

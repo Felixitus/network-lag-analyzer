@@ -70,6 +70,8 @@ for item in backend frontend deploy requirements.txt README.md ARCHITECTURE.md L
   cp -a "$SRC_DIR/$item" "$APP_DIR/"
 done
 find "$APP_DIR" -name '__pycache__' -type d -prune -exec rm -rf {} +
+# the web UI shows the update command for this clone, not for /opt
+echo "$SRC_DIR" > "$APP_DIR/SOURCE_DIR"
 chown -R root:root "$APP_DIR"
 chmod -R u=rwX,go=rX "$APP_DIR"
 

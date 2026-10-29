@@ -128,6 +128,13 @@ async def backup_now(request: Request):
     return res
 
 
+@router.post("/update/check")
+async def update_check_now(request: Request):
+    """Asks GitHub right away, also when the daily check is switched off: the user clicked."""
+    core = core_of(request)
+    return await core._check_update(force=True)
+
+
 @router.post("/database/pcap-cleanup")
 async def pcap_cleanup(request: Request):
     """Bring captures down to the configured budget right away."""

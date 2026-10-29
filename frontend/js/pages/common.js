@@ -1,5 +1,5 @@
 // Shared building blocks of the pages.
-import { api, cssVar, fmtDateTime, fmtMs, h, toast } from '../lib.js';
+import { api, copyText, cssVar, fmtDateTime, fmtMs, h, toast } from '../lib.js';
 
 export const BLOAT_RANGES = [['1h', '1 H'], ['24h', '24 H'], ['7d', '7 D'], ['30d', '30 D']];
 
@@ -154,4 +154,14 @@ export function piholeCard({ compact = false } = {}) {
   const load = () => api('api/pihole/state').then(render).catch(() => null);
   load();
   return card;
+}
+
+// ------------------------------------------------------------------ software update
+/** The update command for this Pi, with a copy button. */
+export function updateCommand(status) {
+  const dir = status.source_dir || '~/network-lag-analyzer';
+  const cmd = `cd ${dir} && git pull && sudo ./install.sh`;
+  const btn = h('button', { class: 'btn small', type: 'button' }, 'Copy');
+  btn.addEventListener('click', async () => toast(await copyText(cmd) ? 'Copied' : 'Copying is blocked here - select the command by hand'));
+  return h('div', { class: 'cmd' }, h('code', { class: 'mono' }, cmd), btn);
 }

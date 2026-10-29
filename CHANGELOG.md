@@ -6,6 +6,10 @@ versions follow [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Version and updates in view**: the installed version stands at the bottom of every page
+  and turns into a hint when a newer release is out. The Pi page has a Software card with the
+  last check, a "Check for updates now" button and the exact update command for this Pi
+  (the folder `install.sh` ran from) with a copy button; the update banner shows it too.
 - **QUIC connections get their server name too** (HTTP/3, most of YouTube and Google):
   the capture decrypts the client's Initial packets with the keys RFC 9001 derives from
   the packet itself (v1 and v2), joins the ClientHello fragments that browsers shuffle

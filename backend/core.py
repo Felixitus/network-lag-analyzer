@@ -157,6 +157,7 @@ class Core:
         self.simulator = None
         self.setup_done = False
         self.version = __version__
+        self.source_dir = _source_dir()
 
     # ================================================================== start/stop
     async def start(self) -> None:
@@ -1862,10 +1863,21 @@ class Core:
             "incidents_dismissed": self.dismissed_incidents,
             "alerts_active": self.alerts.active(),
             "update": self.update_info,
+            "update_check": self.cfg.update_check,
+            "source_dir": self.source_dir,
         }
 
 
 # ====================================================================== helpers
+def _source_dir() -> str | None:
+    """The clone install.sh ran from: the update command has to be run there, not in /opt."""
+    from pathlib import Path
+    try:
+        return (Path(__file__).resolve().parents[1] / "SOURCE_DIR").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
 def _resolve_v4(host: str | None) -> str | None:
     """Host (IP, name or name:port) → IPv4 address, otherwise None."""
     if not host:

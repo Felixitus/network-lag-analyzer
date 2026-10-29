@@ -28,3 +28,4 @@ config.yaml
 .DS_Store
 Thumbs.db
 desktop.ini
+SOURCE_DIR
