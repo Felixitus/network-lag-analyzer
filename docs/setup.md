@@ -127,3 +127,29 @@ retention:
 ```
 
 Environment variables: `NLA_CONFIG`, `NLA_DATA_DIR`, `NLA_PORT`, `NLA_DEV_MODE`, `NLA_LOG_LEVEL`.
+
+### E-mail notifications
+
+Port 587 with STARTTLS is the default. For providers that only offer port 465, switch on
+"TLS from the start (port 465)" in Setup → Notifications and set the port to 465.
+
+### HTTPS (optional)
+
+```yaml
+server:
+  https: true
+```
+
+Then `sudo systemctl restart network-lag-analyzer`. On the first start the Pi makes a
+self-signed certificate (`/var/lib/network-lag-analyzer/tls/`, valid for 10 years) and logs
+its SHA-256 fingerprint:
+
+```bash
+journalctl -u network-lag-analyzer | grep fingerprint -i
+```
+
+The browser warns once, because no public authority signed it; compare the fingerprint in
+the certificate details with the log and accept it. From then on the UI is
+`https://PI-IP-ADDRESS:8088` (plain `http://` no longer answers on that port), the session
+cookie is `Secure`, and copying the update command works directly. Delete both files in
+`tls/` to get a new certificate, e.g. after the Pi got a new name or address.

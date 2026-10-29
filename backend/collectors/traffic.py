@@ -434,6 +434,8 @@ class CaptureWorker:
             "router_macs": router, "linktype": self.parser.linktype, "format": self.parser.format,
             "flows": len(self.analyzer.flows), "cpu_seconds": cpu_s, "deep_capture": self.ring is not None,
             "dropped": self.dropped, "sni": dict(self.analyzer.sni_stats),
+            "ring": None if self.ring is None else {"memory_bytes": self.ring.memory_bytes(),
+                                                    "memory_limit": self.ring.memory},
             "ts": time.time(),
         }))
 

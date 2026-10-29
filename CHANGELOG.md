@@ -5,6 +5,26 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **The running PCAP ring lives in RAM** (`deep_capture.buffer: memory`, 64 MB by default): only
+  the captures that belong to an incident are written to the SD card. On the SD card the ring
+  wrote ~10 GB a day around the clock. It covers the last minutes; of a longer incident its
+  last part is kept. `buffer: disk` brings the old behavior back.
+- **Packet capture card on the Pi page**: data from the FRITZ!Box, time spent parsing, delay of
+  the stream, load guard level, where the ring lives, and how many HTTPS connections have a
+  measured server name - TCP and QUIC apart, with why a QUIC hello stayed unreadable.
+- **E-mail over port 465** with TLS from the first byte (`notify.smtp_tls`), for providers
+  without STARTTLS.
+- **Optional HTTPS** (`server.https: true` in `config.yaml`): the Pi makes a self-signed
+  certificate once and logs its fingerprint; the cookies are then `Secure`.
+
+### Changed
+- The sign-in screen: the footer stays at the bottom of the window, the fields are as wide as
+  the card, and the navigation is hidden while signed out.
+- QUIC server names: fragments of the hello that touch anywhere are joined before the name is
+  looked for - Chrome cuts at random offsets, often right through the name.
+- Changing the size or place of the PCAP ring restarts the capture, so it takes effect at once.
+
 ## [1.5.0] - 2026-10-29
 
 A checked database backup before every update, a load guard that no longer throttles at an idle

@@ -62,6 +62,52 @@ function linkCard(d) {
 }
 
 /** Installed version, the last update check and the command to update. */
+const pct = (part, total) => (total ? `${Math.round((100 * part) / total)} %` : null);
+
+/** The packet capture: how hard it works, where its ring lives, how often a server name is readable. */
+function captureCard(d, range) {
+  const c = d.capture;
+  const card = h('div', { class: 'card stack', style: { marginTop: '16px' } },
+    h('div', { class: 'card-head' }, h('h2', null, 'Packet capture'),
+      c && c.ts ? h('span', { class: 'sub' }, `As of ${fmtDateTime(c.ts)}`) : null));
+  if (!c) {
+    card.append(h('div', { class: 'empty' }, 'Not available - the capture is not running (no FRITZ!Box access or capture off).'));
+    return card;
+  }
+  const ring = c.ring;
+  const ringText = !c.buffer ? 'off' : c.buffer === 'memory'
+    // MiB like the setting (memory_mb), not the 1000s of fmtBytes: "64 MB" should read 64
+    ? (ring ? `in RAM, ${Math.round(ring.memory_bytes / 1048576)} of ${Math.round(ring.memory_limit / 1048576)} MB` : 'in RAM')
+    : 'on the SD card';
+  const busy = c.busy_pct === null || c.busy_pct === undefined ? null : `${c.busy_pct.toFixed(0)} %`;
+  const sni = c.sni || {};
+  const n = d.names || {};
+  const share = x => (x && x.flows ? `${pct(x.named, x.flows)}` : null);
+  const sub = x => (x && x.flows ? `${x.named} of ${x.flows} connections` : null);
+  card.append(h('div', { class: 'grid grid-2' },
+    h('ul', { class: 'list' },
+      row('Data from the FRITZ!Box', c.stream_kbps === null || c.stream_kbps === undefined ? null : `${(c.stream_kbps / 8).toFixed(0)} KB/s`,
+        c.pps ? `${c.pps.toFixed(0)} packets/s` : null),
+      row('Time spent parsing', busy, 'the rest is waiting for the stream'),
+      row('Delay of the stream', c.lag_s === null || c.lag_s === undefined ? null : `${c.lag_s.toFixed(1)} s`,
+        'the FRITZ!Box sends in bursts'),
+      row('Load guard', `level ${c.guard_level}`, c.guard_level ? 'throttling the analysis' : 'full analysis'),
+      row('Running PCAP ring', ringText)),
+    h('ul', { class: 'list' },
+      row(`Server names, TCP (${range})`, share(n.tcp), sub(n.tcp)),
+      row(`Server names, QUIC (${range})`, share(n.quic), sub(n.quic)),
+      row('QUIC hellos cut off', sni.quic ? pct(sni.quic_truncated, sni.quic) : null,
+        sni.quic ? `${sni.quic_truncated} of ${sni.quic} since the capture started` : null),
+      row('QUIC joined mid-connection', sni.quic_midway ?? null, 'started before the capture'),
+      row('QUIC of another version', sni.quic_unreadable ?? null, "e.g. Google's own gQUIC"))));
+  if (sni.quic && sni.quic_truncated / sni.quic > 0.25) {
+    card.append(h('div', { class: 'small muted' }, 'Many QUIC hellos are cut off: browsers now send them over two packets of '
+      + '1200+ bytes, and the capture keeps the first fritzbox.snaplen bytes of each. A larger snaplen reads more names '
+      + 'but brings more data from the FRITZ!Box.'));
+  }
+  return card;
+}
+
 function softwareCard(store, refreshStatus) {
   const card = h('div', { class: 'card stack', style: { marginTop: '16px' } });
   const check = h('button', { class: 'btn', type: 'button' }, 'Check for updates now');
@@ -111,11 +157,13 @@ export async function mount(main, { store, refreshStatus }) {
     { label: 'Receive errors', color: SERIES(4), fmt: v => `${v}`, bars: true, fill: 0.6 },
   ], { yFmt: v => `${v}`, height: 150, naText: 'Not available on this system' });
   const note = h('p', { class: 'small muted' });
+  const capture = h('div');
   main.append(
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Raspberry Pi'),
       h('p', null, 'The measuring device itself - if it is unwell, every other number is in doubt.')),
     segmented([['24h', '24 H'], ['7d', '7 D']], range, v => { range = v; load(); })),
     top,
+    capture,
     softwareCard(store, refreshStatus),
     h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, temp.card, port.card),
     h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, cpu.card, mem.card), note);
@@ -124,6 +172,7 @@ export async function mount(main, { store, refreshStatus }) {
   async function load() {
     const d = await api(`api/pi?range=${range}`);
     clear(top).append(healthCard(d), linkCard(d));
+    clear(capture).append(captureCard(d, range));
     const s = d.series;
     ch[0].setData([s.ts, s.temp_c]);
     ch[1].setData([s.ts, s.carrier_changes, s.rx_errors]);

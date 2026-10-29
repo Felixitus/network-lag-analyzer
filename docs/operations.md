@@ -114,6 +114,14 @@ That is why there are three knobs, and only the first is a guarantee:
 | `protected_days` | 7 | incident captures are kept at most this long |
 | `protect_auto` | `critical` | for what a capture is kept at all: `none` (only reported lag), `critical`, `all` |
 
+**In RAM or on the SD card** (`buffer`, default `memory`): in RAM, the running ring is
+`memory_mb` (64 MB) of the newest packet headers, and only an incident's capture is written
+to the card. That covers the last few minutes - enough for "I just had lag" (5 minutes back)
+on a normal evening; of a long incident the last part is kept. On the SD card (`disk`) the
+ring writes around the clock: ~10 GB a day on the Pi 4, for files that are overwritten unseen
+almost every time. The RAM counts against the service's 350 MB; the Pi page shows how full
+it is.
+
 The space used is shown under **Setup → Database** with its own bar - it does **not**
 count towards the database size, because the files live next to it. There is also
 "Clean up now".

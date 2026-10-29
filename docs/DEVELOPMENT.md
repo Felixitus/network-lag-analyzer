@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 471, must be green)
+python3 -m pytest tests -q                    # all tests (currently 482, must be green)
 node --test tests/frontend/*.test.mjs         # web UI helpers (needs frontend/package.json, see CI)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
@@ -100,6 +100,7 @@ backend/
     security.py           mandatory login, server-side sessions, CSRF, headers
     auth.py               login/logout/password change, /api/health
   account.py              CLI: create the login account on the Pi (never via the web UI)
+  util/tls_cert.py        the self-signed certificate of the optional HTTPS, made once on the Pi
   util/tabular.py         CSV + XLSX writer without dependencies, formula-injection safe
 frontend/                 vanilla ES modules, uPlot vendored, no build step (pages/dns.js: DNS usage,
                           dns_domain.js domain details, overview.js start page, line.js, pi.js,
@@ -138,7 +139,8 @@ Do not walk into them again - the tests for them are there on purpose.
 * **PCAP budget**: `max_files × file_size_mb` only limits the running ring.
   Incident captures live outside of it and need `max_total_mb`. Without it the
   directory grew to 40 GB in practice. The ring adopts the existing files on
-  start, otherwise files are left orphaned after process restarts.
+  start, otherwise files are left orphaned after process restarts. In RAM
+  (`buffer: memory`, the default) the ring never touches the card; on it, it wrote ~10 GB a day.
 * **`sudo sqlite3` on Pi-hole databases** leaves root-owned `-wal`/`-shm`
   files, after which FTL can no longer access its database. Always stop FTL and
   `chown pihole:pihole` afterwards.
@@ -172,7 +174,11 @@ Do not walk into them again - the tests for them are there on purpose.
   First look (journal 2026-10-28 to 10-29): every load guard step was level 1 from a capture
   delay of ~2.0 s at 1-9 % CPU - the FRITZ!Box's burst delay, not a backlog (fixed: the delay
   counts only while the reader is busy, `busy_pct` in the capture status). Capture CPU peaked at
-  28 % of one core. A long streaming evening is still to be measured.
+  28 % of one core. A long streaming evening is still to be measured - the Pi page now shows it.
+* QUIC names: 57 % against 88 % for TCP (2026-10-29). Most likely the snaplen: post-quantum key
+  shares put Chrome's and iOS 26's hello over two Initials of 1200+ bytes, and 600 keeps ~530
+  bytes of each. The Pi page counts cut-off hellos; if they dominate, try `fritzbox.snaplen`
+  1024 and watch the capture input.
 
 ## Notes
 
