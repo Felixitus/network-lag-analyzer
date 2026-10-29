@@ -513,6 +513,7 @@ class Core:
         elif kind == "status":
             self.capture_status = msg[1]
             self.loadguard.capture_lag = msg[1].get("lag_s") or 0.0
+            self.loadguard.capture_busy = msg[1].get("busy_pct")
         elif kind == "flows":
             rows = []
             for f in msg[1]:

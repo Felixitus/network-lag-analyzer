@@ -42,7 +42,7 @@ gh pr create --fill          # or via the GitHub web UI
 ```
 
 The pull request has to pass CI (tests on Python 3.11 and 3.13, `install.sh`
-check, LF line endings). Merging is done by **squash**, so that `main` has one
+check, LF line endings, the systemd unit, JavaScript syntax and the frontend tests). Merging is done by **squash**, so that `main` has one
 line per change.
 
 ## Commit messages
@@ -70,13 +70,16 @@ to 40 GB.
 1. Bump the version in `backend/__init__.py` (SemVer: fix → patch, feature → minor,
    incompatible configuration/schema → major).
 2. In `CHANGELOG.md`, rename the "Unreleased" section to the new version.
-3. Commit `Version 1.2.0`, then tag and release:
+3. Merge that as a pull request, then tag the merge commit on `main`:
 
 ```bash
+git switch main && git pull
 git tag -a v1.2.0 -m "Version 1.2.0"
-git push origin main --tags
-gh release create v1.2.0 --notes-from-tag
+git push origin v1.2.0
 ```
+
+The Release workflow then publishes "Version 1.2.0" with that version's CHANGELOG section as
+notes. It refuses a tag that does not match `__version__` or has no section in the changelog.
 
 Updating on the Pi:
 

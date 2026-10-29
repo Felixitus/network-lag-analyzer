@@ -255,6 +255,8 @@ class CaptureWorker:
         self.dropped = 0
         self.pps = 0.0
         self.stream_bps = 0.0
+        self.busy_pct: float | None = None
+        self._busy_s = 0.0
         self._last_data = time.time()
 
     # --------------------------------------------------------------- output
@@ -334,6 +336,8 @@ class CaptureWorker:
             dt = now - self._last_rate_t
             self.pps = self._pkts_since / dt if dt > 0 else 0
             self.stream_bps = self._bytes_since * 8 / dt if dt > 0 else 0
+            self.busy_pct = min(100.0, self._busy_s / dt * 100) if dt > 0 else None
+            self._busy_s = 0.0
             self._pkts_since = 0
             self._bytes_since = 0
             self._last_rate_t = now
@@ -363,6 +367,7 @@ class CaptureWorker:
         self.emit(("status", {
             "state": self.state, "source": self.source, "error": self.error, "pps": round(self.pps, 1),
             "stream_kbps": round(self.stream_bps / 1000, 1), "lag_s": round(self.lag, 2),
+            "busy_pct": None if self.busy_pct is None else round(self.busy_pct, 1),
             "packets": self.analyzer.packets, "ignored": self.analyzer.ignored, "level": self.analyzer.level,
             "router_macs": router, "linktype": self.parser.linktype, "format": self.parser.format,
             "flows": len(self.analyzer.flows), "cpu_seconds": cpu_s, "deep_capture": self.ring is not None,
@@ -467,10 +472,11 @@ class CaptureWorker:
                     for chunk in resp.iter_raw(65536):
                         if not chunk:
                             continue
-                        self._last_data = time.time()
+                        t0 = self._last_data = time.time()
                         self._bytes_since += len(chunk)
                         self.parser.feed(chunk)
                         self.tick()
+                        self._busy_s += time.time() - t0
                         if not self.running or time.time() < self.paused_until:
                             break
                     else:
@@ -505,6 +511,7 @@ class CaptureWorker:
                 self._bytes_since += min(n, 256)
                 self._on_packet(now, bytes(buf[:min(n, 256)]), n, 1)
                 self.tick()
+                self._busy_s += time.time() - now
         finally:
             s.close()
 

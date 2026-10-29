@@ -283,6 +283,10 @@ backlog of the capture process:
 | 2 | CPU > 90 % or RAM < 150 MB or backlog > 5 s | sampling 1:4, extrapolated, marked as "estimated" |
 | 3 | level 2 sustained for 60 s | capture paused for 5 min, UI shows "Not available (load)" |
 
+The backlog only counts while the capture process is busy parsing at least half of the time:
+the FRITZ!Box delivers in bursts, and packets that arrive late at an idle reader are the box's
+delay, not a backlog.
+
 Pi-hole takes precedence: the service runs with `Nice=10`, `CPUWeight=50`,
 `MemoryMax=350M`.
 

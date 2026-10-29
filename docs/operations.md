@@ -160,6 +160,10 @@ used, not the file size (deleted pages initially stay in the file).
 | 2 | CPU > 90 %, RAM < 150 MB or backlog > 5 s | sampling 1:4, marked as "estimated" |
 | 3 | level 2 for longer than 60 s | capture paused for 5 min |
 
+The capture backlog only counts while the capture process spends at least half of its time
+parsing. The FRITZ!Box sends its stream in bursts, so packets often arrive ~2 s old while the
+process is just waiting; that delay alone does not throttle.
+
 The current level is shown as a banner in the UI.
 
 ---
