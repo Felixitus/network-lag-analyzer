@@ -5,7 +5,16 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-29
+
+Path measurement at incidents, QUIC server names, a weekly report, HTML e-mails, the
+version and update command in the web UI, and calmer, shorter pages.
+
 ### Added
+- **Version and updates in view**: the installed version stands at the bottom of every page
+  and turns into a hint when a newer release is out. The Pi page has a Software card with the
+  last check, a "Check for updates now" button and the exact update command for this Pi
+  (the folder `install.sh` ran from) with a copy button; the update banner shows it too.
 - **QUIC connections get their server name too** (HTTP/3, most of YouTube and Google):
   the capture decrypts the client's Initial packets with the keys RFC 9001 derives from
   the packet itself (v1 and v2), joins the ClientHello fragments that browsers shuffle
@@ -55,6 +64,8 @@ versions follow [SemVer](https://semver.org/).
   `config.yaml` stays as it is.
 
 ### Fixed
+- Downloading the PCAP of a long incident no longer risks the service's memory limit or stalls the
+  measurements while the archive is built: it is written to a temporary file in the background.
 - Incidents left open when the service stopped stayed "Ongoing" forever and were drawn as a
   band up to now - on a long-running Pi that tinted every chart red. They are closed on start
   where their last event ended, marked as interrupted, and get no made-up cause.

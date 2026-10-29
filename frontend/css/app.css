@@ -436,3 +436,12 @@ main .card .timeline-list::-webkit-scrollbar-thumb { background: var(--axis); bo
 .site-foot .coffee { padding: 5px 11px; border-radius: 999px; background: #ffdd00; color: #0b0b0b; font-weight: 600; }
 .site-foot .coffee:hover { text-decoration: none; filter: brightness(.96); }
 @media (max-width: 900px) { .site-foot { padding: 14px 16px 24px; } }
+.site-foot #foot-version { font-variant-numeric: tabular-nums; }
+.site-foot #foot-version .badge { margin-left: 2px; }
+
+/* ---------------------------------------------------------------- update command */
+.cmd { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border); max-width: 100%; }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; user-select: all; }
+.banner.update { flex-wrap: wrap; }
+.banner.update .stack-sm { flex: 1; min-width: 0; }

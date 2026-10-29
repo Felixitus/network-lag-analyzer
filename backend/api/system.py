@@ -128,6 +128,20 @@ async def backup_now(request: Request):
     return res
 
 
+@router.post("/update/check")
+async def update_check_now(request: Request):
+    """Asks GitHub right away, also when the daily check is switched off: the user clicked."""
+    core = core_of(request)
+    # Repeated clicks would use up GitHub's 60 anonymous requests per hour for this address.
+    last = core.update_info or {}
+    if time.time() - last.get("checked", 0) < UPDATE_CHECK_PAUSE:
+        return last
+    return await core._check_update(force=True)
+
+
+UPDATE_CHECK_PAUSE = 30
+
+
 @router.post("/database/pcap-cleanup")
 async def pcap_cleanup(request: Request):
     """Bring captures down to the configured budget right away."""

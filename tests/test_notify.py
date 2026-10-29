@@ -105,7 +105,7 @@ def test_a_kept_smtp_password_or_ntfy_token_never_goes_to_a_new_server(client):
                                                      "smtp_password": "pw-1", "ntfy_url": "https://ntfy.example/t",
                                                      "ntfy_token": "tk-1"}}, headers=hdr)
     assert r.status_code == 200
-    for change in ({"smtp_host": "smtp.attacker.example"}, {"smtp_port": 2525}, {"smtp_username": "other"},
+    for change in ({"smtp_host": "smtp.attacker.example"}, {"smtp_port": 2525}, {"smtp_username": "other"}, {"smtp_starttls": False},
                    {"ntfy_url": "https://ntfy.attacker.example/t"}):
         r = client.put("/api/settings", json={"notify": {**change, "smtp_password": "********", "ntfy_token": "********"}},
                        headers=hdr)

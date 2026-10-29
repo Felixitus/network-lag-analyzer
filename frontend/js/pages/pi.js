@@ -1,7 +1,7 @@
 // Raspberry Pi: its own health, its network port, and where losses in the home network lie.
-import { api, clear, fmtBytes, fmtDateTime, fmtDuration, h, SERIES } from '../lib.js';
+import { ago, api, clear, fmtBytes, fmtDateTime, fmtDuration, h, SERIES, toast } from '../lib.js';
 import { chartCard } from '../charts.js';
-import { segmented } from './common.js';
+import { segmented, updateCommand } from './common.js';
 
 let timer = null;
 export function unmount() { clearInterval(timer); }
@@ -61,7 +61,42 @@ function linkCard(d) {
   return card;
 }
 
-export async function mount(main) {
+/** Installed version, the last update check and the command to update. */
+function softwareCard(store, refreshStatus) {
+  const card = h('div', { class: 'card stack', style: { marginTop: '16px' } });
+  const check = h('button', { class: 'btn', type: 'button' }, 'Check for updates now');
+  check.addEventListener('click', async () => {
+    check.disabled = true;
+    try { await api('api/update/check', { method: 'POST', body: {} }); await refreshStatus(); render(); }
+    catch (e) { toast(`Check failed: ${e.message}`, 5000); }
+    check.disabled = false;
+  });
+  function render() {
+    const s = store.status || {};
+    const u = s.update;
+    const state = !u ? (s.update_check ? 'not checked yet' : 'automatic check switched off')
+      : u.error ? `GitHub not reachable (${u.error})`
+        : u.newer ? `version ${u.latest} is available` : `up to date (latest release ${u.latest})`;
+    // DOM append() would print a null as the text "null"
+    clear(card).append(...[
+      h('div', { class: 'card-head' }, h('h2', null, 'Software'),
+        h('span', { class: `badge ${u && u.newer ? 'warning' : u && !u.error ? 'good' : ''}` }, u && u.newer ? 'update available' : `v${s.version}`)),
+      h('ul', { class: 'list' },
+        row('Installed version', s.version),
+        row('Update check', state, u ? `checked ${ago(u.checked)}` : (s.update_check ? 'once a day' : null))),
+      u && u.newer ? h('div', { class: 'stack-sm' },
+        h('div', { class: 'small' }, 'Run this on the Pi (over SSH). Settings and data are kept, the service restarts by itself. ',
+          u.url ? h('a', { href: u.url, target: '_blank', rel: 'noopener noreferrer' }, 'What is new →') : null),
+        updateCommand(s)) : null,
+      h('div', { class: 'row' }, check, h('span', { class: 'small muted' },
+        'Asks GitHub for the latest release - nothing about this installation is sent. Nothing is installed automatically.')),
+    ].filter(Boolean));
+  }
+  render();
+  return card;
+}
+
+export async function mount(main, { store, refreshStatus }) {
   let range = '24h';
   const top = h('div', { class: 'grid grid-2' });
   const temp = chartCard('Temperature', [{ label: 'CPU', color: SERIES(2), fmt: v => `${v.toFixed(1)} °C` }],
@@ -81,6 +116,7 @@ export async function mount(main) {
       h('p', null, 'The measuring device itself - if it is unwell, every other number is in doubt.')),
     segmented([['24h', '24 H'], ['7d', '7 D']], range, v => { range = v; load(); })),
     top,
+    softwareCard(store, refreshStatus),
     h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, temp.card, port.card),
     h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, cpu.card, mem.card), note);
   const ch = [temp.mount(), port.mount(), cpu.mount(), mem.mount()];

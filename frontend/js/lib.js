@@ -140,3 +140,18 @@ export function statusIcon(ok) {
     : ok === false ? h('span', { class: 'ic bad', 'aria-label': 'not available' }, '✗')
       : h('span', { class: 'ic unk', 'aria-label': 'unknown' }, '?');
 }
+
+/** Copy text. The UI runs on plain HTTP in the LAN, where navigator.clipboard does not exist. */
+export async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
+  }
+  const ta = h('textarea', { readonly: '', style: { position: 'fixed', top: '-1000px', opacity: '0' } });
+  ta.value = text;
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}

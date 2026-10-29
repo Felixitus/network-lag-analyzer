@@ -14,11 +14,14 @@ router = APIRouter(prefix="/api")
 # Brake against guessing from the LAN: per address 5 failed attempts per 15 minutes,
 # and for all addresses together 30 - so that changing the IP (or MAC) does not
 # buy unlimited attempts. In memory is enough: a restart takes longer than a guess.
+# The address of the last successful login only counts against its own limit: otherwise any
+# device on the LAN could keep the owner locked out by failing 30 times every 15 minutes.
 LOGIN_MAX_FAILS = 5
 LOGIN_MAX_FAILS_TOTAL = 30
 LOGIN_WINDOW = 15 * 60
 FAIL_DELAY = 0.5
 _login_fails: dict[str, list[float]] = {}
+_last_ok_ip: str | None = None
 
 
 def core_of(request: Request):
@@ -33,6 +36,18 @@ def _recent(now: float) -> dict[str, list[float]]:
         else:
             del _login_fails[ip]                       # otherwise the dict grows with every IP
     return _login_fails
+
+
+def _throttled(ip: str, now: float) -> bool:
+    fails = _recent(now)
+    if len(fails.get(ip, ())) >= LOGIN_MAX_FAILS:
+        return True
+    return ip != _last_ok_ip and sum(map(len, fails.values())) >= LOGIN_MAX_FAILS_TOTAL
+
+
+def _too_many() -> HTTPException:
+    return HTTPException(429, "Too many failed attempts - please try again in 15 minutes",
+                         headers={"Retry-After": str(LOGIN_WINDOW)})
 
 
 def _set_cookie(response: Response, token: str, hours: float) -> None:
@@ -86,10 +101,8 @@ async def login(request: Request, body: LoginBody, response: Response):
     core = core_of(request)
     ip = s.client_ip(request)
     now = time.time()
-    fails = _recent(now)
-    if len(fails.get(ip, ())) >= LOGIN_MAX_FAILS or sum(map(len, fails.values())) >= LOGIN_MAX_FAILS_TOTAL:
-        raise HTTPException(429, "Too many failed attempts - please try again in 15 minutes",
-                            headers={"Retry-After": str(LOGIN_WINDOW)})
+    if _throttled(ip, now):
+        raise _too_many()
     account = await core.db.read(s.get_account)
     if account is None:
         raise HTTPException(403, "No account set up yet - create it on the Raspberry Pi (see README)")
@@ -101,7 +114,9 @@ async def login(request: Request, body: LoginBody, response: Response):
         await asyncio.sleep(FAIL_DELAY)
         # Same message for wrong username and wrong password.
         raise HTTPException(401, "Wrong username or password")
+    global _last_ok_ip
     _login_fails.pop(ip, None)
+    _last_ok_ip = ip
     hours = core.cfg.security.session_hours
     token = await core.db.write(lambda c: s.create_session(c, account["username"], hours, ip))
     _set_cookie(response, token, hours)
@@ -128,7 +143,12 @@ async def change_password(request: Request, body: PasswordBody):
     account = await core.db.read(s.get_account)
     if account is None:
         raise HTTPException(403, "No account set up yet")
+    # A stolen session must not turn into unlimited guesses at the password.
+    ip, now = s.client_ip(request), time.time()
+    if _throttled(ip, now):
+        raise _too_many()
     if not await asyncio.to_thread(s.verify_password, body.current_password, account["password_hash"]):
+        _login_fails.setdefault(ip, []).append(now)
         await asyncio.sleep(FAIL_DELAY)
         raise HTTPException(403, "Current password is wrong")
     username = (body.new_username or "").strip() or account["username"]

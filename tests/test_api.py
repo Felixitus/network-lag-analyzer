@@ -82,6 +82,26 @@ def test_pcap_download_requires_deep_capture(client):
     assert client.get("/api/incidents/1/pcap").status_code == 404
 
 
+def test_pcap_zip_of_several_files_is_built_on_disk_not_in_memory(tmp_path):
+    """A long incident spans several 50 MB ring files: zipped in memory they went past the
+    service's memory limit."""
+    import zipfile
+
+    from backend.api.incidents import _zip_files
+    files = []
+    for i in range(3):
+        f = tmp_path / f"nla-{i}.pcap"
+        f.write_bytes(bytes.fromhex("d4c3b2a1") + bytes([i]) * 1000)
+        files.append(str(f))
+    z = _zip_files(files, str(tmp_path))
+    assert os.path.dirname(z) == str(tmp_path) and os.path.basename(z).startswith(".download-")
+    with zipfile.ZipFile(z) as zf:
+        assert sorted(zf.namelist()) == ["nla-0.pcap", "nla-1.pcap", "nla-2.pcap"]
+    with pytest.raises(FileNotFoundError):
+        _zip_files([str(tmp_path / "gone.pcap")], str(tmp_path))
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.startswith(".download-")) == [os.path.basename(z)]
+
+
 def test_bufferbloat_endpoint(client):
     r = client.get("/api/bufferbloat?range=1h")
     assert r.status_code == 200

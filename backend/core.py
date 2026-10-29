@@ -157,6 +157,7 @@ class Core:
         self.simulator = None
         self.setup_done = False
         self.version = __version__
+        self.source_dir = _source_dir()
 
     # ================================================================== start/stop
     async def start(self) -> None:
@@ -1400,7 +1401,10 @@ class Core:
         try:
             d = await asyncio.to_thread(fetch)
             latest = str(d.get("tag_name") or "").lstrip("v")
-            self.update_info = {"checked": time.time(), "latest": latest, "url": d.get("html_url"),
+            url = str(d.get("html_url") or "")
+            # the link ends up in the page: only a release page on GitHub, never another scheme or site
+            self.update_info = {"checked": time.time(), "latest": latest,
+                                "url": url if url.startswith("https://github.com/") else None,
                                 "newer": _version_tuple(latest) > _version_tuple(self.version)}
         except Exception as e:  # noqa: BLE001 - no internet is no reason for anything
             self.update_info = {"checked": time.time(), "error": f"{type(e).__name__}", "newer": False}
@@ -1644,9 +1648,18 @@ class Core:
         """Reconcile directory and database; remove orphans on both sides."""
         d = os.path.join(self.cfg.data_dir, "pcap")
         try:
-            on_disk = {os.path.join(d, f) for f in os.listdir(d) if f.endswith(".pcap")}
+            names = os.listdir(d)
         except OSError:
             return
+        on_disk = {os.path.join(d, f) for f in names if f.endswith(".pcap")}
+        # a download zip outlives its request only when the process died while sending it
+        for f in names:
+            p = os.path.join(d, f)
+            try:
+                if f.startswith(".download-") and time.time() - os.path.getmtime(p) > 3600:
+                    os.unlink(p)
+            except OSError:
+                pass
         known = await self.db.read(lambda c: {r["path"] for r in c.execute("SELECT path FROM pcap_files")})
         missing = known - on_disk
         if missing:
@@ -1787,8 +1800,10 @@ class Core:
             raise ValueError("The FRITZ!Box address is changing - please re-enter the FRITZ!Box password "
                              "as well.")
         # The same for the notification secrets: a kept SMTP password or ntfy token only goes to the
-        # server it was entered for.
-        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username"), "SMTP password"),
+        # server it was entered for, and only the way it was entered for (switching STARTTLS off would
+        # send it in the clear).
+        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username", "smtp_starttls"),
+                                      "SMTP password"),
                                      ("ntfy_token", ("ntfy_url",), "ntfy token")):
             if (secret in kept_secrets and getattr(self.cfg.notify, secret) and getattr(new_cfg.notify, where[0])
                     and any(getattr(new_cfg.notify, f) != getattr(self.cfg.notify, f) for f in where)):
@@ -1862,10 +1877,21 @@ class Core:
             "incidents_dismissed": self.dismissed_incidents,
             "alerts_active": self.alerts.active(),
             "update": self.update_info,
+            "update_check": self.cfg.update_check,
+            "source_dir": self.source_dir,
         }
 
 
 # ====================================================================== helpers
+def _source_dir() -> str | None:
+    """The clone install.sh ran from: the update command has to be run there, not in /opt."""
+    from pathlib import Path
+    try:
+        return (Path(__file__).resolve().parents[1] / "SOURCE_DIR").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
 def _resolve_v4(host: str | None) -> str | None:
     """Host (IP, name or name:port) → IPv4 address, otherwise None."""
     if not host:

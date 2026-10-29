@@ -1,5 +1,5 @@
 [Unit]
-Description=Network Lag Analyzer (Lag-/Packet-Loss-Diagnose)
+Description=Network Lag Analyzer (lag and packet loss diagnostics)
 Documentation=file:///opt/network-lag-analyzer/README.md
 After=network-online.target pihole-FTL.service
 Wants=network-online.target
@@ -22,7 +22,7 @@ CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=true
 UMask=0027
 
-# Pi-hole hat Vorrang
+# Pi-hole takes precedence
 Nice=10
 CPUWeight=50
 IOWeight=50
@@ -38,6 +38,15 @@ ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_PACKET AF_NETLINK
 RestrictNamespaces=true
 LockPersonality=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+# EPERM instead of killing the service: a call the filter does not allow fails like any other error
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 
 StandardOutput=journal
 StandardError=journal

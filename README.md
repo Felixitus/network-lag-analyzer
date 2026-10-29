@@ -67,7 +67,8 @@ enter the FRITZ!Box access.
 Network → Network Settings) and create a dedicated user with the permission
 "FRITZ!Box Settings". Details: [docs/setup.md](docs/setup.md).
 
-**Update:** `git pull && sudo ./install.sh` - configuration and data are kept.
+**Update:** `git pull && sudo ./install.sh` in the cloned folder - configuration and data are
+kept. The web UI shows when a new release is out (bottom of every page, Pi page).
 
 **Uninstall:** `sudo ./install.sh --uninstall` - data and configuration are kept until you
 delete `/var/lib/network-lag-analyzer` and `/etc/network-lag-analyzer`.
