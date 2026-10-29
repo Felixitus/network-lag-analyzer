@@ -280,6 +280,10 @@ class DeepCaptureCfg(BaseModel):
     # Bytes of each packet written to the files - headers only. The FRITZ!Box may send more
     # (fritzbox.snaplen, for the server names); that part is only read, never stored.
     snaplen: int = Field(128, ge=64, le=1024)
+    # "memory": the running ring stays in RAM and only incident captures reach the SD card
+    # (on disk it wrote ~10 GB a day). The RAM counts against the service's MemoryMax.
+    buffer: Literal["memory", "disk"] = "memory"
+    memory_mb: int = Field(64, ge=8, le=128)
 
 
 class LoadGuardCfg(BaseModel):

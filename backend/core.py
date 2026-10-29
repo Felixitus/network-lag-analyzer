@@ -1826,7 +1826,11 @@ class Core:
         if new_cfg.deep_capture.enabled != old.deep_capture.enabled:
             self.capture_command("deep", new_cfg.deep_capture.enabled)
         self._sync_gaming_mac()
-        restart = bool(set(patch) & RESTART_SECTIONS) and not self.cfg.dev_mode
+        # The ring is built once in the capture process; its size and place only change with a restart
+        ring_changed = new_cfg.deep_capture.enabled and any(
+            getattr(new_cfg.deep_capture, k) != getattr(old.deep_capture, k)
+            for k in ("buffer", "memory_mb", "max_files", "file_size_mb", "max_total_mb", "snaplen"))
+        restart = (bool(set(patch) & RESTART_SECTIONS) or ring_changed) and not self.cfg.dev_mode
         if restart:
             await self.restart_collectors()
         return {"restarted": restart}
