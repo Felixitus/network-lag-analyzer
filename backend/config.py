@@ -153,6 +153,8 @@ class NotifyCfg(BaseModel):
     smtp_host: str = ""
     smtp_port: int = Field(587, ge=1, le=65535)
     smtp_starttls: bool = True
+    # TLS from the first byte (port 465, "SMTPS"); many providers offer only that. STARTTLS is then off.
+    smtp_tls: bool = False
     smtp_username: str = ""
     smtp_password: str = ""
     mail_from: str = ""

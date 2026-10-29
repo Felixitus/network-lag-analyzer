@@ -1803,7 +1803,7 @@ class Core:
         # The same for the notification secrets: a kept SMTP password or ntfy token only goes to the
         # server it was entered for, and only the way it was entered for (switching STARTTLS off would
         # send it in the clear).
-        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username", "smtp_starttls"),
+        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username", "smtp_starttls", "smtp_tls"),
                                       "SMTP password"),
                                      ("ntfy_token", ("ntfy_url",), "ntfy token")):
             if (secret in kept_secrets and getattr(self.cfg.notify, secret) and getattr(new_cfg.notify, where[0])

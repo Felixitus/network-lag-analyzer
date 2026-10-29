@@ -121,9 +121,14 @@ def send_mail(cfg, title: str, body: str, priority: str, timeout: float = 15, ki
     msg["To"] = cfg.mail_to
     msg.set_content(body + (f"\n\n{link}" if link else ""))
     msg.add_alternative(mail_html(title, body, kind, link), subtype="html")
-    with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=timeout) as s:
-        if cfg.smtp_starttls:
-            s.starttls(context=ssl.create_default_context())
+    ctx = ssl.create_default_context()
+    if getattr(cfg, "smtp_tls", False):
+        conn = smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, timeout=timeout, context=ctx)
+    else:
+        conn = smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=timeout)
+    with conn as s:
+        if cfg.smtp_starttls and not getattr(cfg, "smtp_tls", False):
+            s.starttls(context=ctx)
         if cfg.smtp_username:
             s.login(cfg.smtp_username, cfg.smtp_password)
         s.send_message(msg)
