@@ -115,7 +115,10 @@ class PacketAnalyzer:
         self.packets = 0
         # TLS ClientHellos seen, with a server name, and cut off by the snaplen; the same for QUIC
         self.sni_stats = {"hellos": 0, "named": 0, "truncated": 0,
-                          "quic": 0, "quic_named": 0, "quic_truncated": 0, "quic_available": quic.AVAILABLE}
+                          "quic": 0, "quic_named": 0, "quic_truncated": 0, "quic_available": quic.AVAILABLE,
+                          # QUIC flows whose hello was never seen: joined a running connection,
+                          # or long headers of a version we cannot read (e.g. Google's own gQUIC)
+                          "quic_midway": 0, "quic_unreadable": 0}
         self.ignored = 0
         self._cand_t = 0.0
 
@@ -339,12 +342,14 @@ class PacketAnalyzer:
         if f.quic is None:
             if not payload or payload[0] & 0xC0 != 0xC0:     # not a long header: no handshake on this flow
                 f.sni_done = True
+                self.sni_stats["quic_midway"] += 1
                 return
             f.quic = quic.QuicHello()
         name = f.quic.add(payload)
         if name is None:
             if f.quic.packets == 0 and f.pu > quic.MAX_PACKETS:
                 f.sni_done, f.quic = True, None              # never an Initial we could read
+                self.sni_stats["quic_unreadable"] += 1
             return
         f.sni_done, f.quic = True, None                      # done: free the fragments
         self.sni_stats["quic"] += 1
