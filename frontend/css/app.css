@@ -54,6 +54,10 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--page); color: var(--text-primary); font: 14px/1.45 var(--font); }
+/* The footer sits at the bottom of the window even when the page is short (sign-in, empty pages) */
+body { display: flex; flex-direction: column; min-height: 100vh; }
+body > main { flex: 1 0 auto; width: 100%; }
+body > #banners, body > .site-foot { width: 100%; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1, h2, h3 { margin: 0; line-height: 1.2; }
@@ -427,6 +431,23 @@ main .card .timeline-list::-webkit-scrollbar-thumb { background: var(--axis); bo
 .card.fold > .fold-head:hover h3 { color: var(--accent); }
 .card.fold.folded > :not(.fold-head) { display: none; }
 .card.fold.folded { padding-top: 12px; padding-bottom: 12px; }
+
+/* ---------------------------------------------------------------- sign-in */
+/* Signed out, the navigation leads nowhere: every page would ask for the sign-in again */
+body.signed-out #nav, body.signed-out #live-pill { display: none; }
+body.signed-out .topbar-right { margin-left: auto; }
+.auth { display: flex; justify-content: center; padding: 8vh 0 32px; }
+.auth-card { width: min(380px, 100%); padding: 28px; }
+.auth-card .auth-mark { width: 40px; height: 40px; margin-bottom: 14px; }
+.auth-card .auth-mark rect { fill: var(--accent); }
+.auth-card .auth-mark path { stroke: #fff; stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.auth-card h3 { font-size: 19px; }
+.auth-card > p { margin: 6px 0 20px; }
+.auth-card label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; }
+.auth-card input { width: 100%; padding: 9px 11px; }
+.auth-card .btn { width: 100%; padding: 9px 13px; }
+.auth-card .err:empty { display: none; }
+.auth-card.wide { width: min(640px, 100%); }
 
 /* ---------------------------------------------------------------- footer */
 .site-foot { max-width: 1440px; margin: 0 auto; padding: 14px 24px 28px; border-top: 1px solid var(--border);
