@@ -49,8 +49,8 @@ jobs:
           sudo ln -s "$(command -v python3)" /opt/network-lag-analyzer/venv/bin/python
           systemd-analyze verify deploy/network-lag-analyzer.service
       - name: Hardening score
-        # 2.7 on the Pi (systemd 252); fails when the exposure gets worse
-        run: systemd-analyze security --offline=yes --threshold=3.0 --no-pager deploy/network-lag-analyzer.service
+        # 2.7 on the Pi (systemd 252); the threshold is on a 0-100 scale, so 30 means 3.0
+        run: systemd-analyze security --offline=yes --threshold=30 --no-pager deploy/network-lag-analyzer.service
 
   frontend:
     # The frontend has no build step, so nothing else would notice a syntax error:
