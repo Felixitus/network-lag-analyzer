@@ -12,7 +12,8 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 458, must be green)
+python3 -m pytest tests -q                    # all tests (currently 471, must be green)
+node --test tests/frontend/*.test.mjs         # web UI helpers (needs frontend/package.json, see CI)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
 sudo ./install.sh                             # installation (systemd, user nla)
@@ -168,6 +169,10 @@ Do not walk into them again - the tests for them are there on purpose.
   93 → 298 KiB/s, PCAP ring writes 126 → 331 KiB/s (10 → 27 GB/day) - hence
   `deep_capture.snaplen` = 128, which keeps the writes where they were. Watch the capture
   input on busy evenings; the load guard throttles if parsing falls behind.
+  First look (journal 2026-10-28 to 10-29): every load guard step was level 1 from a capture
+  delay of ~2.0 s at 1-9 % CPU - the FRITZ!Box's burst delay, not a backlog (fixed: the delay
+  counts only while the reader is busy, `busy_pct` in the capture status). Capture CPU peaked at
+  28 % of one core. A long streaming evening is still to be measured.
 
 ## Notes
 

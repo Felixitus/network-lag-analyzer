@@ -1,0 +1,35 @@
+name: Release
+
+# Pushing a tag v1.2.3 publishes the release with that version's CHANGELOG section as notes.
+# Release tags can only be pushed by the owner (ruleset), and main only holds green commits.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+      - name: Notes from the changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python3 .github/scripts/release_notes.py "$TAG" > notes.md
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Made by hand already: left as it is
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::Release $TAG exists already"
+          else
+            gh release create "$TAG" --verify-tag --title "Version ${TAG#v}" --notes-file notes.md
+          fi

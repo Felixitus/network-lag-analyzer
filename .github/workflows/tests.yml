@@ -37,6 +37,21 @@ jobs:
       - name: Line endings (LF)
         run: "! git ls-files --eol | grep -v 'frontend/vendor' | grep -E 'i/crlf|w/crlf'"
 
+  systemd:
+    # A typo in the unit or a dropped hardening line would otherwise only show on the Pi.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+      - name: Verify the unit
+        run: |
+          # verify wants ExecStart to exist; install.sh creates the venv there
+          sudo install -d /opt/network-lag-analyzer/venv/bin
+          sudo ln -s "$(command -v python3)" /opt/network-lag-analyzer/venv/bin/python
+          systemd-analyze verify deploy/network-lag-analyzer.service
+      - name: Hardening score
+        # 2.7 on the Pi (systemd 252); fails when the exposure gets worse
+        run: systemd-analyze security --offline=yes --threshold=3.0 --no-pager deploy/network-lag-analyzer.service
+
   frontend:
     # The frontend has no build step, so nothing else would notice a syntax error:
     # twice a page stayed blank because of one, and only a look at the browser caught it.
@@ -54,3 +69,5 @@ jobs:
             node --check "$f" || status=1
           done
           exit $status
+      - name: Unit tests of the helpers
+        run: node --test tests/frontend/*.test.mjs

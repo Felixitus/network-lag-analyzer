@@ -13,9 +13,15 @@ versions follow [SemVer](https://semver.org/).
 
 ### Fixed
 - A backup that failed halfway no longer leaves an empty copy behind that looked like a backup.
+- The load guard no longer switches the flow analysis off for a minute when the FRITZ!Box
+  delivers its capture a little late while the Pi is idle - on the Pi that happened about once an
+  hour at 2 % CPU. The capture delay now only counts while the capture process is busy parsing.
 
 ### Project
 - Dependabot keeps the pinned CI actions up to date (one grouped PR a month).
+- CI checks the systemd unit (`systemd-analyze verify` and its hardening score) and runs unit
+  tests of the web UI helpers.
+- Pushing a release tag publishes the release, with the changelog section as notes.
 
 ## [1.4.0] - 2026-10-29
 
