@@ -1,2 +1,2 @@
 """Network Lag Analyzer – local network diagnostics for a Raspberry Pi running Pi-hole."""
-__version__ = "1.5.0"
+__version__ = "1.6.0"

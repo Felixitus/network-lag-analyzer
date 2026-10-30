@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-30
+
 ### Added
 - **The running PCAP ring lives in RAM** (`deep_capture.buffer: memory`, 64 MB by default): only
   the captures that belong to an incident are written to the SD card. On the SD card the ring
@@ -29,6 +31,14 @@ versions follow [SemVer](https://semver.org/).
 - QUIC server names: fragments of the hello that touch anywhere are joined before the name is
   looked for - Chrome cuts at random offsets, often right through the name.
 - Changing the size or place of the PCAP ring restarts the capture, so it takes effect at once.
+- **Slimmer pages.** Shorter page introductions; the overview no longer shows a Pi-hole card
+  while the Pi-hole actions are off, and its timeline explains itself in one line. The DNS page
+  shows active and known clients in one tile; the Pi page shows the version once and the LAN
+  reference hint once.
+
+### Fixed
+- A page could show up twice when the next page was opened while it was still loading its data
+  (seen on the Live page).
 
 ## [1.5.0] - 2026-10-29
 
