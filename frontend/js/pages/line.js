@@ -119,7 +119,7 @@ export async function mount(main) {
   const note = h('p', { class: 'small muted' });
   main.append(
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Internet line'),
-      h('p', null, 'Is the line the problem, or the home network? Line values from the FRITZ!Box, outages from the Pi\'s own pings.')),
+      h('p', null, 'Line values from the FRITZ!Box, outages from the Pi\'s own pings.')),
     segmented([['24h', '24 H'], ['7d', '7 D'], ['30d', '30 D']], range, v => { range = v; load(); })),
     top,
     h('div', { class: 'grid grid-2', style: { marginTop: '16px' } }, rate.card, snr.card),

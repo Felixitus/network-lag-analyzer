@@ -118,14 +118,8 @@ export function piholeCard({ compact = false } = {}) {
   const act = async (path, body, question) => { if (await piholeAction(path, body, question)) load(); };
   function render(s) {
     while (card.firstChild) card.removeChild(card.firstChild);
-    if (!s.enabled) {
-      if (compact) {
-        card.style.display = '';
-        card.append(h('div', { class: 'row small muted' }, 'Pi-hole blocking can be paused from here once the Pi-hole actions are switched on: ',
-          h('a', { href: '#/settings' }, 'Setup → Pi-hole actions')));
-      } else card.style.display = 'none';
-      return;
-    }
+    // Switched off it stays hidden: a card that only says what it could do is noise on every visit
+    if (!s.enabled) { card.style.display = 'none'; return; }
     card.style.display = '';
     const paused = s.blocking === 'disabled';
     const st = h('span', { class: `badge ${s.error ? 'warning' : paused ? 'warning' : 'good'}` },

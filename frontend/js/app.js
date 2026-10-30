@@ -33,7 +33,10 @@ async function render() {
   const { name, args } = parseHash();
   if (current && current.unmount) current.unmount();
   destroyAll();
-  const main = clear(document.getElementById('main'));
+  // A fresh box per render: a mount still waiting for its data when the next render starts
+  // would otherwise append into the new page, and the Live page showed up twice.
+  const main = h('div', { class: 'page' });
+  clear(document.getElementById('main')).append(main);
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active',
     a.dataset.route === name || (name === 'incident' && a.dataset.route === 'incidents')));
   const mod = routes[name];

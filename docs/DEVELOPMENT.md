@@ -169,7 +169,8 @@ Do not walk into them again - the tests for them are there on purpose.
 * `fritzbox.snaplen` is 600 since the server names (TLS, QUIC) need it. Measured on the Pi 4
   (5 min each, 2026-10-28): service CPU 8.0 % of one core at 128 and at 600, capture input
   93 → 298 KiB/s, PCAP ring writes 126 → 331 KiB/s (10 → 27 GB/day) - hence
-  `deep_capture.snaplen` = 128, which keeps the writes where they were. Watch the capture
+  `deep_capture.snaplen` = 128, which keeps the writes where they were (since 1.6.0 the running
+  ring lives in RAM by default, so this only matters with `buffer: disk`). Watch the capture
   input on busy evenings; the load guard throttles if parsing falls behind.
   First look (journal 2026-10-28 to 10-29): every load guard step was level 1 from a capture
   delay of ~2.0 s at 1-9 % CPU - the FRITZ!Box's burst delay, not a backlog (fixed: the delay

@@ -96,8 +96,7 @@ function legend() {
   return h('div', { class: 'row small muted', style: { flexWrap: 'wrap', gap: '14px' } },
     item('lvl-good', 'OK'), item('lvl-warning', 'Warning'), item('lvl-critical', 'Problem'), item('na', 'Not measured'),
     mark('inc', '!', 'Incident'), mark('user', '!', 'Lag reported'), mark('line', '◆', 'FRITZ!Box event'),
-    mark('newdev', '+', 'New device'), mark('restart', '↻', 'Service started'), mark('restart', '⏻', 'Pi started'),
-    mark('inc many', '3', 'Several close together'));
+    mark('newdev', '+', 'New device'), mark('restart', '↻', 'Restart'));
 }
 
 function happenings(data) {
@@ -118,17 +117,15 @@ export async function mount(main) {
   const lightsBox = h('div', { class: 'lights', role: 'list' });
   const tlBox = h('div', null, h('div', { class: 'empty' }, 'loading…'));
   const listBox = h('div');
-  const note = h('div', { class: 'small muted' });
   main.append(
-    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Overview'),
-      h('p', null, 'Everything at a glance - each light from the current measurements, the timeline from the stored ones.'))),
+    h('div', { class: 'page-head' }, h('h1', null, 'Overview')),
     lightsBox,
     h('div', { style: { marginTop: '16px' } }, piholeCard({ compact: true })),
     h('div', { class: 'card stack', style: { marginTop: '16px' } },
       h('div', { class: 'card-head' }, h('div', null, h('h2', null, 'Timeline'),
-        h('div', { class: 'sub' }, 'Hover a cell for the measured values')),
+        h('div', { class: 'sub' }, 'Hover a cell or a marker for the measured values; hatched: nothing was measured')),
       segmented([['24h', '24 H'], ['7d', '7 D']], range, v => { range = v; load(); })),
-      tlBox, legend(), note),
+      tlBox, legend()),
     h('div', { class: 'card', style: { marginTop: '16px' } },
       h('div', { class: 'card-head' }, h('h2', null, 'What happened'), h('a', { href: '#/incidents', class: 'small' }, 'all incidents →')), listBox));
 
@@ -137,7 +134,6 @@ export async function mount(main) {
     clear(lightsBox).append(...d.lights.map(lightCard));
     clear(tlBox).append(timelineView(d));
     clear(listBox).append(happenings(d));
-    note.textContent = d.note;
   }
   await load();
   timer = setInterval(() => load().catch(() => null), 30000);

@@ -15,8 +15,7 @@ async function list(main) {
   const dis = st.incidents_dismissed || {};
   const nDis = Object.values(dis).reduce((a, b) => a + b, 0);
   main.append(h('div', { class: 'page-head' },
-    h('div', null, h('h1', null, 'Incidents'), h('p', null, 'Automatically detected lag events and your "I just had lag" reports. '
-      + 'Problems less than 2 minutes apart form one incident.'),
+    h('div', null, h('h1', null, 'Incidents'), h('p', null, 'Detected lag and your own reports - problems less than 2 minutes apart form one.'),
     h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, `Kept as events only, not as incidents: problems of a single external target `
       + `while the line was fine, and blips under 5 s without a cause${nDis ? ` - ${nDis} since the last start` : ''}.`)),
     segmented([[null, 'All'], ['auto', 'Automatic'], ['user', 'Reported']], null, v => { source = v; load(); })), body);

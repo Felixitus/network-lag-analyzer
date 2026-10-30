@@ -71,7 +71,7 @@ export async function mount(main, { args }) {
 
   main.append(h('div', { class: 'page-head' },
     h('div', null, h('h1', null, 'Timeline'),
-      h('p', null, 'All measurements on one time axis. Clicking a band opens the incident, dragging zooms into the time span.'),
+      h('p', null, 'Click a band to open its incident, drag to zoom.'),
       h('div', { class: 'tl-key small' },
         h('span', null, h('i', { class: 'key-band crit' }), 'Incident'),
         h('span', null, h('i', { class: 'key-band warn' }), 'Reported lag'),

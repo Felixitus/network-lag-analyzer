@@ -29,7 +29,7 @@ function healthCard(d) {
     row('Written to the SD card', x.sd_written_bytes === null ? null : fmtBytes(x.sd_written_bytes), 'since boot'),
     row('Pi-hole service', x.pihole_active === null ? null : x.pihole_active ? 'running' : 'NOT running'),
     row('Pi running for', x.boot_ts ? fmtDuration(x.ts - x.boot_ts) : null),
-    row('Service running for', fmtDuration(d.service.uptime_s), `version ${d.service.version}`)));
+    row('Service running for', fmtDuration(d.service.uptime_s))));
   return card;
 }
 
@@ -52,7 +52,8 @@ function linkCard(d) {
   }
   card.append(ul);
   const v = d.verdict;
-  if (v && v.text) card.append(h('div', { class: `badge ${v.where === 'pi_link' ? 'critical' : 'warning'}` }, v.text));
+  // Without a reference the tip below says the same as the verdict, twice is once too often
+  if (v && v.text && !(v.where === 'unknown' && !d.lan_reference)) card.append(h('div', { class: `badge ${v.where === 'pi_link' ? 'critical' : 'warning'}` }, v.text));
   else if (v && v.where === 'ok') card.append(h('div', { class: 'small muted' }, 'No packet loss inside the home network right now.'));
   if (!d.lan_reference) {
     card.append(h('div', { class: 'small muted' }, 'Tip: set a second always-on device (access point, switch, NAS) as LAN reference in Setup. '
@@ -126,7 +127,7 @@ function softwareCard(store, refreshStatus) {
     // DOM append() would print a null as the text "null"
     clear(card).append(...[
       h('div', { class: 'card-head' }, h('h2', null, 'Software'),
-        h('span', { class: `badge ${u && u.newer ? 'warning' : u && !u.error ? 'good' : ''}` }, u && u.newer ? 'update available' : `v${s.version}`)),
+        u && u.newer ? h('span', { class: 'badge warning' }, 'update available') : null),
       h('ul', { class: 'list' },
         row('Installed version', s.version),
         row('Update check', state, u ? `checked ${ago(u.checked)}` : (s.update_check ? 'once a day' : null))),
