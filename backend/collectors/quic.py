@@ -14,8 +14,10 @@ What makes it harder than TCP:
   underneath, so a cut-off packet can still be decrypted up to the cut - just not
   authenticated. If the fragment with the name is cut, the name is TRUNCATED, as with TCP.
 * When the fragments do not join up from offset 0, the server_name extension is looked
-  for directly in each fragment: three nested length fields that must agree, followed by
-  a valid host name. A random match of all of them is practically impossible.
+  for directly in each run of fragments that do join up: three nested length fields that
+  must agree, followed by a valid host name. A random match of all of them is practically
+  impossible. Runs, not single fragments: Chrome cuts at random offsets, often right
+  through the extension, and the two halves only meet again in the run.
 
 Without the `cryptography` package this module does nothing and says so (`AVAILABLE`).
 """
@@ -179,8 +181,8 @@ class QuicHello:
         stream = self._stream()
         name = parse_sni_handshake(stream) if stream else None
         if name is None or name == TRUNCATED:
-            for data in self.frags.values():
-                found = scan_sni(data)
+            for run in self._runs():
+                found = scan_sni(run)
                 if found:
                     return found
         if name is not None and name != TRUNCATED:
@@ -190,6 +192,18 @@ class QuicHello:
         if self.packets >= MAX_PACKETS:
             return TRUNCATED if self.frags else NO_NAME
         return None
+
+    def _runs(self) -> list[bytes]:
+        """The fragments joined wherever they touch or overlap, also away from offset 0."""
+        runs: list[list] = []
+        for off in sorted(self.frags):
+            data = self.frags[off]
+            if runs and off <= runs[-1][0] + len(runs[-1][1]):
+                start, buf = runs[-1]
+                runs[-1][1] = buf + data[start + len(buf) - off:]
+            else:
+                runs.append([off, data])
+        return [buf for _, buf in runs]
 
     def _stream(self) -> bytes:
         """The handshake bytes contiguous from offset 0."""

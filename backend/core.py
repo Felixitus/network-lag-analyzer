@@ -1687,7 +1687,8 @@ class Core:
         host = self.cfg.server.host
         if host in ("auto", "0.0.0.0", "::"):
             host = self.pi_ip
-        return f"http://{host}:{self.cfg.server.port}/{page}" if host else None
+        scheme = "https" if self.cfg.server.https else "http"
+        return f"{scheme}://{host}:{self.cfg.server.port}/{page}" if host else None
 
     # ================================================================== path measurement
     def trace_targets(self) -> list[dict]:
@@ -1803,7 +1804,7 @@ class Core:
         # The same for the notification secrets: a kept SMTP password or ntfy token only goes to the
         # server it was entered for, and only the way it was entered for (switching STARTTLS off would
         # send it in the clear).
-        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username", "smtp_starttls"),
+        for secret, where, label in (("smtp_password", ("smtp_host", "smtp_port", "smtp_username", "smtp_starttls", "smtp_tls"),
                                       "SMTP password"),
                                      ("ntfy_token", ("ntfy_url",), "ntfy token")):
             if (secret in kept_secrets and getattr(self.cfg.notify, secret) and getattr(new_cfg.notify, where[0])
@@ -1826,7 +1827,11 @@ class Core:
         if new_cfg.deep_capture.enabled != old.deep_capture.enabled:
             self.capture_command("deep", new_cfg.deep_capture.enabled)
         self._sync_gaming_mac()
-        restart = bool(set(patch) & RESTART_SECTIONS) and not self.cfg.dev_mode
+        # The ring is built once in the capture process; its size and place only change with a restart
+        ring_changed = new_cfg.deep_capture.enabled and any(
+            getattr(new_cfg.deep_capture, k) != getattr(old.deep_capture, k)
+            for k in ("buffer", "memory_mb", "max_files", "file_size_mb", "max_total_mb", "snaplen"))
+        restart = (bool(set(patch) & RESTART_SECTIONS) or ring_changed) and not self.cfg.dev_mode
         if restart:
             await self.restart_collectors()
         return {"restarted": restart}

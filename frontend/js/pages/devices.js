@@ -5,7 +5,7 @@ import { presenceSection } from './presence.js';
 
 export async function mount(main) {
   main.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Devices'),
-    h('p', null, 'Detected automatically via the FRITZ!Box host list, Pi-hole, ARP and the traffic capture. Names can be chosen freely.')),
+    h('p', null, 'Found via the FRITZ!Box, Pi-hole, ARP and the capture; names can be changed in the table.')),
   h('span', { class: 'spacer' }), refreshNamesButton(() => loadList())));
   const listCard = h('div', { class: 'card' });
   const histCard = h('div', { class: 'card' });

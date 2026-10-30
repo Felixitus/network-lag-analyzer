@@ -178,7 +178,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         if CSRF_COOKIE not in request.cookies and not path.startswith("/api/stream"):
             response.set_cookie(CSRF_COOKIE, secrets.token_urlsafe(24), samesite="strict", httponly=False,
-                                max_age=365 * 86400)
+                                max_age=365 * 86400, secure=self.core.cfg.server.https)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")

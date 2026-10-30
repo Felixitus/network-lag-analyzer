@@ -126,3 +126,22 @@ def test_capture_names_a_quic_flow_and_counts_it():
     other.process(t, pkt, olen)
     g = next(iter(other.flows.values()))
     assert g.sni_done and g.sni is None and other.sni_stats["quic"] == 0
+
+
+def test_a_name_cut_in_two_far_from_the_start_is_joined_from_its_halves():
+    # Chrome cuts at random offsets; with snaplen 600 the start of the hello is often missing
+    hs = handshake()
+    pos = hs.index(b"youtube")
+    h = quic.QuicHello()
+    assert h.add(initial(crypto(pos, hs[pos:pos + 60]))) is None
+    assert h.add(initial(crypto(pos - 50, hs[pos - 50:pos]), pn=1)) == "www.youtube.com"
+
+
+def test_flows_without_a_readable_hello_are_counted_by_reason():
+    a = PacketAnalyzer(local_nets=["192.0.2.0/24"], router_macs=[ROUTER])
+    pkt, olen = eth_udp(b"\x40" + b"\x00" * 60, sport=50001)               # short header: midway
+    a.process(1.0, pkt, olen)
+    for i in range(quic.MAX_PACKETS + 2):                                   # gQUIC-like long headers
+        pkt, olen = eth_udp(b"\xc0Q050" + b"\x00" * 60, sport=50002)
+        a.process(2.0 + i, pkt, olen)
+    assert a.sni_stats["quic_midway"] == 1 and a.sni_stats["quic_unreadable"] == 1

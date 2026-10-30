@@ -51,6 +51,10 @@ class ServerCfg(BaseModel):
     # the LAN - not every interface of the Pi. "0.0.0.0" listens everywhere.
     host: str = "auto"
     port: int = Field(8088, ge=1, le=65535)
+    # HTTPS with a self-signed certificate the Pi makes itself (data_dir/tls). The browser warns
+    # once; compare the fingerprint from the log. Only here, not in the web UI: a wrong switch
+    # there would lock the browser out.
+    https: bool = False
 
 
 class ProbeCfg(BaseModel):
@@ -153,6 +157,8 @@ class NotifyCfg(BaseModel):
     smtp_host: str = ""
     smtp_port: int = Field(587, ge=1, le=65535)
     smtp_starttls: bool = True
+    # TLS from the first byte (port 465, "SMTPS"); many providers offer only that. STARTTLS is then off.
+    smtp_tls: bool = False
     smtp_username: str = ""
     smtp_password: str = ""
     mail_from: str = ""
@@ -280,6 +286,10 @@ class DeepCaptureCfg(BaseModel):
     # Bytes of each packet written to the files - headers only. The FRITZ!Box may send more
     # (fritzbox.snaplen, for the server names); that part is only read, never stored.
     snaplen: int = Field(128, ge=64, le=1024)
+    # "memory": the running ring stays in RAM and only incident captures reach the SD card
+    # (on disk it wrote ~10 GB a day). The RAM counts against the service's MemoryMax.
+    buffer: Literal["memory", "disk"] = "memory"
+    memory_mb: int = Field(64, ge=8, le=96)      # the service has 350 MB, ~210 of them in use
 
 
 class LoadGuardCfg(BaseModel):

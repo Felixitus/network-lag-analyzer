@@ -184,7 +184,7 @@ function pageHead(title, sub, ...right) {
 async function mountOverview(main) {
   const body = h('div', { class: 'stack' });
   main.append(pageHead('DNS usage',
-    'Which device looked up which names, counted from the Pi-hole query log. DNS lookups show activity - not usage time and not data volume.',
+    'Which device looked up which names, from the Pi-hole query log - activity, not usage time or data volume.',
     h('div', { class: 'row' }, exportMenu([
       ['Whole network (all tables)', 'xlsx', 'network'],
       ['Clients', 'csv', 'clients'],
@@ -213,9 +213,9 @@ async function mountOverview(main) {
 
     body.append(identificationCard());
 
-    const tiles = h('div', { class: 'tiles tiles-4', role: 'list' },
-      tile('Known clients', n(t.known_clients), 'seen by Pi-hole since recording started'),
-      tile('Active clients', n(t.active_clients), 'with queries in this range'),
+    const tiles = h('div', { class: 'tiles tiles-3', role: 'list' },
+      tile('Active clients', n(t.active_clients),
+        t.known_clients === null ? 'with queries in this range' : `with queries in this range · ${n(t.known_clients)} known`),
       tile('DNS queries', n(t.queries), `${n(t.duplicates)} retries not counted${t.local_queries ? ` · Pi itself: ${n(t.local_queries)}` : ''}`),
       tile('Blocked', n(t.blocked), pct(t.blocked, t.queries)));
     body.append(tiles);

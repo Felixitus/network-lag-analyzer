@@ -43,14 +43,17 @@ login account a strong password.
 * Pi-hole database read-only; Pi-hole is only changed through its own API, after a
   confirmation, when the Pi-hole actions are switched on.
 * Payloads are never stored: the PCAP files keep 128 bytes per packet, headers only
-  (`deep_capture.snaplen`).
+  (`deep_capture.snaplen`). The running ring stays in RAM by default; only incident
+  captures reach the SD card.
 * Exports (CSV/XLSX) neutralize cells that a spreadsheet would evaluate as formulas.
 
 ## What is deliberately not protected
 
-* No HTTPS - not reasonably possible on a LAN without your own CA. If you want to
-  reach the UI from other networks, use a VPN (e.g. the FRITZ!Box WireGuard).
-* The session cookie cannot be `Secure`, because the UI is plain HTTP inside the LAN.
+* HTTPS is off by default: a public certificate is not possible for a LAN address. With
+  `server.https: true` the Pi uses a self-signed certificate (compare its fingerprint from the
+  log once); the session cookie is then `Secure`. To reach the UI from other networks, use a
+  VPN (e.g. the FRITZ!Box WireGuard) either way.
+* Without HTTPS the session cookie cannot be `Secure`.
 * The FRITZ!Box password is stored in plain text in `config.yaml` or the database,
   because TR-064 needs it in plain text. So create a **dedicated FRITZ!Box user**
   with only the "FRITZ!Box Settings" permission.

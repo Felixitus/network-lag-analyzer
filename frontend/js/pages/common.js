@@ -25,7 +25,7 @@ const LAG_TYPES = new Set(['PING_SPIKE', 'PACKET_LOSS', 'HIGH_JITTER', 'CONNECTI
 
 /** Incidents as bands, events as ticks (critical/warning/context). */
 export function buildMarkers(events = [], incidents = [], now = Date.now() / 1000) {
-  const crit = cssVar('--critical'), warn = cssVar('--warning'), ctx = cssVar('--series-2');
+  const crit = cssVar('--critical'), warn = cssVar('--warning'), ctx = cssVar('--text-muted');   // grey: context is not a lag
   return {
     // An open incident reaches "now" only while it can really still be running.
     bands: incidents.map(i => ({ t0: i.ts_start, t1: i.ts_end || Math.min(now, i.ts_start + 900), color: i.source === 'user' ? warn : crit,
@@ -118,14 +118,8 @@ export function piholeCard({ compact = false } = {}) {
   const act = async (path, body, question) => { if (await piholeAction(path, body, question)) load(); };
   function render(s) {
     while (card.firstChild) card.removeChild(card.firstChild);
-    if (!s.enabled) {
-      if (compact) {
-        card.style.display = '';
-        card.append(h('div', { class: 'row small muted' }, 'Pi-hole blocking can be paused from here once the Pi-hole actions are switched on: ',
-          h('a', { href: '#/settings' }, 'Setup → Pi-hole actions')));
-      } else card.style.display = 'none';
-      return;
-    }
+    // Switched off it stays hidden: a card that only says what it could do is noise on every visit
+    if (!s.enabled) { card.style.display = 'none'; return; }
     card.style.display = '';
     const paused = s.blocking === 'disabled';
     const st = h('span', { class: `badge ${s.error ? 'warning' : paused ? 'warning' : 'good'}` },

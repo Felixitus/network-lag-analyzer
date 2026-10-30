@@ -33,7 +33,10 @@ async function render() {
   const { name, args } = parseHash();
   if (current && current.unmount) current.unmount();
   destroyAll();
-  const main = clear(document.getElementById('main'));
+  // A fresh box per render: a mount still waiting for its data when the next render starts
+  // would otherwise append into the new page, and the Live page showed up twice.
+  const main = h('div', { class: 'page' });
+  clear(document.getElementById('main')).append(main);
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active',
     a.dataset.route === name || (name === 'incident' && a.dataset.route === 'incidents')));
   const mod = routes[name];
@@ -132,28 +135,47 @@ function initTheme() {
 }
 
 // ------------------------------------------------------------------ login
+function authMark() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('class', 'auth-mark');
+  svg.setAttribute('aria-hidden', 'true');
+  const rect = document.createElementNS(ns, 'rect');
+  for (const [k, v] of [['width', '32'], ['height', '32'], ['rx', '7']]) rect.setAttribute(k, v);
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', 'M5 20h5l3-9 4 14 3-9h7');
+  svg.append(rect, path);
+  return svg;
+}
+function authScreen(card) {
+  document.body.classList.add('signed-out');
+  clear(document.getElementById('main')).append(h('div', { class: 'auth' }, card));
+}
+
 function showLogin() {
-  const main = clear(document.getElementById('main'));
-  const user = h('input', { type: 'text', placeholder: 'Username', autocomplete: 'username', 'aria-label': 'Username', required: true });
-  const pw = h('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password', 'aria-label': 'Password', required: true });
-  const err = h('div', { class: 'small', role: 'alert', style: { color: 'var(--critical-ink)' } });
-  const form = h('form', { class: 'card', style: { maxWidth: '360px', margin: '60px auto' } },
-    h('h3', null, 'Sign in'), h('p', { class: 'muted' }, 'Access to the Network Lag Analyzer is protected.'),
-    h('div', { class: 'stack' }, user, pw, err, h('button', { class: 'btn primary', type: 'submit' }, 'Sign in')));
+  const user = h('input', { id: 'login-user', type: 'text', autocomplete: 'username', required: true });
+  const pw = h('input', { id: 'login-pw', type: 'password', autocomplete: 'current-password', required: true });
+  const err = h('div', { class: 'small err', role: 'alert', style: { color: 'var(--critical-ink)' } });
+  const form = h('form', { class: 'card auth-card' }, authMark(),
+    h('h3', null, 'Sign in'), h('p', { class: 'muted' }, 'Network Lag Analyzer on this Raspberry Pi'),
+    h('div', { class: 'stack' },
+      h('div', null, h('label', { for: 'login-user' }, 'Username'), user),
+      h('div', null, h('label', { for: 'login-pw' }, 'Password'), pw),
+      err, h('button', { class: 'btn primary', type: 'submit' }, 'Sign in')));
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
     err.textContent = '';
     try { await api('api/auth/login', { method: 'POST', body: { username: user.value.trim(), password: pw.value } }); location.reload(); }
     catch (e) { err.textContent = e.message; pw.value = ''; pw.focus(); }
   });
-  main.append(form);
+  authScreen(form);
   user.focus();
 }
 window.addEventListener('nla-login', showLogin);
 
 function showSetupRequired() {
-  const main = clear(document.getElementById('main'));
-  main.append(h('div', { class: 'card stack', style: { maxWidth: '640px', margin: '60px auto' } },
+  authScreen(h('div', { class: 'card auth-card wide stack' }, authMark(),
     h('h3', null, 'No account set up yet'),
     h('p', null, 'For safety the account can only be created on the Raspberry Pi itself - otherwise anybody on the network could claim it first. Run there:'),
     h('pre', { class: 'mono', style: { whiteSpace: 'pre-wrap' } },

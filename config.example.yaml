@@ -7,6 +7,7 @@ server:
   host: auto           # auto = only the LAN address of the Pi; 0.0.0.0 = every interface
                        # (never forward this port in the router - use a VPN for remote access)
   port: 8088           # Pi-hole uses 80/443
+  https: false         # true = HTTPS with a certificate the Pi makes itself (one browser warning)
 
 gateway: auto          # or e.g. 192.168.178.1
 # Optional: a second always-on LAN device (access point, switch, NAS). Pinged like the router;

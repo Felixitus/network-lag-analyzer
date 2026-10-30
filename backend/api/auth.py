@@ -50,9 +50,9 @@ def _too_many() -> HTTPException:
                          headers={"Retry-After": str(LOGIN_WINDOW)})
 
 
-def _set_cookie(response: Response, token: str, hours: float) -> None:
+def _set_cookie(response: Response, token: str, hours: float, secure: bool = False) -> None:
     response.set_cookie(s.SESSION_COOKIE, token, httponly=True, samesite="strict", max_age=int(hours * 3600),
-                        path="/")
+                        path="/", secure=secure)
 
 
 class LoginBody(BaseModel):
@@ -119,7 +119,7 @@ async def login(request: Request, body: LoginBody, response: Response):
     _last_ok_ip = ip
     hours = core.cfg.security.session_hours
     token = await core.db.write(lambda c: s.create_session(c, account["username"], hours, ip))
-    _set_cookie(response, token, hours)
+    _set_cookie(response, token, hours, secure=core.cfg.server.https)
     return {"ok": True, "username": account["username"]}
 
 

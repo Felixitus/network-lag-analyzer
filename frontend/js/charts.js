@@ -117,13 +117,36 @@ function markerPlugin(getMarkers) {
       draw: u => {
         const m = getMarkers();
         if (!m || !m.ticks) return;
-        const ctx = u.ctx;
-        ctx.save();
-        for (const k of m.ticks) {
+        const ctx = u.ctx, dpr = devicePixelRatio, top = u.bbox.top, bottom = top + u.bbox.height;
+        // A triangle at the top and a faint line down through the data: 3-pixel squares were
+        // hard to see and to tie to the curve below. Ticks closer than 6 px are drawn once,
+        // the more severe one wins (critical before warning before context).
+        const th = theme();
+        const rank = c => (c === th.critical ? 2 : c === th.warning ? 1 : 0);
+        const shown = [];
+        for (const k of [...m.ticks].sort((a, b) => a.t - b.t)) {
           const x = u.valToPos(k.t, 'x', true);
           if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) continue;
+          const last = shown[shown.length - 1];
+          if (last && x - last.x < 6 * dpr) { if (rank(k.color) > rank(last.color)) last.color = k.color; continue; }
+          shown.push({ x, color: k.color });
+        }
+        ctx.save();
+        for (const k of shown) {
+          ctx.strokeStyle = withAlpha(k.color, 0.35);
+          ctx.lineWidth = dpr;
+          ctx.setLineDash([3 * dpr, 3 * dpr]);
+          ctx.beginPath();
+          ctx.moveTo(Math.round(k.x) + 0.5, top + 7 * dpr);
+          ctx.lineTo(Math.round(k.x) + 0.5, bottom);
+          ctx.stroke();
           ctx.fillStyle = k.color;
-          ctx.fillRect(x - 1, u.bbox.top, 3 * devicePixelRatio, 7 * devicePixelRatio);
+          ctx.beginPath();
+          ctx.moveTo(k.x - 5 * dpr, top);
+          ctx.lineTo(k.x + 5 * dpr, top);
+          ctx.lineTo(k.x, top + 8 * dpr);
+          ctx.closePath();
+          ctx.fill();
         }
         ctx.restore();
       },

@@ -39,6 +39,9 @@ PACKET_ADD_MEMBERSHIP = 1
 PACKET_MR_PROMISC = 1
 
 
+MEMORY_BLOCK = 1024 * 1024
+
+
 class PcapRing:
     """Ring buffer of pcap files, headers only.
 
@@ -58,6 +61,11 @@ class PcapRing:
     with the number of incidents, not with the configuration - in practice
     "5 × 50 MB" turned into tens of gigabytes.
 
+    **In memory** (`memory` > 0): the running ring is kept in RAM, and only what an incident
+    protects is written to the SD card. On disk the ring wrote ~10 GB a day on the Pi, around the
+    clock, for files that were overwritten unseen almost every time. The RAM ring covers the last
+    few minutes (the lag report reaches back 5); of a longer incident its last part is kept.
+
     On start the directory is scanned and everything present is adopted.
     Otherwise, after every restart of the capture process, the files of the
     previous run would be orphaned: in no ring, protected nowhere, and therefore
@@ -65,12 +73,16 @@ class PcapRing:
     """
 
     def __init__(self, directory: str, max_files: int, file_size: int, emit,
-                 max_total: int = 0, protected_paths: Iterable[str] = (), keep: int = 128):
+                 max_total: int = 0, protected_paths: Iterable[str] = (), keep: int = 128,
+                 memory: int = 0):
         self.keep = keep
+        self.memory = memory
+        self.blocks: deque[dict] = deque()     # RAM ring: {"t0", "t1", "buf"}, oldest first
         self.dir = Path(directory)
         self.dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.dir, 0o750)
-        self.max_files = max(1, max_files)
+        # In memory there are no running files: leftovers of a disk ring go with the next budget check
+        self.max_files = 0 if memory else max(1, max_files)
         self.file_size = file_size
         self.emit = emit
         # Budget for the protected files only: total limit minus what the
@@ -117,19 +129,62 @@ class PcapRing:
         return sum(f["size"] for f in self.protected)
 
     def stats(self) -> dict:
-        return {"files": len(self.files), "protected": len(self.protected),
+        return {"files": len(self.files), "protected": len(self.protected), "memory_bytes": self.memory_bytes(),
                 "bytes": self.total_bytes(), "protected_bytes": self.protected_bytes(),
                 "max_total": self.max_total, "protected_budget": self.protected_budget,
                 "deleted_bytes": self.deleted_bytes}
 
     # ----------------------------------------------------------------- writing
     def write(self, ts: float, data: bytes, orig_len: int, linktype: int) -> None:
+        if self.memory:
+            self._write_memory(ts, pcap_record(ts, data[:self.keep], orig_len), linktype)
+            return
         if self.fh is None or self.cur is None or self.cur["size"] >= self.file_size or linktype != self.linktype:
             self._rotate(ts, linktype)
         rec = pcap_record(ts, data[:self.keep], orig_len)
         self.fh.write(rec)
         self.cur["size"] += len(rec)
         self.cur["ts_end"] = ts
+
+    def memory_bytes(self) -> int:
+        return sum(len(b["buf"]) for b in self.blocks)
+
+    def _write_memory(self, ts: float, rec: bytes, linktype: int) -> None:
+        if linktype != self.linktype:
+            self.blocks.clear()                 # one file has one link type
+            self.linktype = linktype
+        b = self.blocks[-1] if self.blocks else None
+        # Blocks instead of one object per packet: a few hundred thousand small bytes objects
+        # would cost more in Python overhead than the packets themselves.
+        if b is None or len(b["buf"]) >= MEMORY_BLOCK:
+            b = {"t0": ts, "t1": ts, "buf": bytearray()}
+            self.blocks.append(b)
+            while len(self.blocks) > 1 and self.memory_bytes() > self.memory:
+                self.blocks.popleft()
+        b["buf"] += rec
+        b["t1"] = ts
+
+    def _protect_memory(self, t0: float, t1: float) -> list[str]:
+        """Write the part of the RAM ring an incident needs; it then counts as a protected file."""
+        blocks = [b for b in self.blocks if b["t0"] <= t1 and b["t1"] >= t0]
+        if not blocks:
+            return []
+        ts = blocks[0]["t0"]
+        stem = time.strftime("nla-%Y%m%d-%H%M%S", time.localtime(ts)) + f"-{int(ts * 1000) % 1000:03d}"
+        path, n = self.dir / f"{stem}.pcap", 1
+        while path.exists():                    # overlapping incidents: each gets its own file
+            n += 1
+            path = self.dir / f"{stem}-{n}.pcap"
+        with open(path, "xb") as fh:
+            os.chmod(path, 0o640)
+            fh.write(pcap_global_header(self.linktype, self.keep))
+            for b in blocks:
+                fh.write(b["buf"])
+        f = {"path": str(path), "ts_start": ts, "ts_end": blocks[-1]["t1"],
+             "size": path.stat().st_size, "protected": True}
+        self.protected.append(f)
+        self.emit(("pcap", {"op": "new", **f}))
+        return [str(path)]
 
     def _rotate(self, ts: float, linktype: int) -> None:
         self._close_current()
@@ -188,6 +243,13 @@ class PcapRing:
                 self.emit(("pcap", {"op": "update", **self.cur}))
 
     def protect(self, t0: float, t1: float, incident_id: int | None) -> list[str]:
+        if self.memory:
+            paths = self._protect_memory(t0, t1)
+            self._enforce_budget()
+            kept = [p for p in paths if os.path.exists(p)]
+            self.emit(("pcap", {"op": "protect", "paths": kept, "incident_id": incident_id,
+                                "stats": self.stats()}))
+            return kept
         paths = []
         self.flush()
         for f in list(self.files):
@@ -372,6 +434,8 @@ class CaptureWorker:
             "router_macs": router, "linktype": self.parser.linktype, "format": self.parser.format,
             "flows": len(self.analyzer.flows), "cpu_seconds": cpu_s, "deep_capture": self.ring is not None,
             "dropped": self.dropped, "sni": dict(self.analyzer.sni_stats),
+            "ring": None if self.ring is None else {"memory_bytes": self.ring.memory_bytes(),
+                                                    "memory_limit": self.ring.memory},
             "ts": time.time(),
         }))
 
@@ -407,7 +471,8 @@ class CaptureWorker:
             self.ring = PcapRing(os.path.join(self.cfg["data_dir"], "pcap"), dc["max_files"],
                                  dc["file_size_mb"] * 1024 * 1024, self.emit,
                                  max_total=dc.get("max_total_mb", 0) * 1024 * 1024,
-                                 protected_paths=self.cfg.get("protected_pcaps") or (), keep=dc.get("snaplen", 128))
+                                 protected_paths=self.cfg.get("protected_pcaps") or (), keep=dc.get("snaplen", 128),
+                                 memory=dc.get("memory_mb", 0) * 1024 * 1024 if dc.get("buffer") == "memory" else 0)
         elif not on and self.ring is not None:
             self.ring.close()
             self.ring = None

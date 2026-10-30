@@ -56,9 +56,16 @@ def main() -> None:
     core = Core(args.config)
     app = create_app(core)
     host = bind_address(core.cfg.server.host, core.cfg.dev_mode)
-    logging.getLogger("nla").info("Web UI listening on %s:%s", host, core.cfg.server.port)
+    tls = {}
+    if core.cfg.server.https:
+        from .util import tls_cert
+        cert, key, fp = tls_cert.ensure(os.path.join(core.cfg.data_dir, "tls"),
+                                        [ip for ip in (host, core.pi_ip) if ip and ip not in ("0.0.0.0", "::")])
+        tls = {"ssl_certfile": cert, "ssl_keyfile": key}
+        logging.getLogger("nla").info("HTTPS on, certificate SHA-256 %s", fp)
+    logging.getLogger("nla").info("Web UI listening on %s://%s:%s", "https" if tls else "http", host, core.cfg.server.port)
     uvicorn.run(app, host=host, port=core.cfg.server.port, log_level="warning",
-                access_log=False, proxy_headers=False, timeout_graceful_shutdown=5)
+                access_log=False, proxy_headers=False, timeout_graceful_shutdown=5, **tls)
 
 
 if __name__ == "__main__":

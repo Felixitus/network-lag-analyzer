@@ -262,3 +262,74 @@ def test_files_keep_only_the_headers_even_when_the_capture_sends_more(tmp_path):
     assert struct.unpack_from("<I", raw, 16)[0] == 128                   # snaplen in the file header
     incl, orig = struct.unpack_from("<II", raw, 24 + 8)
     assert (incl, orig) == (128, 1514) and len(raw) == 24 + 16 + 128
+
+
+# --------------------------------------------------------------------- ring in RAM
+def mem_ring(tmp_path, memory=64 * 1024, **kw):
+    msgs = []
+    r = PcapRing(str(tmp_path), max_files=MAX_FILES, file_size=FILE_SIZE, emit=msgs.append,
+                 max_total=LIMIT, memory=memory, **kw)
+    return r, msgs
+
+
+def test_in_memory_the_running_ring_never_touches_the_sd_card(tmp_path):
+    """On disk the ring wrote ~10 GB a day on the Pi, for files overwritten unseen."""
+    r, _ = mem_ring(tmp_path)
+    write(r, 5000, 1000.0)
+    r.flush()
+    r.close()
+    assert list(tmp_path.glob("*.pcap")) == []
+    assert 0 < r.memory_bytes() <= 64 * 1024 + 1024 * 1024
+
+
+def test_the_ram_ring_keeps_only_the_newest_blocks(tmp_path, monkeypatch):
+    import backend.collectors.traffic as tr
+    monkeypatch.setattr(tr, "MEMORY_BLOCK", 4_000)
+    r, _ = mem_ring(tmp_path, memory=20_000)
+    for i in range(400):
+        r.write(1000.0 + i, b"x" * 400, 400, 1)
+    assert r.memory_bytes() <= 20_000 + 4_000
+    assert r.blocks[0]["t0"] > 1200 and r.blocks[-1]["t1"] == 1399.0   # ~140 records of 144 bytes
+
+
+def test_an_incident_writes_its_window_from_ram_as_a_protected_file(tmp_path, monkeypatch):
+    import struct
+
+    import backend.collectors.traffic as tr
+    monkeypatch.setattr(tr, "MEMORY_BLOCK", 2_000)
+    r, msgs = mem_ring(tmp_path, memory=200_000)
+    for i in range(100):
+        r.write(1000.0 + i, b"x" * 400, 400, 1)
+    paths = r.protect(1050.0, 1060.0, 7)
+    (p,) = paths
+    raw = open(p, "rb").read()
+    assert struct.unpack_from("<I", raw, 0)[0] == 0xa1b2c3d4 and struct.unpack_from("<I", raw, 20)[0] == 1
+    first = struct.unpack_from("<I", raw, 24)[0]
+    assert 1040 <= first <= 1050, "the file starts with the block that holds the window's start"
+    assert len(raw) < 24 + 100 * (16 + 128), "only the window, not the whole RAM ring"
+    assert os.stat(p).st_mode & 0o777 == 0o640 or os.name == "nt"
+    ops = [m[1]["op"] for m in msgs if m[0] == "pcap"]
+    assert ops == ["new", "protect"] and msgs[-1][1]["incident_id"] == 7
+    assert msgs[0][1]["protected"] is True
+    # an overlapping second incident gets a file of its own instead of overwriting the first
+    (p2,) = r.protect(1050.0, 1099.0, 8)
+    assert p2 != p and os.path.getsize(p2) > os.path.getsize(p)
+
+
+def test_a_window_older_than_the_ram_ring_protects_nothing(tmp_path):
+    r, msgs = mem_ring(tmp_path)
+    write(r, 10, 1000.0)
+    assert r.protect(10.0, 20.0, 1) == []
+    assert msgs[-1][1]["paths"] == []
+
+
+def test_switching_to_ram_removes_the_running_files_of_the_disk_ring(tmp_path):
+    r = ring(tmp_path)
+    write(r, 200, 1000.0)
+    r.protect(1000.0, 1000.05, 3)
+    r.close()
+    protected = {f["path"] for f in r.protected}
+    assert len(list(tmp_path.glob("*.pcap"))) > len(protected)
+    m, _ = mem_ring(tmp_path, protected_paths=protected)
+    assert {str(p) for p in tmp_path.glob("*.pcap")} == protected
+    assert m.stats()["files"] == 0

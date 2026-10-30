@@ -9,7 +9,7 @@ export async function mount(main, { args, store }) {
   if (args[0]) return sessionDetail(main, parseInt(args[0], 10));
   const settings = await api('api/settings');
   main.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Gaming Mode'),
-    h('p', null, 'During a session: 4 pings/s, monitoring of your gaming PC\'s game flow, detection of the game server.'))));
+    h('p', null, 'During a session: 4 pings/s, your gaming PC\'s game flow and its game server.'))));
   const cur = h('div', { class: 'card stack' });
   const list = h('div', { class: 'card' });
   main.append(cur, h('div', { style: { height: '16px' } }), list);

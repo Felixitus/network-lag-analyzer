@@ -10,7 +10,7 @@ export class FakeNode {
   get textContent() { return this.text ?? this.children.map(c => c.textContent).join(''); }
 }
 
-export const cssVars = { '--critical': '#d00', '--warning': '#d90', '--series-2': '#09c' };
+export const cssVars = { '--critical': '#d00', '--warning': '#d90', '--text-muted': '#999' };
 
 export function install() {
   const body = new FakeNode('body');

@@ -17,7 +17,6 @@ export async function mount(main, { store }) {
   const st0 = store.status || {};
   main.append(h('div', { class: 'page-head' },
     h('div', null, h('h1', null, 'Network Status'),
-      h('p', null, 'Live measurement from the Raspberry Pi - every value measured, nothing estimated.'),
       st0.capture_delay >= 4 ? h('p', { class: 'small muted', style: { margin: '4px 0 0' } },
         `Note: your router delivers the capture buffered by ~${Math.round(st0.capture_delay)} s. `
         + 'Ping, jitter and packet loss are live; traffic values are filled in later, '

@@ -106,6 +106,7 @@ def test_a_kept_smtp_password_or_ntfy_token_never_goes_to_a_new_server(client):
                                                      "ntfy_token": "tk-1"}}, headers=hdr)
     assert r.status_code == 200
     for change in ({"smtp_host": "smtp.attacker.example"}, {"smtp_port": 2525}, {"smtp_username": "other"}, {"smtp_starttls": False},
+                   {"smtp_tls": True},
                    {"ntfy_url": "https://ntfy.attacker.example/t"}):
         r = client.put("/api/settings", json={"notify": {**change, "smtp_password": "********", "ntfy_token": "********"}},
                        headers=hdr)
@@ -176,3 +177,27 @@ def test_the_mail_subject_starts_with_the_message_and_has_a_text_part_too(monkey
     assert m["Subject"] == "⚠ Internet down · Network Lag Analyzer"
     assert m.get_body("plain").get_content().strip().endswith("http://192.0.2.55:8088/#/line")
     assert "border-top:4px solid #d14343" in m.get_body("html").get_content()
+
+
+def test_port_465_speaks_tls_from_the_first_byte_and_skips_starttls(monkeypatch):
+    calls = []
+
+    class Fake:
+        def __init__(self, host, port, timeout=None, context=None):
+            calls.append((type(self).__name__, host, port, context is not None))
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self, **k): calls.append("starttls")
+        def login(self, u, p): calls.append(("login", u))
+        def send_message(self, m): calls.append("sent")
+
+    class SMTP_SSL(Fake): pass
+    class SMTP(Fake): pass
+    monkeypatch.setattr(nt.smtplib, "SMTP_SSL", SMTP_SSL)
+    monkeypatch.setattr(nt.smtplib, "SMTP", SMTP)
+    nt.send_mail(cfg(smtp_host="smtp.example", smtp_port=465, smtp_tls=True, smtp_starttls=True,
+                     smtp_username="me", smtp_password="pw", mail_to="me@example.org"), "t", "b", "default")
+    assert calls == [("SMTP_SSL", "smtp.example", 465, True), ("login", "me"), "sent"]
+    calls.clear()
+    nt.send_mail(cfg(smtp_host="smtp.example", smtp_port=587, mail_to="me@example.org"), "t", "b", "default")
+    assert calls == [("SMTP", "smtp.example", 587, False), "starttls", "sent"]
