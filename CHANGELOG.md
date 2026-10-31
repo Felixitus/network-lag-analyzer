@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-10-31
+
 ### Changed
 - **Calmer pages.** Cards most visits do not need sit behind one line that remembers whether it
   is open: on the DNS page the data sources, device matching, DNS past Pi-hole, upstream servers
