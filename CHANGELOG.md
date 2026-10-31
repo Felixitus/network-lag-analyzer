@@ -5,6 +5,19 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Calmer pages.** Cards most visits do not need sit behind one line that remembers whether it
+  is open: on the DNS page the data sources, device matching, DNS past Pi-hole, upstream servers
+  and uncategorized names (a failing data source stays on top), on the timeline the heatmap, on
+  an incident the analysis windows, rules checked and connections.
+- **Setup shows what has an effect.** Fields of a switched-off feature are hidden and keep their
+  value: e-mail details without an SMTP server, the file ring with the ring in RAM, the local
+  interface without that traffic source. Long forms are grouped, the weekly report day is a list
+  of days, and the diagnosis runs on request once the setup is done.
+- The Live page no longer repeats the latest incidents, the DNS page no longer repeats the
+  button that refreshes host names (it stays on the Devices page), and the overview lists the
+  last 5 events. The status lights and Live tiles fill their rows evenly.
+
 ## [1.6.0] - 2026-10-30
 
 ### Added

@@ -5,6 +5,21 @@ export const BLOAT_RANGES = [['1h', '1 H'], ['24h', '24 H'], ['7d', '7 D'], ['30
 
 export const RANGES = [['live', 'LIVE'], ['5m', '5 MIN'], ['15m', '15 MIN'], ['1h', '1 H'], ['6h', '6 H'], ['24h', '24 H'], ['7d', '7 D']];
 
+/** Cards most visits do not need, behind one line; whether it is open is remembered per browser. */
+const MORE_KEY = 'nla-more-open';
+export function moreSection(title, sub, ...children) {
+  let open = [];
+  try { open = JSON.parse(localStorage.getItem(MORE_KEY) || '[]'); } catch { /* private mode */ }
+  const el = h('details', { class: 'more', open: open.includes(title) || null },
+    h('summary', null, h('span', { class: 'more-title' }, title), sub ? h('span', { class: 'small muted' }, sub) : null),
+    h('div', { class: 'stack' }, ...children));
+  el.addEventListener('toggle', () => {
+    open = el.open ? [...new Set([...open, title])] : open.filter(t => t !== title);
+    try { localStorage.setItem(MORE_KEY, JSON.stringify(open)); } catch { /* private mode */ }
+  });
+  return el;
+}
+
 export function segmented(options, value, onChange) {
   const wrap = h('div', { class: 'seg', role: 'group' });
   const btns = options.map(([v, label]) => {

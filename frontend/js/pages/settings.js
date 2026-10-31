@@ -9,27 +9,46 @@ function setPath(obj, path, v) {
   o[ks[ks.length - 1]] = v;
 }
 
-/** Form from field definitions; returns {el, patch()} */
+/** The fields of a switch: shown only while it is on, on top of their own condition. */
+export const under = (path, fields) => fields.map(f => ({ ...f, when: v => !!v(path) && (!f.when || f.when(v)) }));
+
+/**
+ * Form from field definitions; returns {el, patch()}.
+ * {heading} separates groups. `when(v)` shows a field only while it has an effect; v(path) reads
+ * the current value of a field. Hidden fields keep their value and are still saved.
+ */
 function form(cfg, fields) {
   const inputs = [];
+  const conditional = [];
   const grid = h('div', { class: 'form-grid' });
+  const add = (f, el) => { grid.append(el); if (f.when) conditional.push([f, el]); };
   for (const f of fields) {
+    if (f.heading) { add(f, h('div', { class: 'form-heading' }, f.heading)); continue; }
     const val = get(cfg, f.path);
     let input;
     if (f.type === 'bool') {
       input = h('input', { type: 'checkbox', checked: !!val, id: `f-${f.path}` });
-      grid.append(h('div', { class: 'field' }, h('label', { class: 'check', for: `f-${f.path}` }, input, f.label), f.help ? h('div', { class: 'help' }, f.help) : null));
+      add(f, h('div', { class: 'field' }, h('label', { class: 'check', for: `f-${f.path}` }, input, f.label), f.help ? h('div', { class: 'help' }, f.help) : null));
     } else if (f.type === 'select') {
       input = h('select', { id: `f-${f.path}` }, f.options.map(([v, l]) => h('option', { value: v, selected: String(val) === String(v) }, l)));
-      grid.append(h('div', { class: 'field' }, h('label', { for: `f-${f.path}` }, f.label), input, f.help ? h('div', { class: 'help' }, f.help) : null));
+      add(f, h('div', { class: 'field' }, h('label', { for: `f-${f.path}` }, f.label), input, f.help ? h('div', { class: 'help' }, f.help) : null));
     } else {
       const v = f.type === 'list' ? (val || []).map(x => (typeof x === 'object' ? x.address : x)).join(', ') : (val ?? '');
       input = h('input', { type: f.type === 'password' ? 'password' : f.type === 'number' ? 'number' : 'text', value: String(v), id: `f-${f.path}`,
         step: f.step || 'any', placeholder: f.placeholder || '', autocomplete: 'off' });
-      grid.append(h('div', { class: 'field' }, h('label', { for: `f-${f.path}` }, f.label), input, f.help ? h('div', { class: 'help' }, f.help) : null));
+      add(f, h('div', { class: 'field' }, h('label', { for: `f-${f.path}` }, f.label), input, f.help ? h('div', { class: 'help' }, f.help) : null));
     }
     inputs.push([f, input]);
   }
+  const current = path => {
+    const found = inputs.find(([f]) => f.path === path);
+    if (!found) return undefined;
+    return found[0].type === 'bool' ? found[1].checked : found[1].value.trim();
+  };
+  const refresh = () => { for (const [f, el] of conditional) el.hidden = !f.when(current); };
+  grid.addEventListener('input', refresh);
+  grid.addEventListener('change', refresh);
+  refresh();
   return {
     el: grid,
     patch() {
@@ -37,7 +56,7 @@ function form(cfg, fields) {
       for (const [f, input] of inputs) {
         let v;
         if (f.type === 'bool') v = input.checked;
-        else if (f.type === 'number') v = input.value === '' ? null : Number(input.value);
+        else if (f.type === 'number' || f.numeric) v = input.value === '' ? null : Number(input.value);
         else if (f.type === 'numauto') v = input.value.trim() === '' || input.value.trim() === 'auto' ? 'auto' : Number(input.value);
         else if (f.type === 'list') v = input.value.split(/[,\s]+/).filter(Boolean).map(a => ({ address: a }));
         else if (f.type === 'nullable') v = input.value.trim() || null;
@@ -317,7 +336,7 @@ function databaseCard() {
 }
 
 
-export async function mount(main, { refreshStatus }) {
+export async function mount(main, { refreshStatus, store }) {
   const s = await api('api/settings');
   const cfg = s.config;
   main.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Setup & Settings'),
@@ -333,28 +352,37 @@ export async function mount(main, { refreshStatus }) {
     clear(wiz);
     wiz.append(h('div', { class: 'row' }, h('h3', null, 'Network architecture diagnosis'), h('span', { class: 'spacer' }),
       h('button', { class: 'btn', onclick: runWizard }, 'Check again'),
-      h('button', { class: 'btn primary', onclick: async () => { await api('api/setup/complete', { method: 'POST' }); toast('Setup completed'); refreshStatus(); } }, 'Complete setup')));
+      setupDone ? null : h('button', { class: 'btn primary', onclick: async () => { await api('api/setup/complete', { method: 'POST' }); toast('Setup completed'); refreshStatus(); } }, 'Complete setup')));
     const caps = h('div', { class: 'cap-grid' }, r.capabilities.map(c => h('div', null, statusIcon(c.ok), h('span', null, c.name),
       c.detail ? h('span', { class: 'small muted' }, `(${c.detail})`) : null)));
-    wiz.append(h('div', null, h('h2', { style: { marginBottom: '8px' } }, 'Monitoring capability'), caps));
+    wiz.append(caps);
     if (r.hint) wiz.append(h('div', { class: 'banner warn', style: { marginTop: 0 } }, h('b', null, 'Note'), h('span', null, r.hint)));
     wiz.append(h('details', null, h('summary', { style: { cursor: 'pointer', fontWeight: 600 } }, 'Show individual checks'),
       h('ul', { class: 'checks' }, r.checks.map(c => h('li', null, statusIcon(c.ok),
         h('div', null, h('b', null, c.name), h('div', { class: 'small secondary' }, c.detail), c.hint ? h('div', { class: 'small', style: { color: 'var(--warning-ink)' } }, c.hint) : null))))));
   }
-  runWizard();
+  // Takes about 5 s and only says something new after a change: on request once the setup is done
+  const setupDone = !!(store.status || {}).setup_done;
+  if (setupDone) {
+    wiz.append(h('div', { class: 'row' }, h('h3', null, 'Network architecture diagnosis'), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', onclick: runWizard }, 'Run diagnosis')));
+  } else runWizard();
 
   // ---------------------------------------------------------------- FRITZ!Box
   const fb = form(cfg, [
     { path: 'fritzbox.enabled', label: 'FRITZ!Box integration active', type: 'bool' },
-    { path: 'fritzbox.host', label: 'Address', help: '"auto" = default gateway' },
-    { path: 'fritzbox.username', label: 'Username', help: 'A dedicated user is recommended, with the "FRITZ!Box Settings" permission' },
-    { path: 'fritzbox.password', label: 'Password', type: 'password' },
-    { path: 'fritzbox.capture_enabled', label: 'Use packet capture for traffic per device', type: 'bool', help: 'Headers only (snaplen), no content' },
-    { path: 'fritzbox.capture_interface', label: 'Capture interface', help: 'Default "1-lan" (LAN bridge)' },
-    { path: 'fritzbox.snaplen', label: 'Snaplen (bytes per packet)', type: 'number', help: '600 (default) also reads the server names of TLS and QUIC connections (measured connections per service). 128 is enough for traffic per device alone. Only read in memory: the PCAP files keep 128 bytes per packet.' },
+    ...under('fritzbox.enabled', [
+      { path: 'fritzbox.host', label: 'Address', help: '"auto" = default gateway' },
+      { path: 'fritzbox.username', label: 'Username', help: 'A dedicated user is recommended, with the "FRITZ!Box Settings" permission' },
+      { path: 'fritzbox.password', label: 'Password', type: 'password' },
+      { path: 'fritzbox.capture_enabled', label: 'Use packet capture for traffic per device', type: 'bool', help: 'Headers only (snaplen), no content' },
+      ...under('fritzbox.capture_enabled', [
+        { path: 'fritzbox.capture_interface', label: 'Capture interface', help: 'Default "1-lan" (LAN bridge)' },
+        { path: 'fritzbox.snaplen', label: 'Snaplen (bytes per packet)', type: 'number', help: '600 also reads the server names of TLS and QUIC connections, 128 is enough for traffic per device alone' },
+      ]),
+    ]),
     { path: 'capture.source', label: 'Traffic source', type: 'select', options: [['auto', 'Automatic'], ['fritzbox', 'FRITZ!Box capture'], ['local', 'Local interface (mirror/gateway)'], ['none', 'None']] },
-    { path: 'capture.local_interface', label: 'Local interface', help: 'Only for port mirroring or Pi as gateway' },
+    { path: 'capture.local_interface', label: 'Local interface', when: v => v('capture.source') === 'local' },
   ]);
   const testOut = h('div', { class: 'small' });
   const testBtn = h('button', { class: 'btn', type: 'button' }, 'Test connection & capture');
@@ -379,58 +407,77 @@ export async function mount(main, { refreshStatus }) {
 
   // ---------------------------------------------------------------- measurement
   const meas = form(cfg, [
+    { heading: 'Targets' },
     { path: 'targets', label: 'Internet targets', type: 'list', help: 'IPs or host names, comma-separated' },
     { path: 'gateway', label: 'Gateway', help: '"auto" or IPv4' },
     { path: 'lan_reference', label: 'LAN reference', type: 'nullable', help: 'Optional: a second always-on device (access point, switch, NAS). If it loses packets together with the router, the Pi\'s own cable or port is the problem.' },
+    { heading: 'Ping' },
     { path: 'probe.interval', label: 'Ping interval (s)', type: 'number' },
     { path: 'probe.gaming_interval', label: 'Interval in Gaming Mode (s)', type: 'number' },
     { path: 'probe.timeout', label: 'Timeout (s)', type: 'number', help: 'A later reply = lost' },
+    { heading: 'Line capacity' },
     { path: 'capacity.down_mbit', label: 'Download capacity (Mbit/s)', type: 'numauto', help: '"auto" = FRITZ!Box link rate. Entering the booked rate is more accurate.' },
     { path: 'capacity.up_mbit', label: 'Upload capacity (Mbit/s)', type: 'numauto' },
+    { heading: 'Additional checks' },
     { path: 'dns_probe.enabled', label: 'DNS monitoring', type: 'bool' },
     { path: 'traceroute.enabled', label: 'Path measurement at incidents', type: 'bool', help: 'Traceroute to the worst targets when an incident starts or a lag is reported - shows from which hop on packets are lost.' },
-    { path: 'traceroute.rounds', label: 'Rounds per path measurement', type: 'number', help: 'Each hop is asked this often, one round per second' },
-    { path: 'traceroute.min_interval_s', label: 'At most one automatic measurement per target every (s)', type: 'number' },
+    ...under('traceroute.enabled', [
+      { path: 'traceroute.rounds', label: 'Rounds per path measurement', type: 'number', help: 'Each hop is asked this often, one round per second' },
+      { path: 'traceroute.min_interval_s', label: 'At most one automatic measurement per target every (s)', type: 'number' },
+    ]),
   ]);
   main.append(h('div', { style: { height: '16px' } }), section('Measurement', null, meas));
 
   // ---------------------------------------------------------------- Pi-hole actions
   const pf = form(cfg, [
     { path: 'pihole.api_enabled', label: 'Allow Pi-hole actions from this page', type: 'bool', help: 'Pause blocking, allow or block a domain, restart DNS, update blocklists - each only after a confirmation' },
-    { path: 'pihole.api_url', label: 'Pi-hole address', help: 'Only the Pi-hole on this Pi' },
-    { path: 'pihole.api_password', label: 'Pi-hole app password', type: 'password', help: 'Pi-hole → Settings → Web interface / API → "Configure app password" (not your login password)' },
+    ...under('pihole.api_enabled', [
+      { path: 'pihole.api_url', label: 'Pi-hole address', help: 'Only the Pi-hole on this Pi' },
+      { path: 'pihole.api_password', label: 'Pi-hole app password', type: 'password', help: 'Pi-hole → Settings → Web interface / API → "Configure app password" (not your login password)' },
+    ]),
   ]);
   main.append(h('div', { style: { height: '16px' } }), section('Pi-hole actions',
-    'Off by default. When on, the DNS pages offer to pause blocking and to allow or block a domain. Everything is logged with your user name.', pf));
+    'Everything is logged with your user name.', pf));
 
   // ---------------------------------------------------------------- notifications
   const nf = form(cfg, [
     { path: 'notify.enabled', label: 'Send notifications', type: 'bool' },
-    { path: 'notify.ntfy_url', label: 'ntfy address', help: 'e.g. https://ntfy.sh/ followed by a long random topic - the topic is the password. Install the ntfy app and subscribe to it.' },
-    { path: 'notify.ntfy_token', label: 'ntfy access token', type: 'password', help: 'Only for a protected topic or your own server' },
-    { path: 'notify.telegram_bot_token', label: 'Telegram bot token', type: 'password', help: 'From @BotFather' },
-    { path: 'notify.telegram_chat_id', label: 'Telegram chat ID' },
-    { path: 'notify.smtp_host', label: 'SMTP server', help: 'For e-mail, e.g. smtp.gmail.com' },
-    { path: 'notify.smtp_port', label: 'SMTP port', type: 'number' },
-    { path: 'notify.smtp_tls', label: 'TLS from the start (port 465)', type: 'bool',
-      help: 'For providers that use port 465; STARTTLS (port 587) is then not used' },
-    { path: 'notify.smtp_starttls', label: 'STARTTLS (port 587)', type: 'bool' },
-    { path: 'notify.smtp_username', label: 'SMTP user' },
-    { path: 'notify.smtp_password', label: 'SMTP password', type: 'password', help: 'With Gmail an app password' },
-    { path: 'notify.mail_from', label: 'Sender address' },
-    { path: 'notify.mail_to', label: 'Recipient address' },
-    { path: 'notify.router_loss', label: 'Packet loss to the router', type: 'bool' },
-    { path: 'notify.router_loss_pct', label: '… from (% in 2 min)', type: 'number' },
-    { path: 'notify.internet_down', label: 'Internet down', type: 'bool' },
-    { path: 'notify.internet_down_seconds', label: '… after (s)', type: 'number' },
-    { path: 'notify.pihole_down', label: 'Pi-hole does not answer', type: 'bool' },
-    { path: 'notify.pi_health', label: 'Raspberry Pi critical (power, heat, storage)', type: 'bool' },
-    { path: 'notify.line', label: 'Internet line (DSL lost, disconnected)', type: 'bool' },
-    { path: 'notify.new_device', label: 'New device in the network', type: 'bool' },
-    { path: 'notify.cooldown_minutes', label: 'Repeat an ongoing alert after (min)', type: 'number' },
-    { path: 'notify.weekly_report', label: 'Weekly report', type: 'bool', help: 'Outages, worst hours, new devices and DNS signs of the past 7 days' },
-    { path: 'notify.weekly_day', label: '… on (0 = Monday … 6 = Sunday)', type: 'number' },
-    { path: 'notify.weekly_hour', label: '… from (hour)', type: 'number' },
+    ...under('notify.enabled', [
+      { heading: 'ntfy' },
+      { path: 'notify.ntfy_url', label: 'ntfy address', help: 'e.g. https://ntfy.sh/ followed by a long random topic - the topic is the password. Install the ntfy app and subscribe to it.' },
+      { path: 'notify.ntfy_token', label: 'ntfy access token', type: 'password', help: 'Only for a protected topic or your own server', when: v => v('notify.ntfy_url') },
+      { heading: 'Telegram' },
+      { path: 'notify.telegram_bot_token', label: 'Telegram bot token', type: 'password', help: 'From @BotFather' },
+      { path: 'notify.telegram_chat_id', label: 'Telegram chat ID' },
+      { heading: 'E-mail' },
+      { path: 'notify.smtp_host', label: 'SMTP server', help: 'e.g. smtp.gmail.com' },
+      ...under('notify.smtp_host', [
+        { path: 'notify.smtp_port', label: 'SMTP port', type: 'number' },
+        { path: 'notify.smtp_tls', label: 'TLS from the start (port 465)', type: 'bool' },
+        { path: 'notify.smtp_starttls', label: 'STARTTLS (port 587)', type: 'bool', when: v => !v('notify.smtp_tls') },
+        { path: 'notify.smtp_username', label: 'SMTP user' },
+        { path: 'notify.smtp_password', label: 'SMTP password', type: 'password', help: 'With Gmail an app password' },
+        { path: 'notify.mail_from', label: 'Sender address' },
+        { path: 'notify.mail_to', label: 'Recipient address' },
+      ]),
+      { heading: 'When to send' },
+      { path: 'notify.router_loss', label: 'Packet loss to the router', type: 'bool' },
+      { path: 'notify.router_loss_pct', label: '… from (% in 2 min)', type: 'number', when: v => v('notify.router_loss') },
+      { path: 'notify.internet_down', label: 'Internet down', type: 'bool' },
+      { path: 'notify.internet_down_seconds', label: '… after (s)', type: 'number', when: v => v('notify.internet_down') },
+      { path: 'notify.pihole_down', label: 'Pi-hole does not answer', type: 'bool' },
+      { path: 'notify.pi_health', label: 'Raspberry Pi critical (power, heat, storage)', type: 'bool' },
+      { path: 'notify.line', label: 'Internet line (DSL lost, disconnected)', type: 'bool' },
+      { path: 'notify.new_device', label: 'New device in the network', type: 'bool' },
+      { path: 'notify.cooldown_minutes', label: 'Repeat an ongoing alert after (min)', type: 'number' },
+      { heading: 'Weekly report' },
+      { path: 'notify.weekly_report', label: 'Send a weekly report', type: 'bool', help: 'Outages, worst hours, new devices and DNS signs of the past 7 days' },
+      ...under('notify.weekly_report', [
+        { path: 'notify.weekly_day', label: 'Day', type: 'select', numeric: true,
+          options: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((d, i) => [i, d]) },
+        { path: 'notify.weekly_hour', label: 'From (hour)', type: 'number' },
+      ]),
+    ]),
   ]);
   const nOut = h('div', { class: 'small' });
   const nTest = h('button', { class: 'btn', type: 'button' }, 'Send test message');
@@ -470,7 +517,7 @@ export async function mount(main, { refreshStatus }) {
       h('div', { class: 'muted' }, Object.entries(m.result).map(([ch, err]) => `${ch}: ${err || 'sent'}`).join(' · ') || 'no channel'))));
   }).catch(() => null);
   const notif = section('Notifications',
-    'Messages to your phone when something needs attention - after a minimum duration, repeated at most once per cooldown, with an "all clear" when it is over. Save first, then send a test.',
+    'Save first, then send a test.',
     nf, h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } }, nTest, wPreview, wSend));
   notif.append(nOut, wOut, h('details', null, h('summary', { class: 'small', style: { cursor: 'pointer' } }, 'Last messages'), nLog));
   main.append(h('div', { style: { height: '16px' } }), notif);
@@ -492,12 +539,15 @@ export async function mount(main, { refreshStatus }) {
   const gm = form(cfg, [
     { path: 'gaming_pc.ip', label: 'IP of the gaming PC', type: 'nullable', placeholder: '192.168.178.20' },
     { path: 'gaming.auto_detect', label: 'Detect sessions automatically', type: 'bool' },
-    { path: 'gaming.min_pps', label: 'Min. UDP packets/s per direction', type: 'number' },
-    { path: 'gaming.stop_after_idle', label: 'Auto stop after inactivity (s)', type: 'number' },
+    ...under('gaming.auto_detect', [
+      { path: 'gaming.min_pps', label: 'Min. UDP packets/s per direction', type: 'number' },
+      { path: 'gaming.stop_after_idle', label: 'Auto stop after inactivity (s)', type: 'number' },
+    ]),
   ]);
   main.append(h('div', { style: { height: '16px' } }), section('Gaming Mode', null, gm));
 
   const ret = form(cfg, [
+    { heading: 'Keep measurements' },
     { path: 'retention.raw_days', label: '1 s values (days)', type: 'number' },
     { path: 'retention.detailed_days', label: '10 s aggregates (days)', type: 'number' },
     { path: 'retention.aggregate_days', label: '1 min aggregates (days)', type: 'number' },
@@ -507,20 +557,23 @@ export async function mount(main, { refreshStatus }) {
       help: 'Emergency brake: if exceeded, raw data and 1 s values are deleted first. 0 = no limit.' },
     { path: 'retention.ping_samples', label: 'Store individual pings', type: 'bool',
       help: 'About 14 MB per day that no evaluation reads. Only enable for troubleshooting.' },
+    { heading: 'Deep Capture' },
     { path: 'deep_capture.enabled', label: 'Deep Capture (PCAP ring buffer)', type: 'bool', help: 'Headers only; protected on incidents' },
-    { path: 'deep_capture.buffer', label: 'Running ring', type: 'select',
-      options: [['memory', 'In RAM (only incidents reach the SD card)'], ['disk', 'On the SD card']],
-      help: 'On the SD card the ring writes around the clock (~10 GB a day on a Pi 4)' },
-    { path: 'deep_capture.memory_mb', label: 'RAM for the ring (MB)', type: 'number',
-      help: 'Covers the last minutes; counts against the 350 MB of the service' },
-    { path: 'deep_capture.max_files', label: 'PCAP files in the ring (on the SD card)', type: 'number' },
-    { path: 'deep_capture.file_size_mb', label: 'Size per file (MB)', type: 'number' },
-    { path: 'deep_capture.max_total_mb', label: 'PCAP total at most (MB)', type: 'number',
-      help: 'Hard limit for ALL captures together, including those belonging to incidents. The only number that really limits.' },
-    { path: 'deep_capture.protected_days', label: 'Keep incident captures (days)', type: 'number' },
-    { path: 'deep_capture.protect_auto', label: 'Keep capture for', type: 'select',
-      options: [['critical', 'critical incidents'], ['all', 'all incidents'], ['none', 'reported lag only']],
-      help: 'Reported lags are always kept. "All" can cost a lot of space depending on how often incidents occur.' },
+    ...under('deep_capture.enabled', [
+      { path: 'deep_capture.buffer', label: 'Running ring', type: 'select',
+        options: [['memory', 'In RAM (only incidents reach the SD card)'], ['disk', 'On the SD card']],
+        help: 'On the SD card the ring writes around the clock (~10 GB a day on a Pi 4)' },
+      { path: 'deep_capture.memory_mb', label: 'RAM for the ring (MB)', type: 'number',
+        help: 'Covers the last minutes; counts against the 350 MB of the service', when: v => v('deep_capture.buffer') === 'memory' },
+      { path: 'deep_capture.max_files', label: 'PCAP files in the ring', type: 'number', when: v => v('deep_capture.buffer') === 'disk' },
+      { path: 'deep_capture.file_size_mb', label: 'Size per file (MB)', type: 'number', when: v => v('deep_capture.buffer') === 'disk' },
+      { path: 'deep_capture.max_total_mb', label: 'PCAP total at most (MB)', type: 'number',
+        help: 'Hard limit for ALL captures together, including those belonging to incidents' },
+      { path: 'deep_capture.protected_days', label: 'Keep incident captures (days)', type: 'number' },
+      { path: 'deep_capture.protect_auto', label: 'Keep capture for', type: 'select',
+        options: [['critical', 'critical incidents'], ['all', 'all incidents'], ['none', 'reported lag only']],
+        help: 'Reported lags are always kept' },
+    ]),
   ]);
   main.append(h('div', { style: { height: '16px' } }),
     section('Storage & Deep Capture', 'The daily summary is exempt from retention - '

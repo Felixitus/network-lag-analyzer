@@ -6,7 +6,7 @@
 // That saves height and makes "what was going on at the same time?" readable instead of guessable.
 import { api, clear, cssVar, deviceColor, fmtBytes, fmtDateTime, fmtTime, h, SERIES } from '../lib.js';
 import { fmt, legend, timeChart } from '../charts.js';
-import { buildMarkers, RANGES, segmented } from './common.js';
+import { buildMarkers, moreSection, RANGES, segmented } from './common.js';
 
 let timer = null;
 export function unmount() { clearInterval(timer); }
@@ -99,7 +99,7 @@ export async function mount(main, { args }) {
     h('div', { class: 'card-head' }, h('h2', null, 'Network'),
       h('span', { class: 'sub' }, zoomInfo)), readout, stack);
   main.append(netCard, h('div', { style: { height: '16px' } }), lanesCard,
-    h('div', { style: { height: '16px' } }), heatCard);
+    moreSection('Heatmap', 'the same traffic per device, one row each', heatCard));
 
   // ---------------------------------------------------------------- charts
   const sync = 'timeline';
