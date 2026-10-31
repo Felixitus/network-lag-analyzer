@@ -5,6 +5,12 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-10-31
+
+### Fixed
+- Live page: on a wide screen the seven tiles broke into two rows and left a gap (since 1.6.1).
+  The caption of a tile is no longer cut off.
+
 ## [1.6.1] - 2026-10-31
 
 ### Changed

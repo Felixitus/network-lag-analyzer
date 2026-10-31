@@ -502,9 +502,11 @@ details.more > summary:hover .more-title { color: var(--accent); }
 details.more[open] > summary { margin-bottom: 16px; }
 .more-title { font-weight: 600; }
 
-/* Seven tiles in rows of four: the last one fills the hole */
-.tiles:not(.tiles-3) > .tile:last-child:nth-child(4n+3) { grid-column: span 2; }
+/* Seven tiles fit one row on a wide screen; in rows of four the last one fills the hole */
+@media (max-width: 1200px) { .tiles:not(.tiles-3) > .tile:last-child:nth-child(4n+3) { grid-column: span 2; } }
 @media (max-width: 900px) { .lights { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Packet loss names two time spans: cut off it said nothing */
+.status-wrap .tile .foot { white-space: normal; }
 .field[hidden], .form-heading[hidden] { display: none; }
 .form-heading { grid-column: 1 / -1; margin: 8px 0 -4px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
   text-transform: uppercase; color: var(--text-muted); }
