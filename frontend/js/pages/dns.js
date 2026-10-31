@@ -2,8 +2,7 @@
 // Everything shown here are counts of DNS queries as Pi-hole logged them - not usage time, not traffic.
 import { api, clear, fmtDate, fmtDateTime, fmtTime, h, ago, toast, cssVar, NA } from '../lib.js';
 import { timeChart } from '../charts.js';
-import { naBox, piholeCard, segmented, upstreamTable } from './common.js';
-import { refreshNamesButton } from './devices.js';
+import { moreSection, naBox, piholeCard, segmented, upstreamTable } from './common.js';
 import { domainLink } from './dns_domain.js';
 
 const RANGES = [['1h', '1 H'], ['24h', '24 H'], ['7d', '7 D'], ['30d', '30 D'], ['custom', 'Custom']];
@@ -204,14 +203,14 @@ async function mountOverview(main) {
     clear(body);
     const t = o.totals;
     const src = o.sources || {};
-    body.append(h('div', { class: 'card' },
+    const sources = h('div', { class: 'card' },
       h('div', { class: 'card-head' }, h('h2', null, 'Data sources'),
         h('span', { class: 'sub' }, o.coverage.from ? `Recorded: ${fmtDateTime(o.coverage.from)} – ${fmtDateTime(o.coverage.to)}` : 'Nothing recorded yet')),
       h('div', { class: 'grid grid-3' }, sourceLine('Pi-hole', src.pihole), sourceLine('DNS usage', src.dns_usage), sourceLine('FRITZ!Box', src.fritzbox)),
       src.dns_usage && src.dns_usage.backlog ? h('div', { class: 'small muted', style: { marginTop: '8px' } },
-        `Still reading the Pi-hole log: ${n(src.dns_usage.backlog)} queries to go. Older ranges fill in over the next minutes.`) : null));
-
-    body.append(identificationCard());
+        `Still reading the Pi-hole log: ${n(src.dns_usage.backlog)} queries to go. Older ranges fill in over the next minutes.`) : null);
+    // A failing source decides how to read everything below, so it does not hide in the fold
+    if (Object.values(src).some(x => x && x.ok === false)) body.append(sources);
 
     const tiles = h('div', { class: 'tiles tiles-3', role: 'list' },
       tile('Active clients', n(t.active_clients),
@@ -236,10 +235,11 @@ async function mountOverview(main) {
         categoryBars(o.categories))));
 
     body.append(h('div', { class: 'grid grid-2' }, clientsCard(cl), recentCard(o)));
-    body.append(bypassCard());
-    body.append(upstreamCard());
     body.append(piholeCard());
-    body.append(h('div', { class: 'grid grid-2' }, uncategorizedCard(load), glossaryCard()));
+    body.append(moreSection('How reliable are these numbers?', 'data sources, device matching, DNS past Pi-hole, explanations',
+      ...(sources.isConnected ? [] : [sources]), identificationCard(), bypassCard(), glossaryCard()));
+    body.append(moreSection('Upstream servers and uncategorized names', 'reply times of the DNS servers, names without a category',
+      upstreamCard(), uncategorizedCard(load)));
   }
   await load();
 }
@@ -467,7 +467,7 @@ function clientsCard(cl) {
   const tbody = h('tbody');
   const card = h('div', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', null, `Clients (${cl.clients.length})`),
-      h('div', { class: 'row' }, search, refreshNamesButton(() => window.dispatchEvent(new HashChangeEvent('hashchange'))))),
+      h('div', { class: 'row' }, search)),
     h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
       h('thead', null, h('tr', null, h('th', null, ''), h('th', null, 'Client'), h('th', { class: 'num' }, 'Queries'),
         h('th', { class: 'num' }, 'Blocked'), h('th', { class: 'num' }, 'Domains'))), tbody)),

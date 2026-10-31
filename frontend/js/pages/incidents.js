@@ -1,7 +1,7 @@
 // Incident list and detail view.
 import { api, clear, CONF_LABEL, confBadge, deviceColor, EVENT_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtMbit, fmtMs, fmtRate, fmtTime, h, SERIES, ago } from '../lib.js';
 import { chartCard, fmt, timeChart } from '../charts.js';
-import { buildMarkers, latencyUnderLoad, pathView, segmented, upstreamTable } from './common.js';
+import { buildMarkers, latencyUnderLoad, moreSection, pathView, segmented, upstreamTable } from './common.js';
 
 export async function mount(main, ctx) {
   if (ctx.route === 'incident' || ctx.args[0]) return detail(main, parseInt(ctx.args[0] || ctx.args[1], 10));
@@ -188,6 +188,7 @@ async function detail(main, id) {
 
   // ---------------------------------------------------------------- findings timeline (lag report)
   const lower = h('div', { class: 'grid grid-2', style: { marginTop: '16px' } });
+  const analysis = [];
   if (a.timeline) {
     const ul = h('ul', { class: 'timeline-list' });
     if (!a.timeline.length) ul.append(h('li', { class: 'empty' }, 'No anomalies in this time span.'));
@@ -201,8 +202,8 @@ async function detail(main, id) {
         h('td', { class: 'num' }, v.loss_pct != null ? `${v.loss_pct} %` : '–'), h('td', { class: 'num' }, v.jitter_max != null ? `${fmtMs(v.jitter_max)} ms` : '–'),
         h('td', { class: 'num' }, v.up_max != null ? fmtRate(v.up_max) : '–')))));
     lower.append(h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Found'),
-      h('span', { class: 'sub' }, a.analysis_window ? `Analysis ${fmtTime(a.analysis_window.start)}–${fmtTime(a.analysis_window.end)}` : '')), ul),
-    h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Analysis windows')), h('div', { class: 'table-wrap' }, wt)));
+      h('span', { class: 'sub' }, a.analysis_window ? `Analysis ${fmtTime(a.analysis_window.start)}–${fmtTime(a.analysis_window.end)}` : '')), ul));
+    analysis.push(h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Analysis windows')), h('div', { class: 'table-wrap' }, wt)));
   }
   // Events
   const evs = d.events.length ? d.events : (a.events || []);
@@ -216,14 +217,14 @@ async function detail(main, id) {
   // All rules
   const rules = h('table', { class: 'tbl small' }, h('thead', null, h('tr', null, h('th', null, 'Rule'), h('th', null, 'Explanation'), h('th', { class: 'num' }, 'Points'))),
     h('tbody', null, (a.rules || []).map(r => h('tr', null, h('td', { class: 'mono' }, r.rule.replace('rule_', '')), h('td', null, r.cause), h('td', { class: 'num' }, r.score)))));
-  lower.append(h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Events')), evList),
-    h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Explanations checked'), h('span', { class: 'sub' }, '≥80 High · ≥55 Medium')),
+  lower.append(h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Events')), evList));
+  analysis.push(h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Explanations checked'), h('span', { class: 'sub' }, '≥80 High · ≥55 Medium')),
       (a.rules || []).length ? h('div', { class: 'table-wrap' }, rules) : h('div', { class: 'empty' }, 'No rule applied.')));
   main.append(lower);
 
   // ---------------------------------------------------------------- flows
   const flows = (d.active_flows || []).length ? d.active_flows : d.flows;
-  const fc = h('div', { class: 'card', style: { marginTop: '16px' } }, h('div', { class: 'card-head' }, h('h2', null, 'Connections in this time span'),
+  const fc = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Connections in this time span'),
     h('span', { class: 'sub' }, 'metadata only, no content')));
   if (!flows.length) fc.append(h('div', { class: 'empty' }, 'No flow data (needs the traffic capture).'));
   else {
@@ -233,7 +234,7 @@ async function detail(main, id) {
         h('td', { class: 'mono' }, `${f.dns_name ? f.dns_name + ' ' : ''}${f.remote_ip}:${f.remote_port}`),
         h('td', { class: 'num' }, fmtBytes(f.bytes_up)), h('td', { class: 'num' }, fmtBytes(f.bytes_down)), h('td', { class: 'num' }, f.retrans)))))));
   }
-  main.append(fc);
+  main.append(moreSection('How this was analyzed', 'time windows, rules checked and the connections', ...analysis, fc));
 }
 
 function pcapButton(d) {

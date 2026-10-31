@@ -1,5 +1,5 @@
 // Dashboard: network status, LAG button, live charts, top devices, latest incidents.
-import { api, ago, confBadge, deviceColor, EVENT_LABEL, fmtMbit, fmtMs, fmtRate, h, levelFor, NA, SERIES, clear, toast, fmtTime } from '../lib.js';
+import { api, deviceColor, EVENT_LABEL, fmtMbit, fmtMs, fmtRate, h, levelFor, NA, SERIES, clear, toast, fmtTime } from '../lib.js';
 import { chartCard, fmt } from '../charts.js';
 import { BLOAT_RANGES, buildMarkers, latencyUnderLoad, RANGES, segmented } from './common.js';
 
@@ -104,13 +104,11 @@ export async function mount(main, { store }) {
 
   // ---------------------------------------------------------------- bottom row
   const talkers = h('ul', { class: 'list' });
-  const incList = h('ul', { class: 'list' });
   const openEv = h('ul', { class: 'list' });
   const talkerNote = h('span', { class: 'sub' });
-  main.append(h('div', { class: 'grid grid-3', style: { marginTop: '16px' } },
+  main.append(h('div', { class: 'grid grid-2', style: { marginTop: '16px' } },
     h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Top Devices right now'), talkerNote), talkers,
       h('a', { href: '#/devices', class: 'small' }, 'Historical view →')),
-    h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Latest Incidents'), h('a', { href: '#/incidents', class: 'small' }, 'all →')), incList),
     h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Active Events')), openEv)));
 
   // ---------------------------------------------------------------- data
@@ -134,22 +132,6 @@ export async function mount(main, { store }) {
     ch.forEach(c => c.setMarkers(mk));
   }
   await loadHistory();
-
-  function renderIncidents(items) {
-    clear(incList);
-    if (!items.length) { incList.append(h('li', { class: 'empty' }, 'No incidents yet - good.')); return; }
-    for (const i of items) {
-      incList.append(h('li', { class: 'inc-row' }, h('a', { href: `#/incident/${i.id}` },
-        h('div', { class: 'row' }, h('span', { class: 'title' }, i.source === 'user' ? 'Lag reported' : (i.title || `Incident #${i.id}`)),
-          h('span', { class: 'spacer' }), h('span', { class: 'when' }, ago(i.ts_start)))),
-        h('div', { class: 'row small secondary' }, i.cause || (i.ts_end ? 'not analyzed' : 'running…'), confBadge(i.confidence))));
-    }
-  }
-  async function loadIncidents() {
-    const r = await api('api/incidents?limit=5');
-    renderIncidents(r.incidents);
-  }
-  await loadIncidents();
 
   function renderTiles(f) {
     const m = f ? f.m : {};
@@ -299,7 +281,6 @@ export async function mount(main, { store }) {
       const i = markers.incidents.findIndex(e => e.id === d.id);
       if (d.state === 'dismissed') { if (i >= 0) markers.incidents.splice(i, 1); }   // stayed events only
       else if (i >= 0) markers.incidents[i] = d; else markers.incidents.push(d);
-      loadIncidents();
     } else if (kind === 'gaming') {
       lastGaming = d; renderGaming(d);
     }

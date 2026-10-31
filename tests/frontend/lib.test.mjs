@@ -89,3 +89,13 @@ test('events close together on the overview become one marker with their count',
   assert.deepEqual(c.map(g => g.map(e => e.ts)), [[100, 130], [160], [500], [1000]]);
   assert.deepEqual(clusters([], 50), []);
 });
+
+test('a field under a switch shows only while the switch and its own condition hold', async () => {
+  const { under } = await import('../../frontend/js/pages/settings.js');
+  const [plain, own] = under('a.on', [{ path: 'a.x' }, { path: 'a.y', when: v => v('a.mode') === 'disk' }]);
+  const values = cfg => path => cfg[path];
+  assert.equal(plain.when(values({ 'a.on': false })), false);
+  assert.equal(plain.when(values({ 'a.on': true })), true);
+  assert.equal(own.when(values({ 'a.on': true, 'a.mode': 'memory' })), false);
+  assert.equal(own.when(values({ 'a.on': true, 'a.mode': 'disk' })), true);
+});
