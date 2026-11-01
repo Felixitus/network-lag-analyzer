@@ -106,6 +106,5 @@ test('an incident summary is plain text with the cause and its evidence', async 
     confidence: 'low', analysis: { evidence: ['Router fine', 'Targets lost packets'] } });
   assert.match(text, /Possible cause: Line problem/);
   assert.match(text, /- Targets lost packets/);
-  assert.equal(incidentText({ source: 'user', ts_start: 1000 }).split('
-').length, 1);
+  assert.equal(incidentText({ source: 'user', ts_start: 1000 }).split('\n').length, 1);
 });
