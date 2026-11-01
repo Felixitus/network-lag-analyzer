@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from ..analysis.events import EVENT_LABELS
 from ..analysis.root_cause import CATEGORY_LABELS
 from ..database import repository as repo
-from . import dns, paths
+from . import dashboard, dns, paths
 
 router = APIRouter(prefix="/api")
 
@@ -33,6 +33,54 @@ class LagReport(BaseModel):
 async def lag_report(request: Request, body: LagReport | None = None):
     core = core_of(request)
     return await core.report_lag((body or LagReport()).window)
+
+
+MOMENT_SPAN = 30      # seconds around the looked up moment
+MOMENT_PEAKS = ("rtt_avg", "rtt_max", "gw_rtt", "jitter", "loss_pct", "dns_ms", "down_bps", "up_bps")
+
+
+def moment_peaks(rows: list[dict]) -> dict:
+    """The worst value of each measurement. What was not measured stays None, never 0."""
+    out = {}
+    for k in MOMENT_PEAKS:
+        vals = [r[k] for r in rows if r.get(k) is not None]
+        out[k] = max(vals) if vals else None
+    return out
+
+
+@router.get("/moment")
+async def moment(request: Request, ts: float = Query(..., ge=0, le=4102444800)):
+    """What was going on at any moment: the question the tool exists for, also for one that
+    nobody reported at the time. From the finest resolution still stored."""
+    core = core_of(request)
+    await core.db.flush()
+    start, end = int(ts) - MOMENT_SPAN, int(ts) + MOMENT_SPAN
+
+    def q(c):
+        rows, res = {}, None
+        for res in (1, 10, 60):
+            rows = dashboard._history_from_db(c, start // res * res, end // res * res, res)
+            if rows:
+                break
+        events = [dict(r) for r in c.execute(
+            "SELECT id, type, severity, ts_start, ts_end, peak, incident_id FROM events "
+            "WHERE ts_start <= ? AND COALESCE(ts_end, ts_start) >= ? ORDER BY ts_start LIMIT 50", (end, start))]
+        incs = [dict(r) for r in c.execute(
+            "SELECT id, source, ts_start, ts_end, title, cause, confidence FROM incidents "
+            "WHERE ts_start <= ? AND COALESCE(ts_end, ts_start) >= ? ORDER BY ts_start LIMIT 10", (end, start))]
+        talkers = [dict(r) for r in c.execute(
+            "SELECT mac, SUM(bytes_up) AS up, SUM(bytes_down) AS down FROM network_flows "
+            "WHERE ts_start <= ? AND ts_end >= ? AND mac IS NOT NULL GROUP BY mac "
+            "ORDER BY SUM(bytes_up) + SUM(bytes_down) DESC LIMIT 5", (end, start))]
+        return rows, res, events, incs, talkers
+    rows, res, events, incs, talkers = await core.db.read(q)
+    rows = {**rows, **dashboard._history_from_ring(core, start, end, 1)}
+    for e in events:
+        e["label"] = EVENT_LABELS.get(e["type"], e["type"])
+    for t in talkers:
+        t["device"] = core.devices.label(t["mac"])["name"]
+    return {"ts": ts, "start": start, "end": end, "res": res if rows else None, "seconds_measured": len(rows),
+            "peaks": moment_peaks(list(rows.values())), "events": events, "incidents": incs, "devices": talkers}
 
 
 @router.get("/incidents")

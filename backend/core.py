@@ -1776,6 +1776,8 @@ class Core:
         bad = set(patch) - EDITABLE_SECTIONS
         if bad:
             raise ValueError(f"Not changeable: {', '.join(sorted(bad))}")
+        if any(not isinstance(patch.get(k, {}), dict) for k in ("fritzbox", "pihole", "notify")):
+            raise ValueError("Malformed settings")
         new_password = False
         if "fritzbox" in patch:
             if patch["fritzbox"].get("password") in ("********", None):

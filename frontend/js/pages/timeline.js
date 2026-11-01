@@ -272,6 +272,7 @@ export async function mount(main, { args }) {
   }
 
   await load(true);
+  clearInterval(timer);
   timer = setInterval(() => {
     if (!zoom && ['live', '5m', '15m', '1h'].includes(range)) load(false);
   }, 5000);

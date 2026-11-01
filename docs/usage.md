@@ -5,7 +5,7 @@ The pages of the web UI and how the analysis reaches its verdict. Back to the [R
 ## The pages
 
 **Dashboard:** live tiles (internet, ping, jitter, packet loss, gateway, download,
-upload), the big **"I JUST HAD LAG"** button, live charts with the time ranges
+upload), the big **"I just had lag"** button, live charts with the time ranges
 LIVE/5 MIN/15 MIN/1 H/6 H/24 H/7 D, top devices, latest incidents, active events.
 Updated via server-sent events, without reloading.
 
@@ -164,3 +164,9 @@ In short:
 * Lookups that bypass Pi-hole (DNS over HTTPS, iCloud Private Relay, VPN, fixed DNS
   servers) are missing; the client identification check on the page lists devices that
   never ask Pi-hole.
+
+## Look up a moment
+
+Top of the **Incidents** page: choose a date and time to see the worst values within 30 seconds
+of it, plus the events, incidents and devices of that time. It reads the finest resolution still
+stored, so older moments are less exact. What was not measured shows as "Not available".

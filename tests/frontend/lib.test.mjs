@@ -99,3 +99,12 @@ test('a field under a switch shows only while the switch and its own condition h
   assert.equal(own.when(values({ 'a.on': true, 'a.mode': 'memory' })), false);
   assert.equal(own.when(values({ 'a.on': true, 'a.mode': 'disk' })), true);
 });
+
+test('an incident summary is plain text with the cause and its evidence', async () => {
+  const { incidentText } = await import('../../frontend/js/pages/incidents.js');
+  const text = incidentText({ source: 'auto', ts_start: 1000, ts_end: 1060, title: 'Packet loss', cause: 'Line problem',
+    confidence: 'low', analysis: { evidence: ['Router fine', 'Targets lost packets'] } });
+  assert.match(text, /Possible cause: Line problem/);
+  assert.match(text, /- Targets lost packets/);
+  assert.equal(incidentText({ source: 'user', ts_start: 1000 }).split('\n').length, 1);
+});

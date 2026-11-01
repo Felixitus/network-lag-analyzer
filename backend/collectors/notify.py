@@ -14,6 +14,12 @@ import httpx
 PRIORITY_NTFY = {"low": "2", "default": "3", "high": "4"}
 
 
+def _one_line(title: str) -> str:
+    # Titles can hold a device name, and those come from the network. A line break in a header
+    # fails the send: any device could have silenced its own "new device" alert with its name.
+    return " ".join(title.split())[:200]
+
+
 def channels(cfg) -> list[str]:
     out = []
     if cfg.ntfy_url:
@@ -26,7 +32,7 @@ def channels(cfg) -> list[str]:
 
 
 def send_ntfy(cfg, title: str, body: str, priority: str, timeout: float = 10) -> None:
-    headers = {"Title": title.encode("utf-8").decode("latin-1", "replace"), "Priority": PRIORITY_NTFY.get(priority, "3"),
+    headers = {"Title": _one_line(title).encode("utf-8").decode("latin-1", "replace"), "Priority": PRIORITY_NTFY.get(priority, "3"),
                "Tags": "satellite_antenna"}
     if cfg.ntfy_token:
         headers["Authorization"] = f"Bearer {cfg.ntfy_token}"
@@ -39,7 +45,7 @@ def send_telegram(cfg, title: str, body: str, priority: str, timeout: float = 10
         r = httpx.post(f"https://api.telegram.org/bot{cfg.telegram_bot_token}/sendMessage",
                        json={"chat_id": cfg.telegram_chat_id, "text": f"{title}\n{body}",
                              "disable_notification": priority == "low"}, timeout=timeout)
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, httpx.InvalidURL) as e:
         raise RuntimeError(f"Telegram not reachable ({type(e).__name__})") from None   # the URL holds the token
     if r.status_code != 200:
         # never put the bot token into an error message: it would end up in logs and the UI
@@ -116,7 +122,7 @@ def mail_html(title: str, body: str, kind: str = "alert", link: str | None = Non
 def send_mail(cfg, title: str, body: str, priority: str, timeout: float = 15, kind: str = "alert",
               link: str | None = None) -> None:
     msg = EmailMessage()
-    msg["Subject"] = f"{KIND_STYLE.get(kind, KIND_STYLE['event'])[2]}{title} · Network Lag Analyzer"
+    msg["Subject"] = f"{KIND_STYLE.get(kind, KIND_STYLE['event'])[2]}{_one_line(title)} · Network Lag Analyzer"
     msg["From"] = cfg.mail_from or cfg.smtp_username or "network-lag-analyzer@localhost"
     msg["To"] = cfg.mail_to
     msg.set_content(body + (f"\n\n{link}" if link else ""))

@@ -182,5 +182,6 @@ export async function mount(main, { store, refreshStatus }) {
     note.textContent = d.note;
   }
   await load();
+  clearInterval(timer);
   timer = setInterval(() => load().catch(() => null), 60000);
 }

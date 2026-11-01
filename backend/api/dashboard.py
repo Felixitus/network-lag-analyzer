@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 
 from ..analysis import bufferbloat as bb
 from ..database import repository as repo
+from .security import SESSION_COOKIE, session_alive
 
 router = APIRouter(prefix="/api")
 
@@ -19,6 +20,7 @@ RANGES: dict[str, tuple[int, int]] = {   # name → (seconds, resolution)
     "6h": (21600, 10), "24h": (86400, 60), "7d": (604800, 60),
 }
 RangeName = Literal["live", "5m", "15m", "1h", "6h", "24h", "7d"]
+STREAM_RECHECK = 60     # seconds between session checks of an open stream
 SERIES = ("rtt_avg", "rtt_min", "rtt_max", "gw_rtt", "jitter", "loss_pct", "down_bps", "up_bps",
           "game_rtt", "game_gap_ms", "dns_ms")
 
@@ -60,13 +62,20 @@ async def stream(request: Request):
     """Server-Sent Events: 'tick' every second, 'event'/'incident'/'gaming' on changes."""
     core = core_of(request)
     q = core.broadcaster.subscribe()
+    token = request.cookies.get(SESSION_COOKIE)
 
     async def gen():
+        checked = time.monotonic()
         try:
             yield f"event: hello\ndata: {json.dumps({'ts': time.time()})}\n\n"
             while True:
                 if await request.is_disconnected():
                     break
+                # The stream outlives the check at its start: a logout must end it as well
+                if time.monotonic() - checked > STREAM_RECHECK:
+                    checked = time.monotonic()
+                    if not await session_alive(core, token):
+                        break
                 try:
                     msg = await asyncio.wait_for(q.get(), timeout=15)
                     yield msg
