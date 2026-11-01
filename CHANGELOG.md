@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-11-01
+
 ### Added
 - **Look up a moment** on the Incidents page: the worst values, events, incidents and devices
   around any point in time, also for lag nobody reported at the time. What was not measured
