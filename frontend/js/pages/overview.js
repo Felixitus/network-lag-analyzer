@@ -136,5 +136,6 @@ export async function mount(main) {
     clear(listBox).append(happenings(d));
   }
   await load();
+  clearInterval(timer);
   timer = setInterval(() => load().catch(() => null), 30000);
 }

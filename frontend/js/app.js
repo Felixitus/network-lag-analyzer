@@ -29,8 +29,10 @@ function parseHash() {
   return { name: routes[name] ? name : 'overview', args: parts.slice(1) };
 }
 
+let renderCount = 0;
 async function render() {
   const { name, args } = parseHash();
+  const own = ++renderCount;
   if (current && current.unmount) current.unmount();
   destroyAll();
   // A fresh box per render: a mount still waiting for its data when the next render starts
@@ -47,6 +49,8 @@ async function render() {
     console.error(e);
     if (e.status !== 401) main.append(h('div', { class: 'card' }, h('h3', null, 'Error while loading'), h('p', { class: 'muted' }, String(e.message || e))));
   }
+  // Left while it was still loading: its timers and listeners started after the unmount above
+  if (own !== renderCount && current !== mod && mod.unmount) mod.unmount();
   window.scrollTo(0, 0);
 }
 

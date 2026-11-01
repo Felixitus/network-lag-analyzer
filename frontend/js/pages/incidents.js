@@ -1,5 +1,5 @@
 // Incident list and detail view.
-import { api, clear, CONF_LABEL, confBadge, deviceColor, EVENT_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtMbit, fmtMs, fmtRate, fmtTime, h, SERIES, ago } from '../lib.js';
+import { api, clear, copyText, NA, toast, CONF_LABEL, confBadge, deviceColor, EVENT_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtMbit, fmtMs, fmtRate, fmtTime, h, SERIES, ago } from '../lib.js';
 import { chartCard, fmt, timeChart } from '../charts.js';
 import { buildMarkers, latencyUnderLoad, moreSection, pathView, segmented, upstreamTable } from './common.js';
 
@@ -18,7 +18,7 @@ async function list(main) {
     h('div', null, h('h1', null, 'Incidents'), h('p', null, 'Detected lag and your own reports - problems less than 2 minutes apart form one.'),
     h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, `Kept as events only, not as incidents: problems of a single external target `
       + `while the line was fine, and blips under 5 s without a cause${nDis ? ` - ${nDis} since the last start` : ''}.`)),
-    segmented([[null, 'All'], ['auto', 'Automatic'], ['user', 'Reported']], null, v => { source = v; load(); })), body);
+    segmented([[null, 'All'], ['auto', 'Automatic'], ['user', 'Reported']], null, v => { source = v; load(); })), momentCard(), body);
   async function load() {
     const r = await api(`api/incidents?limit=200${source ? `&source=${source}` : ''}`);
     clear(body);
@@ -90,7 +90,7 @@ async function detail(main, id) {
       h('div', { class: 'row' },
         d.session_id ? h('a', { class: 'btn', href: `#/gaming/${d.session_id}` }, 'Gaming session') : null,
         h('a', { class: 'btn', href: `#/timeline/${pickRange(when)}` }, 'Show in timeline'),
-        pcapButton(d))),
+        summaryButton(d), pcapButton(d))),
     h('div', { class: 'facts' },
       fact('Duration', null, m.duration != null ? fmtDuration(m.duration) : null),
       fact('Ping', fmtMs(m.ping_before), fmtMs(m.ping_peak), 'ms'),
@@ -235,6 +235,66 @@ async function detail(main, id) {
         h('td', { class: 'num' }, fmtBytes(f.bytes_up)), h('td', { class: 'num' }, fmtBytes(f.bytes_down)), h('td', { class: 'num' }, f.retrans)))))));
   }
   main.append(moreSection('How this was analyzed', 'time windows, rules checked and the connections', ...analysis, fc));
+}
+
+/** Plain text of an incident, for a ticket with the provider or a message to someone. */
+export function incidentText(d) {
+  const a = d.analysis || {};
+  const lines = [`${d.source === 'user' ? 'Lag reported' : 'Incident'} on ${fmtDateTime(d.ts_start)}`];
+  if (d.ts_end) lines.push(`Duration: ${fmtDuration(d.ts_end - d.ts_start)}`);
+  if (d.title) lines.push(d.title);
+  if (d.cause) lines.push(`Possible cause: ${d.cause} (confidence: ${CONF_LABEL[d.confidence] || d.confidence || 'not rated'})`);
+  const evidence = a.evidence || [];
+  if (evidence.length) lines.push('', 'Evidence:', ...evidence.map(e => `- ${e}`));
+  return lines.join('\n');
+}
+
+function summaryButton(d) {
+  return h('button', { class: 'btn', type: 'button', onclick: async () => {
+    toast(await copyText(incidentText(d)) ? 'Summary copied' : 'Copying failed');
+  } }, 'Copy summary');
+}
+
+const fmtPeak = (v, f) => (v === null || v === undefined ? NA : f(v));
+
+/** "What happened at …": any moment, also one nobody reported at the time. */
+function momentCard() {
+  const input = h('input', { type: 'datetime-local', 'aria-label': 'Date and time' });
+  const out = h('div', { class: 'stack-sm' });
+  async function look() {
+    const ms = Date.parse(input.value);
+    if (Number.isNaN(ms)) { toast('Choose a date and time'); return; }
+    clear(out).append(h('div', { class: 'skeleton' }, 'Looking…'));
+    let r;
+    try { r = await api(`api/moment?ts=${Math.floor(ms / 1000)}`); }
+    catch (e) { clear(out).append(h('div', { class: 'empty' }, e.message)); return; }
+    clear(out);
+    if (!r.seconds_measured) {
+      out.append(h('div', { class: 'empty' }, 'Not available - nothing was measured around this moment, or the data is past its retention.'));
+      return;
+    }
+    const p = r.peaks;
+    const unit = r.res === 1 ? 'seconds' : `${r.res} s values`;
+    out.append(h('div', { class: 'small muted' }, `Worst values ${fmtTime(r.start)}–${fmtTime(r.end)}, from ${r.seconds_measured} ${unit}`),
+      h('dl', { class: 'facts' }, ...[
+        ['Ping', fmtPeak(p.rtt_max ?? p.rtt_avg, v => `${fmtMs(v)} ms`)], ['Router', fmtPeak(p.gw_rtt, v => `${fmtMs(v)} ms`)],
+        ['Jitter', fmtPeak(p.jitter, v => `${fmtMs(v)} ms`)], ['Packet loss', fmtPeak(p.loss_pct, v => `${v} %`)],
+        ['DNS', fmtPeak(p.dns_ms, v => `${fmtMs(v)} ms`)], ['Download', fmtPeak(p.down_bps, fmtRate)], ['Upload', fmtPeak(p.up_bps, fmtRate)],
+      ].map(([k, v]) => h('div', null, h('dt', null, k), h('dd', null, v)))));
+    for (const i of r.incidents) {
+      out.append(h('div', null, h('a', { href: `#/incident/${i.id}` }, i.source === 'user' ? 'Lag reported' : (i.title || `Incident #${i.id}`)),
+        i.cause ? h('div', { class: 'small secondary' }, i.cause) : null));
+    }
+    if (r.events.length) {
+      out.append(h('div', { class: 'row' }, ...r.events.slice(0, 8).map(e => h('span', { class: `badge ${e.severity === 'critical' ? 'critical' : 'warning'}` }, e.label))));
+    } else if (!r.incidents.length) out.append(h('div', { class: 'small muted' }, 'No event was detected in this time span.'));
+    if (r.devices.length) {
+      out.append(h('div', { class: 'small secondary' }, `Connections at that time: ${r.devices.map(d => `${d.device} (${fmtBytes(d.up + d.down)})`).join(', ')}`));
+    }
+  }
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') look(); });
+  return h('div', { class: 'card stack-sm', style: { marginBottom: '12px' } }, h('div', { class: 'row' }, h('h2', null, 'Look up a moment'),
+    input, h('button', { class: 'btn', type: 'button', onclick: look }, 'Show')), out);
 }
 
 function pcapButton(d) {

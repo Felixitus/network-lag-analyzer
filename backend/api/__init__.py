@@ -25,7 +25,7 @@ def create_app(core) -> FastAPI:
             await core.stop()
 
     app = FastAPI(title="Network Lag Analyzer", version=core.version, lifespan=lifespan,
-                  docs_url="/api/docs", redoc_url=None, openapi_url="/api/openapi.json")
+                  docs_url=None, redoc_url=None, openapi_url=None)
     app.state.core = core
     app.add_middleware(SecurityMiddleware, core=core)
     for r in (auth.router, dashboard.router, incidents.router, devices.router, dns.router, dns_export.router,

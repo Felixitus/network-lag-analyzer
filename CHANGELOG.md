@@ -5,6 +5,17 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Look up a moment** on the Incidents page: the worst values, events, incidents and devices
+  around any point in time, also for lag nobody reported at the time. What was not measured
+  stays "Not available".
+- **Copy summary** on an incident: plain text for a ticket with your provider.
+
+### Changed
+- A quieter design: smaller corners, no shadows, headings in sentence case instead of spaced
+  capitals, tighter spacing. Animations follow the system setting for reduced motion.
+- The built-in API description pages are gone; `docs/` describes the software.
+
 ## [1.6.2] - 2026-10-31
 
 ### Fixed

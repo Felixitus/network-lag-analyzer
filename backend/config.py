@@ -128,7 +128,7 @@ class FritzCfg(BaseModel):
     password: str = ""
     tr064_port: int = 49000
     capture_enabled: bool = True
-    capture_interface: str = "1-lan"   # LAN bridge of the FRITZ!Box
+    capture_interface: str = Field("1-lan", pattern=r"^[A-Za-z0-9_\-.]{1,32}$")   # LAN bridge of the FRITZ!Box
     # Bytes the FRITZ!Box sends per packet. 128 is enough for traffic per device; the TLS and
     # QUIC server names need ~600. Only the analysis reads that much: the PCAP files keep
     # deep_capture.snaplen bytes.
@@ -188,7 +188,7 @@ class NotifyCfg(BaseModel):
 
 class CaptureCfg(BaseModel):
     source: Literal["auto", "fritzbox", "local", "none"] = "auto"
-    local_interface: str = "eth0"
+    local_interface: str = Field("eth0", pattern=r"^[A-Za-z0-9_\-.:]{1,32}$")
     promiscuous: bool = True
     flow_idle_udp: int = 30
     flow_idle_tcp: int = 120

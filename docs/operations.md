@@ -206,8 +206,6 @@ The current level is shown as a banner in the UI.
 | The Pi itself measures over Wi-Fi | Use a LAN cable, otherwise you measure your own Wi-Fi link as well |
 | Timestamps shifted | Check NTP on the Pi and the FRITZ!Box (`timedatectl`). The capture process compensates offsets automatically |
 
-API overview: `http://PI:8088/api/docs`.
-
 ---
 
 ### Known limitations

@@ -8,8 +8,8 @@
   database stores only their SHA-256, so a copy of the database (backup!) does not
   contain usable sessions. Logout deletes the session; a password change deletes
   all others. Absolute lifetime `session_hours`, plus `idle_hours` without requests.
-  The cookie cannot be `Secure`: the UI is plain HTTP inside the LAN (use a VPN for
-  remote access, never a port forwarding).
+  The cookie is `Secure` only with `server.https`: by default the UI is plain HTTP inside
+  the LAN (use a VPN for remote access, never a port forwarding).
 * CSRF: loading the page sets a cookie `nla_csrf` (SameSite=Strict). Every writing
   API request must send the same value in the `X-CSRF-Token` header, and a sent
   Origin must match the host. Foreign websites can neither read the cookie nor
@@ -148,6 +148,13 @@ def revoke_all(conn, except_token: str | None = None) -> int:
     return conn.execute("DELETE FROM auth_sessions").rowcount
 
 
+async def session_alive(core, token: str | None) -> bool:
+    """For connections that outlive the login check at their start."""
+    if not core.login_required:
+        return True
+    return await core.db.read(lambda c: check_session(c, token, core.cfg.security.idle_hours)) is not None
+
+
 def client_ip(request: Request) -> str:
     # proxy_headers is off in uvicorn: X-Forwarded-For cannot fake the address.
     return request.client.host if request.client else "?"
@@ -185,7 +192,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; "
+            "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
             "connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
         if path.startswith("/api/"):
             # Device names, domains and settings must not end up in a browser or proxy cache.

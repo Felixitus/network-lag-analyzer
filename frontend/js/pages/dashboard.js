@@ -32,14 +32,14 @@ export async function mount(main, { store }) {
     T[key] = { el, v, f }; tiles.append(el);
   }
   let lagWindow = 30;
-  const lagBtn = h('button', { class: 'lag-btn', type: 'button' }, 'I JUST HAD LAG', h('small', null, 'analyzes the last seconds right away'));
+  const lagBtn = h('button', { class: 'lag-btn', type: 'button' }, 'I just had lag', h('small', null, 'analyzes the last seconds right away'));
   lagBtn.addEventListener('click', async () => {
     lagBtn.disabled = true;
     lagBtn.firstChild.textContent = 'Analyzing…';
     try {
       const inc = await api('api/lag-report', { method: 'POST', body: { window: lagWindow } });
       location.hash = `#/incident/${inc.id}`;
-    } catch (e) { toast(`Analysis failed: ${e.message}`); lagBtn.disabled = false; lagBtn.firstChild.textContent = 'I JUST HAD LAG'; }
+    } catch (e) { toast(`Analysis failed: ${e.message}`); lagBtn.disabled = false; lagBtn.firstChild.textContent = 'I just had lag'; }
   });
   const gamingBox = h('div', { class: 'row small' });
   const lagCard = h('div', { class: 'card lag-card' }, lagBtn,
@@ -285,5 +285,6 @@ export async function mount(main, { store }) {
       lastGaming = d; renderGaming(d);
     }
   });
+  clearInterval(timer);
   timer = setInterval(() => { if (range !== 'live') loadHistory(); }, 30000);
 }
