@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-05
+
 ### Added
 - **Network health** on the Devices page: devices that keep asking for an address and rarely get
   one, a second DHCP server, one address used by two devices, another device answering for the
