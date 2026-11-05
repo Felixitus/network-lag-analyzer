@@ -174,7 +174,9 @@ stored, so older moments are less exact. What was not measured shows as "Not ava
 ## Network health
 
 Top of the **Devices** page: five checks of the home network, each with "No problem found",
-"Worth a look", "Problem found" or "Not measurable" and the evidence behind it.
+"Worth a look", "Problem found" or "Not measurable" and the evidence behind it. A finding names the
+device with everything that helps to find it at home (name, IP address, maker, MAC) and says
+what to do about it.
 
 | Check | Source | Finds |
 |---|---|---|

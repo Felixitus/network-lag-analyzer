@@ -125,6 +125,8 @@ function networkHealthCard() {
       h('span', { class: `dot ${HEALTH_DOT[c.status]}`, title: HEALTH_TEXT[c.status], style: { marginTop: '5px' } }),
       h('div', null, h('b', null, c.title), ' ', h('span', { class: 'secondary' }, c.summary),
         c.details.length ? h('ul', { class: 'small health-details' }, c.details.map(d => h('li', null, d))) : null,
+        c.advice.length ? h('div', { class: 'health-advice small' }, h('b', null, 'What to do'),
+          h('ul', { class: 'health-details' }, c.advice.map(a => h('li', null, a)))) : null,
         h('div', { class: 'small muted' }, c.source))))));
   }).catch(e => { clear(card).append(h('div', { class: 'empty' }, `Network health: Not available - ${e.message}`)); });
   return card;

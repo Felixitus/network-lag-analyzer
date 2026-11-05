@@ -292,6 +292,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .checks li:first-child { border-top: 0; }
 .checks .health-details { margin: 4px 0 2px; padding-left: 18px; }
 .checks .health-details li { display: list-item; padding: 1px 0; border: 0; }
+.checks .health-advice { margin: 6px 0 4px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
 .ic { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 800; color: #fff; }
 .ic.ok { background: var(--good); } .ic.bad { background: var(--critical); } .ic.unk { background: var(--axis); color: var(--text-primary); }

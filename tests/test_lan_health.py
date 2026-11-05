@@ -220,3 +220,30 @@ def test_the_devices_page_gets_every_check_with_a_status(tmp_path, monkeypatch):
     assert all(x["status"] in ("ok", "warning", "problem", "na") for x in r["checks"])
     # the demo TV asks often and rarely gets an address
     assert next(x for x in r["checks"] if x["id"] == "dhcp_clients")["status"] == "warning"
+
+
+def test_every_finding_says_what_to_do_and_a_clean_check_says_nothing():
+    c = checks(LanHealth(), dhcp_events(TV_MAC, 142, 9))["dhcp_clients"]
+    assert any("Static DHCP" in a for a in c["advice"])
+    assert checks(LanHealth(), dhcp_events(PC_MAC, 12, 12))["dhcp_clients"]["advice"] == []
+    lh = LanHealth()
+    lh.observe({"arp": [[GW, GW_MAC, NOW], [GW, PC_MAC, NOW + 5]],
+                "dhcp": [[NOW, "offer", PC_MAC, GW, GW_MAC, GW, PC], [NOW, "offer", PC_MAC, "192.0.2.250", TV_MAC, "192.0.2.250", PC]]}, NOW)
+    c = checks(lh)
+    assert c["gateway"]["advice"] and c["dhcp_servers"]["advice"]
+
+
+def test_the_same_advice_is_given_once_for_several_devices():
+    c = checks(LanHealth(), dhcp_events(TV_MAC, 30, 1) + dhcp_events(PC_MAC, 30, 1))["dhcp_clients"]
+    assert len(c["details"]) == 2 and len(c["advice"]) == len(set(c["advice"]))
+
+
+def test_a_device_is_named_so_that_it_can_be_found_at_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("NLA_DATA_DIR", str(tmp_path))
+    from backend.core import Core
+    core = Core(str(tmp_path / "none.yaml"))
+    core.gateway, core.gateway_mac = GW, GW_MAC
+    core.devices.observe(TV_MAC, ip="192.0.2.51", hostname="tv-livingroom", vendor="Example Vendor", source="dhcp")
+    assert core._device_label(TV_MAC) == "tv-livingroom (192.0.2.51, Example Vendor, MAC 02:00:00:00:00:51)"
+    assert core._device_label(GW_MAC).startswith("Router (192.0.2.1")
+    assert core._device_label("02:00:00:00:00:99") == "Unknown device (MAC 02:00:00:00:00:99)"

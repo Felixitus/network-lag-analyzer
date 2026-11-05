@@ -704,13 +704,23 @@ class Core:
                         log.exception("Reading Pi-hole's DHCP log failed")
             await asyncio.sleep(self.cfg.pihole.poll_interval if self.pihole else 30)
 
+    def _device_label(self, mac: str) -> str:
+        """Everything that helps to find a device at home: name, address, maker, MAC."""
+        if mac == self.gateway_mac:
+            return f"Router ({self.gateway}, MAC {mac})"
+        d = self.devices.by_mac.get(mac)
+        if d is None:
+            return f"Unknown device (MAC {mac})"
+        extra = [x for x in (d.ip, d.vendor) if x] + [f"MAC {mac}"]
+        return f"{d.custom_name or d.hostname or 'Unnamed device'} ({', '.join(extra)})"
+
     def lan_checks(self) -> dict:
         """DHCP and ARP checks for the devices page."""
         now = time.time()
         dl = self.dhcp_log
         checks = self.lan_health.checks(
             now, gateway=self.gateway, gateway_mac=self.gateway_mac, router_macs=set(),
-            name=lambda m: "Router" if m == self.gateway_mac else self.devices.name_for_mac(m), dhcp_events=dl.events if dl else None,
+            name=self._device_label, dhcp_events=dl.events if dl else None,
             dhcp_since=dl.read_since if dl else None,
             dhcp_error=(dl.error if dl else "Pi-hole integration is off"),
             capture_running=(self.capture_status or {}).get("state") == "running")

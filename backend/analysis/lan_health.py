@@ -22,11 +22,53 @@ OFFERS_MIN = 10                # address requests in 24 h before a low success r
 SERVER_KINDS = ("offer", "ack", "nak")
 RANK = {"na": 0, "ok": 1, "warning": 2, "problem": 3}
 
+# What to do, per finding. Paths are those of Pi-hole v6 and FRITZ!OS 8.
+ADVICE = {
+    "dhcp_retry": [
+        "Check where the device stands: a weak Wi-Fi signal is the most common reason why answers get "
+        "lost. A mesh unit or repeater closer to it, or the 2.4 GHz band, helps.",
+        "Restart the device - many recover from a stuck network state that way.",
+        "If it keeps failing: give it a fixed address in Pi-hole (Settings → DHCP → Static DHCP "
+        "configuration). It then gets the same address every time.",
+        "Repeaters and mesh units must work as access points only, without a DHCP server of their own."],
+    "decline": [
+        "Look for a device with a manually set IP address inside Pi-hole's DHCP range. Move that address "
+        "out of the range, or enter it as a fixed address in Pi-hole (Settings → DHCP)."],
+    "pool_full": ["Enlarge the address range or shorten the lease time in Pi-hole (Settings → DHCP)."],
+    "nak": ["Usually harmless: the device remembered an address from another network (work, hotel). "
+            "Only if it repeats every day: forget the Wi-Fi on the device and connect again."],
+    "second_server": [
+        "Keep one DHCP server - here Pi-hole. Find the other device by its MAC (FRITZ!Box: Home Network "
+        "→ Network) and switch off its DHCP server; repeaters and mesh units belong in access point mode.",
+        "If it is the FRITZ!Box: Home Network → Network → Network Settings → IPv4 settings → switch off "
+        "\"Enable DHCP server\"."],
+    "conflict": [
+        "One of the two devices most likely has a manually set IP address. Set it to automatic (DHCP), or "
+        "choose an address outside Pi-hole's DHCP range.",
+        "Restart both devices afterwards so that each gets its own address."],
+    "gateway": [
+        "If you know the device: check its network settings - VPN, hotspot or sharing software can act "
+        "as a router.",
+        "If you do not know it: block it in the FRITZ!Box (Home Network → Network → device → block "
+        "internet use, or remove it from the Wi-Fi) and change the Wi-Fi password."],
+    "storm": [
+        "Look for a loop: a cable between two ports of the same switch, or a mesh unit connected by cable "
+        "and by Wi-Fi at the same time. Unplug cables one by one until the storm stops.",
+        "If the device named above causes it alone: restart it or unplug it."],
+}
+
 
 def check(cid: str, title: str, status: str, summary: str, details: list[str] | None = None,
-          source: str = "") -> dict:
+          source: str = "", advice: list[str] | None = None) -> dict:
     return {"id": cid, "title": title, "status": status, "summary": summary, "details": details or [],
-            "source": source}
+            "source": source, "advice": advice or []}
+
+
+def _advice(*keys: str) -> list[str]:
+    out: list[str] = []
+    for k in keys:
+        out += [a for a in ADVICE[k] if a not in out]
+    return out
 
 
 class LanHealth:
@@ -132,30 +174,34 @@ class LanHealth:
             per[mac][kind] += 1
             if "no address available" in note:
                 pool_full += 1
-        details, status = [], "ok"
+        details, status, found = [], "ok", []
         if pool_full:
             status = "problem"
+            found.append("pool_full")
             details.append(f"{pool_full} times no address was free: the address pool is full.")
         for mac, n in sorted(per.items(), key=lambda kv: -kv[1]["discover"]):
             label = name(mac)
             if n["decline"]:
                 status = "problem"
+                found.append("decline")
                 details.append(f"{label} refused its address {n['decline']} times: another device already "
                                "uses it.")
             if n["discover"] >= OFFERS_MIN and n["ack"] < n["discover"] / 2:
                 status = max(status, "warning", key=RANK.get)
+                found.append("dhcp_retry")
                 details.append(f"{label} asked {n['discover']} times for an address and received one "
                                f"{n['ack']} times. Pi-hole's answers seem not to reach it, or it takes an "
                                "address from another DHCP server.")
             if n["nak"]:
                 status = max(status, "warning", key=RANK.get)
+                found.append("nak")
                 details.append(f"{label}: Pi-hole refused a requested address {n['nak']} times (the device "
                                "asked for one from another network, e.g. after a change of network).")
         devices = len(per)
         acks = sum(n["ack"] for n in per.values())
         summary = (f"{devices} devices asked, {acks} addresses handed out in 24 h"
                    + ("; no device had trouble getting one." if status == "ok" else "."))
-        return check("dhcp_clients", title, status, summary, details, src)
+        return check("dhcp_clients", title, status, summary, details, src, _advice(*found))
 
     def _dhcp_servers(self, cap_na, name) -> dict:
         title, src = "DHCP servers", "Capture (broadcasts only)"
@@ -173,7 +219,7 @@ class LanHealth:
             return check("dhcp_servers", title, "problem",
                          f"{len(self.servers)} DHCP servers answer. Devices take whichever is first and can "
                          "get a wrong router or DNS server - usually a repeater or second router with its "
-                         "DHCP still on.", rows, src)
+                         "DHCP still on.", rows, src, _advice("second_server"))
         return check("dhcp_servers", title, "ok", "One DHCP server answers.", rows, src)
 
     def _conflicts(self, cap_na, routers, name) -> dict:
@@ -188,7 +234,7 @@ class LanHealth:
                 for c in found]
         return check("ip_conflicts", title, "problem",
                      f"{len(found)} address{'es are' if len(found) > 1 else ' is'} used by two devices at once. "
-                     "Both lose connections while they take it from each other.", rows, src)
+                     "Both lose connections while they take it from each other.", rows, src, _advice("conflict"))
 
     def _gateway(self, cap_na, gateway, gateway_mac, routers, name) -> dict:
         title, src = "Router address", "Capture (ARP)"
@@ -204,7 +250,7 @@ class LanHealth:
             return check("gateway", title, "problem",
                          f"Another device answered for the router's address {gateway}. Devices then send "
                          "their internet traffic to it: a misconfigured device, or someone reading along.",
-                         [f"{name(m)} ({m})" for m in others], src)
+                         [name(m) for m in others], src, _advice("gateway"))
         if gateway not in self.owner:
             return check("gateway", title, "na", f"No ARP answer for {gateway} seen yet.", source=src)
         return check("gateway", title, "ok", f"Only the router answers for {gateway}.", source=src)
@@ -221,10 +267,10 @@ class LanHealth:
                          "ARP storm: thousands of packets a minute. Usually a network loop (a cable plugged "
                          "in twice, two connected repeaters) or a broken device.",
                          [f"{name(m)}: over {ARP_STORM} a minute in {n} of the last 5 minutes"
-                          for m, n in storm.items()], src)
+                          for m, n in storm.items()], src, _advice("storm"))
         busy = sorted(((n, m) for m, n in mean.items() if n >= ARP_BUSY and m not in routers), reverse=True)
-        details = [f"{name(m)}: {n:.0f} a minute (mean of the last hour) - it scans the network; harmless at "
-                   "this rate" for n, m in busy]
+        details = [f"{name(m)}: {n:.0f} a minute (mean of the last hour). It checks which devices are present, "
+                   "as mesh systems, smart home hubs and network apps do - nothing to do." for n, m in busy]
         return check("arp_rate", title, "ok", f"Normal: {sum(mean.values()):.0f} ARP packets a minute in total.",
                      details, src)
 
