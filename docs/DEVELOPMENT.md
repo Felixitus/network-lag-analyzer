@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 493, must be green)
+python3 -m pytest tests -q                    # all tests (currently 518, must be green)
 node --test tests/frontend/*.test.mjs         # web UI helpers (needs frontend/package.json, see CI)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
@@ -64,6 +64,8 @@ backend/
     devices.py            device registry, assigns the numeric IDs itself
     pihole_api.py         Pi-hole v6 API: the only way Pi-hole is changed, one session per action
     notify.py             sending notifications: ntfy, Telegram, e-mail, each channel on its own
+    lanwatch.py           ARP claims and DHCP messages from the capture (capture process)
+    dhcp_log.py           Pi-hole's DHCP log read-only (pihole.log), survives the rotation
   analysis/
     metrics.py            per-second assembler, ring buffer (1 h)
     events.py             event detection with hysteresis
@@ -89,6 +91,7 @@ backend/
     connections.py        measured sessions per service from the TLS server names
     category_usage.py     categories per device: lookups, active hours, estimates - kept apart
     backfill.py           fills gaps afterwards from Pi-hole's log (DNS minutes, presence by DNS hours)
+    lan_health.py         network health: DHCP requests and servers, address conflicts, router address, ARP
   data/domain_categories.yaml   shipped category rules (hand-maintained)
   database/
     models.py             schema + SCHEMA_VERSION

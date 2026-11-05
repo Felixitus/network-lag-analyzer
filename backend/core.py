@@ -20,9 +20,11 @@ from .analysis.correlation import Correlator, Incident, analyze_user_report, dis
 from .analysis.dns_ingest import DnsIngestor, delete_unused_domains, fold_completed_days, local_day, minutes_key
 from .analysis.events import EVENT_LABELS, Event, EventEngine
 from .analysis.gaming import ICMP_GIVE_UP_PROBES, GamingDetector, GamingSession, pick_server, summarize_session
+from .analysis.lan_health import LanHealth, overall
 from .analysis.metrics import MetricsHub, TargetInfo
 from .analysis.root_cause import CATEGORY_LABELS, Window
 from .collectors.devices import DeviceRegistry
+from .collectors.dhcp_log import DhcpLog
 from .collectors.dns import DnsProber
 from .collectors.fritzbox import FritzClient, FritzError
 from .collectors.ftl_queries import FtlQueryLog
@@ -110,6 +112,8 @@ class Core:
         self.notify_log: deque = deque(maxlen=50)
         self._notified_devices: set[str] = set()
         self.presence = presence.PresenceTracker()
+        self.lan_health = LanHealth()
+        self.dhcp_log: DhcpLog | None = None
         self._pi_recent: deque = deque(maxlen=61)    # one snapshot per minute → last hour
         # Last FRITZ!Box host list, for the client identification check of the DNS pages.
         self.fritz_hosts: list = []
@@ -293,6 +297,7 @@ class Core:
         await self.scheduler.start()
 
         self.pihole = PiholeReader(cfg.pihole.ftl_db) if cfg.pihole.enabled else None
+        self.dhcp_log = DhcpLog(cfg.pihole.log_file) if cfg.pihole.enabled else None
         pihole_ok = False
         if self.pihole:
             pihole_ok, msg = await asyncio.to_thread(self.pihole.check)
@@ -525,6 +530,8 @@ class Core:
         elif kind == "macip":
             for mac, ip in msg[1].items():
                 self.devices.observe(mac, ip=ip, source="capture", seen=time.time())
+        elif kind == "lan":
+            self.lan_health.observe(msg[1], time.time())
         elif kind == "udp_candidates":
             self.udp_candidates = msg[2]
             self._gaming_candidates(msg[1], msg[2])
@@ -690,7 +697,35 @@ class Core:
                     await self._presence_step(now)
                 except Exception:  # noqa: BLE001 - presence is a view, the measurements go on
                     log.exception("Presence update failed")
+                if self.dhcp_log is not None:
+                    try:
+                        await asyncio.to_thread(self.dhcp_log.poll)
+                    except Exception:  # noqa: BLE001
+                        log.exception("Reading Pi-hole's DHCP log failed")
             await asyncio.sleep(self.cfg.pihole.poll_interval if self.pihole else 30)
+
+    def _device_label(self, mac: str) -> str:
+        """Everything that helps to find a device at home: name, address, maker, MAC."""
+        if mac == self.gateway_mac:
+            return f"Router ({self.gateway}, MAC {mac})"
+        d = self.devices.by_mac.get(mac)
+        if d is None:
+            return f"Unknown device (MAC {mac})"
+        extra = [x for x in (d.ip, d.vendor) if x] + [f"MAC {mac}"]
+        return f"{d.custom_name or d.hostname or 'Unnamed device'} ({', '.join(extra)})"
+
+    def lan_checks(self) -> dict:
+        """DHCP and ARP checks for the devices page."""
+        now = time.time()
+        dl = self.dhcp_log
+        checks = self.lan_health.checks(
+            now, gateway=self.gateway, gateway_mac=self.gateway_mac, router_macs=set(),
+            name=self._device_label, dhcp_events=dl.events if dl else None,
+            dhcp_since=dl.read_since if dl else None,
+            dhcp_error=(dl.error if dl else "Pi-hole integration is off"),
+            capture_running=(self.capture_status or {}).get("state") == "running")
+        return {"status": overall(checks), "checks": checks, "capture_since": self.lan_health.since,
+                "dhcp_since": dl.read_since if dl else None}
 
     async def _devices_step(self, now: float, last_arp: float, last_ph_hosts: float) -> tuple[float, float]:
         """One round of the device sources; returns the new (last_arp, last_ph_hosts)."""
