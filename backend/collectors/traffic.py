@@ -8,6 +8,7 @@ Messages to the main process (out_q):
     ("flows", [flow_tuple, ...])         finished flows
     ("active_flows", ts, [dict, ...])    currently most active flows (every 5 s)
     ("macip", {mac: ip})                 learned IPv4 mappings
+    ("lan", {...})                       ARP claims and DHCP messages (lanwatch.py, every 5 s)
     ("udp_candidates", ts, [dict, ...])  bidirectional UDP flows (game detection)
     ("status", {...})                    state, rates, errors
     ("pcap", {...})                      deep capture file created/updated/deleted
@@ -392,6 +393,9 @@ class CaptureWorker:
             learned = self.analyzer.take_macip()
             if learned:
                 self.emit(("macip", learned))
+            lan = self.analyzer.lan.take()
+            if lan:
+                self.emit(("lan", lan))
             if self.ring:
                 self.ring.flush()
         if now - self._last_status >= 2:

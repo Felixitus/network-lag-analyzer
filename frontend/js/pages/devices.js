@@ -1,4 +1,4 @@
-// Devices: list, renaming, marking the gaming PC, DNS activity, historical top talkers.
+// Devices: list, renaming, marking the gaming PC, DNS activity, network health, historical top talkers.
 import { api, clear, deviceColor, fmtBytes, fmtMbit, h, ago, toast } from '../lib.js';
 import { segmented } from './common.js';
 import { presenceSection } from './presence.js';
@@ -10,7 +10,7 @@ export async function mount(main) {
   const listCard = h('div', { class: 'card' });
   const histCard = h('div', { class: 'card' });
   const dnsCard = h('div', { class: 'card', style: { display: 'none' } });
-  main.append(presenceSection(), listCard, h('div', { style: { height: '16px' } }), dnsCard, h('div', { class: 'grid', style: { marginTop: '16px' } }, histCard));
+  main.append(presenceSection(), networkHealthCard(), listCard, h('div', { style: { height: '16px' } }), dnsCard, h('div', { class: 'grid', style: { marginTop: '16px' } }, histCard));
 
   async function loadList() {
     const r = await api('api/devices');
@@ -108,4 +108,24 @@ export function refreshNamesButton(after) {
     btn.textContent = 'Refresh host names';
   });
   return btn;
+}
+
+/** Dot color of a network check: "na" stays grey - a silent source is not a good sign. */
+export const HEALTH_DOT = { ok: 'good', warning: 'warning', problem: 'critical', na: 'muted' };
+export const HEALTH_TEXT = { ok: 'No problem found', warning: 'Worth a look', problem: 'Problem found', na: 'Not measurable' };
+
+function networkHealthCard() {
+  const card = h('div', { class: 'card', style: { marginBottom: '16px' } }, h('div', { class: 'skeleton' }, 'Checking the network…'));
+  api('api/devices/network-health').then(r => {
+    const since = r.capture_since ? `ARP since ${ago(r.capture_since)}` : 'ARP: capture not running';
+    clear(card).append(h('div', { class: 'card-head' }, h('h2', null, 'Network health'),
+      h('span', { class: 'sub' }, `DHCP over 24 h, ${since}`), h('span', { class: 'spacer' }),
+      h('span', { class: `badge ${HEALTH_DOT[r.status]}` }, HEALTH_TEXT[r.status])),
+    h('ul', { class: 'checks' }, r.checks.map(c => h('li', null,
+      h('span', { class: `dot ${HEALTH_DOT[c.status]}`, title: HEALTH_TEXT[c.status], style: { marginTop: '5px' } }),
+      h('div', null, h('b', null, c.title), ' ', h('span', { class: 'secondary' }, c.summary),
+        c.details.length ? h('ul', { class: 'small health-details' }, c.details.map(d => h('li', null, d))) : null,
+        h('div', { class: 'small muted' }, c.source))))));
+  }).catch(e => { clear(card).append(h('div', { class: 'empty' }, `Network health: Not available - ${e.message}`)); });
+  return card;
 }

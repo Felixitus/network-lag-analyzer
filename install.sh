@@ -57,8 +57,8 @@ if ! id "$SVC_USER" >/dev/null 2>&1; then
   useradd --system --home-dir "$DATA_DIR" --no-create-home --shell /usr/sbin/nologin "$SVC_USER"
 fi
 if getent group pihole >/dev/null; then
-  usermod -aG pihole "$SVC_USER"   # read access to the FTL database only
-  info "Added user '$SVC_USER' to group 'pihole' (read access to pihole-FTL.db)"
+  usermod -aG pihole "$SVC_USER"   # read access to the FTL database and pihole.log only
+  info "Added user '$SVC_USER' to group 'pihole' (read access to pihole-FTL.db and pihole.log)"
 else
   warn "Group 'pihole' not found - the Pi-hole integration will show 'Not available'."
 fi

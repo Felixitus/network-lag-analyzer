@@ -170,3 +170,21 @@ In short:
 Top of the **Incidents** page: choose a date and time to see the worst values within 30 seconds
 of it, plus the events, incidents and devices of that time. It reads the finest resolution still
 stored, so older moments are less exact. What was not measured shows as "Not available".
+
+## Network health
+
+Top of the **Devices** page: five checks of the home network, each with "No problem found",
+"Worth a look", "Problem found" or "Not measurable" and the evidence behind it.
+
+| Check | Source | Finds |
+|---|---|---|
+| Address requests | Pi-hole's DHCP log (`pihole.log`, read-only), last 24 h | devices that keep asking for an address and rarely get one, refused addresses (another device uses them), a full address pool |
+| DHCP servers | Capture | a second DHCP server, e.g. a repeater or old router with its DHCP still on |
+| Address conflicts | Capture (ARP) | one IP address used by two devices at once |
+| Router address | Capture (ARP) | another device answering for the router's address |
+| ARP traffic | Capture (ARP) | ARP storms from a network loop; devices that scan the network are noted, not flagged |
+
+Limits: the capture sees what passes the FRITZ!Box. DHCP answers sent straight to a device can
+miss it, so a second server that only answers that way stays unseen. When Pi-hole does not hand
+out the addresses, the first check is "Not measurable". The capture checks start from scratch
+after a restart of the service.

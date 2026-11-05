@@ -108,3 +108,10 @@ test('an incident summary is plain text with the cause and its evidence', async 
   assert.match(text, /- Targets lost packets/);
   assert.equal(incidentText({ source: 'user', ts_start: 1000 }).split('\n').length, 1);
 });
+
+test('a network check nobody could measure stays grey, not green', async () => {
+  const { HEALTH_DOT, HEALTH_TEXT } = await import('../../frontend/js/pages/devices.js');
+  assert.equal(HEALTH_DOT.na, 'muted');
+  assert.equal(HEALTH_DOT.problem, 'critical');
+  assert.equal(HEALTH_TEXT.na, 'Not measurable');
+});

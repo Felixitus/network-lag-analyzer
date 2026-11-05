@@ -199,6 +199,7 @@ class PiholeCfg(BaseModel):
     enabled: bool = True
     ftl_db: str = "/etc/pihole/pihole-FTL.db"
     dhcp_leases: str = "/etc/pihole/dhcp.leases"     # read-only; host names of the current leases
+    log_file: str = "/var/log/pihole/pihole.log"   # read-only; DHCP steps of its dnsmasq
     poll_interval: float = Field(15, ge=5, le=600)
     # Actions through Pi-hole's own API (pause blocking, allow/deny a domain, restart DNS,
     # update the blocklists). Off by default; needs an app password from Pi-hole's settings.

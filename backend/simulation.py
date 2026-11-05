@@ -168,6 +168,8 @@ class LiveSimulator:
         now = time.time()
         for mac, (ip, name) in DEMO_DEVICES.items():
             core.devices.observe(mac, ip=ip, hostname=name, source="simulated", seen=now)
+        core.gateway_mac = core.gateway_mac or DEMO_GATEWAY_MAC
+        core.dhcp_log = DemoDhcpLog(now)
         # 5 minutes of lead time so that baselines and charts are filled immediately
         start = int(now) - 300
         for i in range(300):
@@ -187,6 +189,8 @@ class LiveSimulator:
             s = make_second(self.scenario, self.k, self.rng, probes_per_target=4 if core.gaming else 1,
                             onset=3, gaming=core.gaming is not None)
             feed_second(core.hub, sec, s, tid_map=self.tid_map)
+            if sec % 5 == 0:
+                core.lan_health.observe(demo_lan(sec, self.rng), now)
             if sec % 20 == 0 and core.dns_usage is not None:
                 await asyncio.to_thread(build_demo_ftl, core.dns_usage.ftl.db_path, time.time())
             self.k += 1
@@ -323,6 +327,40 @@ def demo_fritz_hosts() -> list:
     mac, ip, name = DEMO_NO_PIHOLE
     hosts.append(HostEntry(ip=ip, mac=mac, name=name, active=True, interface="802.11"))
     return hosts
+
+
+# ---------------------------------------------------------------------------- demo network health
+DEMO_GATEWAY_MAC = "02:00:00:00:00:01"
+
+
+def demo_lan(sec: int, rng: random.Random) -> dict:
+    """Five seconds of ARP and DHCP as the capture would report them (lanwatch.py)."""
+    arp = [[DEMO_GATEWAY, DEMO_GATEWAY_MAC, sec]] + [[ip, mac, sec] for mac, (ip, _) in DEMO_DEVICES.items()]
+    arp_n = {mac: rng.randint(0, 3) for mac in DEMO_DEVICES} | {DEMO_GATEWAY_MAC: rng.randint(2, 6)}
+    dhcp = [[sec, "offer", MAC_IPHONE, DEMO_GATEWAY, DEMO_GATEWAY_MAC, DEMO_GATEWAY, "192.0.2.42"]]         if sec % 60 < 5 else []
+    return {"arp": arp, "arp_n": arp_n, "dhcp": dhcp, "dropped": 0}
+
+
+class DemoDhcpLog:
+    """Pi-hole's DHCP log in dev mode: normal renewals, and a TV whose requests mostly go unanswered."""
+
+    def __init__(self, now: float):
+        self.error = None
+        self.read_since = now - 86400
+        self.events = []
+        for i, (mac, (ip, _)) in enumerate(DEMO_DEVICES.items()):
+            t = now - 80000 + i * 600
+            self.events += [(t, "request", mac, ip, ""), (t + 0.1, "ack", mac, ip, "")]
+        for k in range(24):
+            t = now - 70000 + k * 2400
+            self.events.append((t, "discover", MAC_TV, None, ""))
+            self.events.append((t + 0.1, "offer", MAC_TV, "192.0.2.51", ""))
+            if k % 8 == 0:
+                self.events += [(t + 2, "request", MAC_TV, "192.0.2.51", ""), (t + 2.1, "ack", MAC_TV, "192.0.2.51", "")]
+        self.events.sort()
+
+    def poll(self, now: float | None = None) -> int:
+        return 0
 
 
 # ---------------------------------------------------------------------------- demo internet line

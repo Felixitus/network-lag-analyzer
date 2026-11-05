@@ -65,6 +65,7 @@ pihole:
   enabled: true
   ftl_db: /etc/pihole/pihole-FTL.db          # read-only
   dhcp_leases: /etc/pihole/dhcp.leases       # read-only, host names of current leases
+  log_file: /var/log/pihole/pihole.log       # read-only, DHCP steps (address requests)
 
 # DNS usage per device (page "DNS usage", see docs/dns-usage.md).
 dns_usage:

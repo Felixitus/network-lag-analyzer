@@ -17,6 +17,7 @@ from collections import defaultdict
 from time import time as time_now
 
 from . import quic
+from .lanwatch import ETH_ARP, LanWatch
 from .tls import TRUNCATED, parse_sni
 
 RX, TX, RXP, TXP, UDP, LAN, RETR = range(7)
@@ -121,6 +122,7 @@ class PacketAnalyzer:
                           "quic_midway": 0, "quic_unreadable": 0}
         self.ignored = 0
         self._cand_t = 0.0
+        self.lan = LanWatch()
 
     # ------------------------------------------------------------------ helpers
     def set_router_macs(self, macs: list[str]) -> None:
@@ -200,6 +202,10 @@ class PacketAnalyzer:
             if self.ignore_pair and sip in self.ignore_pair and dip in self.ignore_pair:
                 self.ignored += 1
                 return
+            # DHCP (ports 67/68), checked on the bytes: it runs for every UDP packet
+            if (proto == PROTO_UDP and len(data) >= l4 + 8 and data[l4] == 0 and data[l4 + 2] == 0
+                    and data[l4 + 1] in (67, 68) and data[l4 + 3] in (67, 68)):
+                self.lan.dhcp_packet(wall, data, l4 + 8, self._mac(src_mac), sip)
             s_local = self.is_local_v4(sip)
             d_local = self.is_local_v4(dip)
             # Learn router MAC: sends packets with a public source IP into the LAN
@@ -218,6 +224,8 @@ class PacketAnalyzer:
             d_local = not _v6_global(dip)
         else:
             # ARP & co.: only the sender's LAN counter
+            if etype == ETH_ARP:
+                self.lan.arp(wall, data, off, self._mac)
             if not (src_mac in self.router_macs):
                 self._dev(b, self._mac(src_mac))[LAN] += size
             return

@@ -1,4 +1,4 @@
-"""Device list, renaming, DNS activity per device (Pi-hole), presence and new devices."""
+"""Device list, renaming, DNS activity per device (Pi-hole), presence, new devices, network health."""
 from __future__ import annotations
 
 import json
@@ -55,6 +55,11 @@ async def devices(request: Request):
         d["up_bps"] = a[1] / n if a else (0.0 if core.hub.capture_active() else None)
         d["gaming_pc"] = bool(gaming_ip and d["ip"] == gaming_ip)
     return {"devices": items, "traffic_available": core.hub.capture_active()}
+
+
+@router.get("/devices/network-health")
+async def network_health(request: Request):
+    return core_of(request).lan_checks()
 
 
 PRESENCE_SPANS = {"24h": 86400, "7d": 7 * 86400}

@@ -5,6 +5,12 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Network health** on the Devices page: devices that keep asking for an address and rarely get
+  one, a second DHCP server, one address used by two devices, another device answering for the
+  router's address, ARP storms. From Pi-hole's DHCP log and the capture; what neither source can
+  see shows as "Not measurable".
+
 ## [1.6.3] - 2026-11-01
 
 ### Added
