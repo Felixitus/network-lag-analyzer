@@ -157,7 +157,8 @@ def devices_light(core, new: list[dict], unknown: list[dict]) -> dict:
     if not devs:
         return _light("devices", "Devices", None, "Not available", "No device seen yet", "#/devices")
     detail = f"{len(new)} new, {len(unknown)} without a name - please check" if todo else f"{len(devs)} known"
-    return _light("devices", "Devices", "warning" if new else "good", f"{online} online", detail, "#/devices")
+    return _light("devices", "Devices", "warning" if new else "good", f"{online} online", detail,
+                  "#/devices/presence" if new else "#/devices")
 
 
 # ------------------------------------------------------------------ timeline (history)

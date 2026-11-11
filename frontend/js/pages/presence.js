@@ -27,7 +27,7 @@ function newCard(r, reload) {
         h('div', { class: 'small secondary' }, [d.vendor, d.why].filter(Boolean).join(' · '))),
       h('span', { class: 'spacer' }), btn);
   })));
-  card.append(h('div', { class: 'small muted' }, 'Give a device a name in the list below, or mark it as known if you recognize it.'));
+  card.append(h('div', { class: 'small muted' }, 'Give a device a name on the Devices tab, or mark it as known if you recognize it.'));
   return card;
 }
 

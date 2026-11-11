@@ -3,14 +3,24 @@ import { api, clear, deviceColor, fmtBytes, fmtMbit, h, ago, toast } from '../li
 import { segmented } from './common.js';
 import { presenceSection } from './presence.js';
 
-export async function mount(main) {
+const TABS = [['list', 'Devices'], ['presence', 'Presence'], ['health', 'Network health']];
+
+/** The tab a link like #/devices/health asks for; anything unknown is the device list. */
+export const tabOf = args => (TABS.some(t => t[0] === (args || [])[0]) ? args[0] : 'list');
+
+export async function mount(main, ctx) {
+  const tab = tabOf(ctx && ctx.args);
+  // one tab at a time: the page had grown to five cards before the device table even started
   main.append(h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Devices'),
     h('p', null, 'Found via the FRITZ!Box, Pi-hole, ARP and the capture; names can be changed in the table.')),
-  h('span', { class: 'spacer' }), refreshNamesButton(() => loadList())));
+  h('div', { class: 'row' }, segmented(TABS, tab, v => { location.hash = v === 'list' ? '#/devices' : `#/devices/${v}`; }),
+    tab === 'list' ? refreshNamesButton(() => loadList()) : null)));
+  if (tab === 'presence') { main.append(presenceSection()); return; }
+  if (tab === 'health') { main.append(networkHealthCard()); return; }
   const listCard = h('div', { class: 'card' });
   const histCard = h('div', { class: 'card' });
   const dnsCard = h('div', { class: 'card', style: { display: 'none' } });
-  main.append(presenceSection(), networkHealthCard(), listCard, h('div', { style: { height: '16px' } }), dnsCard, h('div', { class: 'grid', style: { marginTop: '16px' } }, histCard));
+  main.append(healthHint(), listCard, h('div', { style: { height: '16px' } }), dnsCard, h('div', { class: 'grid', style: { marginTop: '16px' } }, histCard));
 
   async function loadList() {
     const r = await api('api/devices');
@@ -113,6 +123,20 @@ export function refreshNamesButton(after) {
 /** Dot color of a network check: "na" stays grey - a silent source is not a good sign. */
 export const HEALTH_DOT = { ok: 'good', warning: 'warning', problem: 'critical', na: 'muted' };
 export const HEALTH_TEXT = { ok: 'No problem found', warning: 'Worth a look', problem: 'Problem found', na: 'Not measurable' };
+
+/** One line above the device list, only when a check found something - the details live on their own tab. */
+function healthHint() {
+  const box = h('div');
+  api('api/devices/network-health').then(r => {
+    const found = r.checks.filter(c => c.status === 'warning' || c.status === 'problem');
+    if (!found.length) return;
+    box.append(h('a', { class: 'card hint-link', href: '#/devices/health', style: { marginBottom: '12px' } },
+      h('span', { class: `badge ${HEALTH_DOT[r.status]}` }, HEALTH_TEXT[r.status]),
+      h('span', null, h('b', null, 'Network health: '), found.map(c => c.title).join(', ')),
+      h('span', { class: 'spacer' }), h('span', { class: 'small' }, 'Details →')));
+  }).catch(() => {});   // the tab itself says why it is not available
+  return box;
+}
 
 function networkHealthCard() {
   const card = h('div', { class: 'card', style: { marginBottom: '16px' } }, h('div', { class: 'skeleton' }, 'Checking the network…'));

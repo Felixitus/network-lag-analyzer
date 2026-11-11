@@ -186,12 +186,14 @@ def test_the_log_is_read_on_and_survives_its_rotation(tmp_path):
     path = str(tmp_path / "pihole.log")
     with open(path + ".1", "wb") as f:
         f.write(_line(now - 7200, "DISCOVER", PC_MAC))
+    # a fixed date in this line aged out of the 24 h the reader keeps, and the test failed a week later
+    half = _line(now - 45, "ACK", PC_MAC)
     with open(path, "wb") as f:
-        f.write(_line(now - 60, "DISCOVER", TV_MAC) + b"Nov  5 00:00:00 dnsmasq-dhcp[1]: DHCPACK(eth0) 192.0")
+        f.write(_line(now - 60, "DISCOVER", TV_MAC) + half[:-12])
     dl = DhcpLog(path)
     assert dl.poll(now) == 2 and dl.error is None
     with open(path, "ab") as f:                     # the half line is completed
-        f.write(b".2.5 " + PC_MAC.encode() + b"\n")
+        f.write(half[-12:])
     assert dl.poll(now) == 1
     with open(path, "ab") as f:                     # written just before midnight ...
         f.write(_line(now - 30, "REQUEST", TV_MAC))

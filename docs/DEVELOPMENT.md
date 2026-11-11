@@ -12,7 +12,7 @@ Language: **English** - UI, comments, commit messages, log messages, tests, docs
 ## Commands
 
 ```bash
-python3 -m pytest tests -q                    # all tests (currently 518, must be green)
+python3 -m pytest tests -q                    # all tests (currently 529, must be green)
 node --test tests/frontend/*.test.mjs         # web UI helpers (needs frontend/package.json, see CI)
 NLA_DEV_MODE=1 NLA_DATA_DIR=/tmp/nla NLA_CONFIG=/nonexistent.yaml \
   NLA_PORT=8088 python3 -m backend.main       # dev mode with simulated data
@@ -80,6 +80,7 @@ backend/
     categories.py         domain → service → category rules (layers: manual, local, builtin, ut1)
     activity.py           estimated activity phases per service (from dns_service_minutes)
     client_match.py       FRITZ!Box vs Pi-hole: can the per-device DNS numbers be trusted?
+    impact.py             how much an incident could be felt: severe, noticeable, minor, not rated
     alerts.py             when to notify: minimum duration, cooldown, all clear
     weekly.py             the weekly report: measured share, outages, worst hours, new devices, DNS signs
     overview.py           status lights and the timeline of the overview page, restart log

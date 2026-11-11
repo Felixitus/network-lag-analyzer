@@ -74,6 +74,28 @@ def service_active(name: str) -> bool | None:
     return r.stdout.strip() == "active"
 
 
+def memory_limit(proc_root: Path = Path("/proc"), sys_root: Path = SYS) -> dict | None:
+    """The memory limit of this service's control group, as the kernel applies it.
+
+    systemd accepts `MemoryMax=` without complaint on a kernel that runs without the memory
+    controller (Raspberry Pi OS switches it off unless `cgroup_enable=memory` is on the kernel
+    command line) - the unit looks limited and nothing would stop a leak. So this reads what
+    is in effect, not what the unit file says. None where there is no cgroup v2 to ask."""
+    cg = _read(proc_root / "self/cgroup")
+    rel = next((ln[3:] for ln in (cg or "").splitlines() if ln.startswith("0::")), None)
+    if rel is None:
+        return None
+    base = sys_root / "fs/cgroup" / rel.lstrip("/")
+    controllers = _read(base / "cgroup.controllers")
+    if controllers is None:
+        return None
+    if "memory" not in controllers.split():
+        return {"controller": False, "limit_mb": None, "used_mb": None}
+    limit, used = _read(base / "memory.max"), _int(base / "memory.current")
+    return {"controller": True, "limit_mb": int(limit) // 1048576 if limit and limit.isdigit() else None,
+            "used_mb": None if used is None else used // 1048576}
+
+
 def read(data_dir: str, iface: str | None, loadguard_last: dict | None, pihole_service: str | None) -> dict:
     """One snapshot. Blocking (subprocess, sysfs): call it in a thread."""
     import psutil
@@ -100,6 +122,7 @@ def read(data_dir: str, iface: str | None, loadguard_last: dict | None, pihole_s
         "disk_free_mb": disk["free_mb"], "disk_total_mb": disk["total_mb"],
         "boot_ts": boot, "link": link(iface), "sd_written_bytes": sd_written_bytes(),
         "pihole_active": service_active(pihole_service) if pihole_service else None,
+        "memory_limit": memory_limit(),
     }
 
 
@@ -148,6 +171,9 @@ def assess(h: dict, recent: dict | None = None) -> tuple[str, list[str]]:
     mem = h.get("mem_available_mb")
     if mem is not None and mem < 200:
         add("warning", f"Only {mem} MB memory available")
+    if (h.get("memory_limit") or {}).get("controller") is False:
+        add("warning", "The service's memory limit is not in effect: this kernel runs without the memory "
+                       "controller. Add cgroup_enable=memory to /boot/firmware/cmdline.txt and reboot")
     lk = h.get("link") or {}
     if lk and lk.get("carrier") == 0:
         add("critical", f"No network link on {lk['iface']}")

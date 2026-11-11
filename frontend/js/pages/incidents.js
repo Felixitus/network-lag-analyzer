@@ -8,28 +8,46 @@ export async function mount(main, ctx) {
   return list(main);
 }
 
+const IMPACT_BADGE = { severe: ['Severe', 'critical'], noticeable: ['Noticeable', 'warning'], minor: ['Minor', ''] };
+const impactBadge = v => (IMPACT_BADGE[v] ? h('span', { class: `badge ${IMPACT_BADGE[v][1]}` }, IMPACT_BADGE[v][0])
+  : h('span', { class: 'small muted', title: 'The numbers needed to rate this incident were not measured' }, 'not rated'));
+
+/** What the list shows for a filter. An incident nobody could rate is never hidden: not measured is not harmless. */
+export function visibleIncidents(incidents, mode) {
+  if (mode === 'all') return incidents;
+  const keep = mode === 'severe' ? ['severe'] : ['severe', 'noticeable'];
+  return incidents.filter(i => !i.impact || keep.includes(i.impact));
+}
+
 async function list(main) {
-  let source = null;
+  let source = null, mode = 'felt', all = [];
   const body = h('div', { class: 'card' });
   const st = await api('api/status').catch(() => ({}));
   const dis = st.incidents_dismissed || {};
   const nDis = Object.values(dis).reduce((a, b) => a + b, 0);
+  const modeSeg = h('div');
+  const setMode = v => { mode = v; clear(modeSeg).append(segmented([['felt', 'Noticeable'], ['severe', 'Severe only'], ['all', 'All']], mode, setMode)); show(); };
   main.append(h('div', { class: 'page-head' },
     h('div', null, h('h1', null, 'Incidents'), h('p', null, 'Detected lag and your own reports - problems less than 2 minutes apart form one.'),
     h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, `Kept as events only, not as incidents: problems of a single external target `
       + `while the line was fine, and blips under 5 s without a cause${nDis ? ` - ${nDis} since the last start` : ''}.`)),
-    segmented([[null, 'All'], ['auto', 'Automatic'], ['user', 'Reported']], null, v => { source = v; load(); })), momentCard(), body);
-  async function load() {
-    const r = await api(`api/incidents?limit=200${source ? `&source=${source}` : ''}`);
+    h('div', { class: 'row' }, modeSeg,
+      segmented([[null, 'All sources'], ['auto', 'Automatic'], ['user', 'Reported']], null, v => { source = v; load(); }))), momentCard(), body);
+  function show() {
     clear(body);
-    if (!r.incidents.length) { body.append(h('div', { class: 'empty' }, 'No incidents yet.')); return; }
+    if (!all.length) { body.append(h('div', { class: 'empty' }, 'No incidents yet.')); return; }
+    const rows = visibleIncidents(all, mode);
+    const hidden = all.length - rows.length;
+    const count = n => all.filter(i => i.impact === n).length;
+    body.append(h('div', { class: 'card-head' }, h('h2', null, `${rows.length} of the last ${all.length} incidents`),
+      h('span', { class: 'sub' }, `${count('severe')} severe · ${count('noticeable')} noticeable · ${count('minor')} minor`)));
     const tbody = h('tbody');
-    for (const i of r.incidents) {
+    for (const i of rows) {
       const m = i.metrics || {};
       const tr = h('tr', { class: 'click', tabindex: '0' },
         h('td', { class: 'num' }, `#${i.id}`),
         h('td', null, h('div', null, fmtDateTime(i.ts_start)), h('div', { class: 'small muted' }, ago(i.ts_start))),
-        h('td', null, i.source === 'user' ? h('span', { class: 'badge warning' }, 'reported') : h('span', { class: 'badge' }, 'auto')),
+        h('td', null, impactBadge(i.impact), i.source === 'user' ? h('div', { class: 'small secondary' }, 'reported by you') : null),
         h('td', null, h('div', null, i.title || '–'), h('div', { class: 'small secondary' }, i.cause || (i.ts_end ? 'not analyzed' : 'running…'))),
         h('td', null, confBadge(i.confidence)),
         h('td', { class: 'num' }, m.ping_peak != null ? `${fmtMs(m.ping_before)} → ${fmtMs(m.ping_peak)} ms` : '–'),
@@ -40,11 +58,25 @@ async function list(main) {
       tr.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
       tbody.append(tr);
     }
-    body.append(h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
-      h('thead', null, h('tr', null, ...['ID', 'Time', 'Source', 'Event / cause', 'Confidence'].map(t => h('th', null, t)),
-        h('th', { class: 'num' }, 'Ping'), h('th', { class: 'num' }, 'Loss'), h('th', { class: 'num' }, 'Duration'))), tbody)));
+    if (rows.length) {
+      body.append(h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
+        h('thead', null, h('tr', null, ...['ID', 'Time', 'Impact', 'Event / cause', 'Confidence'].map(t => h('th', null, t)),
+          h('th', { class: 'num' }, 'Ping'), h('th', { class: 'num' }, 'Loss'), h('th', { class: 'num' }, 'Duration'))), tbody)));
+    } else body.append(h('div', { class: 'empty' }, 'No incident of this kind among them.'));
+    if (hidden) {
+      const more = h('button', { class: 'btn', type: 'button' }, 'Show all');
+      more.addEventListener('click', () => setMode('all'));
+      body.append(h('div', { class: 'row small muted', style: { marginTop: '10px' } },
+        `${hidden} ${mode === 'severe' ? 'less severe' : 'minor'} incident${hidden === 1 ? '' : 's'} hidden - `
+        + 'rated by packet loss, the rise of the ping and gaps in the game\'s packets.', h('span', { class: 'spacer' }), more));
+    }
+  }
+  async function load() {
+    all = (await api(`api/incidents?limit=200${source ? `&source=${source}` : ''}`)).incidents;
+    show();
   }
   await load();
+  setMode(mode);
 }
 
 function fact(k, before, after, unit) {
@@ -83,7 +115,7 @@ async function detail(main, id) {
   main.append(h('p', null, h('a', { href: '#/incidents' }, '← all incidents')));
   const head = h('div', { class: 'card stack' },
     h('div', { class: 'inc-head' },
-      h('div', null, h('div', { class: 'inc-id' }, `INCIDENT #${d.id}`),
+      h('div', null, h('div', { class: 'inc-id row' }, `INCIDENT #${d.id}`, d.impact ? impactBadge(d.impact) : null),
         h('h1', null, d.source === 'user' ? `Lag reported: ${fmtDateTime(d.reported_at)}` : fmtDateTime(d.ts_start)),
         h('div', { class: 'secondary' }, d.title || '',
           a.analysis_window ? ` · analysis ${fmtTime(a.analysis_window.start)}–${fmtTime(a.analysis_window.end)}` : '')),
