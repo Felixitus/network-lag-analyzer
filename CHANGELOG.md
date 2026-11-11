@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-11-11
+
 ### Added
 - **Impact of an incident**: severe, noticeable or minor, rated from packet loss, the rise of the
   ping and gaps in the game's packets. The incident list shows the noticeable and severe ones by
