@@ -72,7 +72,7 @@ class Broadcaster:
 INTERRUPTED_TITLE = "Incident (interrupted by a restart)"
 # Which page a notification links to, by the first part of its key.
 PAGE_OF_ALERT = {"router_loss": "#/line", "internet_down": "#/line", "line": "#/line", "fritz": "#/line",
-                 "pihole_down": "#/dns", "pi_health": "#/pi", "device": "#/devices", "weekly": "#/"}
+                 "pihole_down": "#/dns", "pi_health": "#/pi", "device": "#/devices/presence", "weekly": "#/"}
 
 
 def close_orphaned_incidents(c) -> int:

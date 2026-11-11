@@ -11,6 +11,15 @@ const row = (label, value, sub) => h('li', { class: 'row' }, h('span', { class: 
   h('b', null, value ?? NA), sub ? h('span', { class: 'small muted', style: { marginLeft: '6px' } }, sub) : null);
 const gb = mb => (mb === null || mb === undefined ? null : `${(mb / 1024).toFixed(1)} GB`);
 
+/** What the kernel applies, not what the unit file asks for: without the memory controller the limit is only on paper. */
+export function memoryLimitText(ml) {
+  if (!ml) return [null, null];
+  if (!ml.controller) return ['Not in effect', 'kernel without memory controller'];
+  if (ml.limit_mb === null) return ['None set', null];
+  return [`${ml.limit_mb} MB`, ml.used_mb === null ? null : `${ml.used_mb} MB in use`];
+}
+const memoryLimitRow = ml => row('Memory limit of the service', ...memoryLimitText(ml));
+
 function healthCard(d) {
   const x = d.health || {};
   const card = h('div', { class: 'card stack' }, h('div', { class: 'card-head' }, h('h2', null, 'Health'),
@@ -25,6 +34,7 @@ function healthCard(d) {
     row('CPU', x.cpu_pct === null || x.cpu_pct === undefined ? null : `${x.cpu_pct.toFixed(0)} %`, x.load1 !== null && x.load1 !== undefined ? `load ${x.load1.toFixed(2)} / ${x.cpu_count} cores` : null),
     row('Memory available', x.mem_available_mb === null ? null : `${x.mem_available_mb} MB`, x.mem_total_mb ? `of ${x.mem_total_mb} MB` : null),
     row('Swap in use', x.swap_used_mb === null ? null : `${x.swap_used_mb} MB`),
+    memoryLimitRow(x.memory_limit),
     row('Free storage', gb(x.disk_free_mb), x.disk_total_mb ? `of ${gb(x.disk_total_mb)}` : null),
     row('Written to the SD card', x.sd_written_bytes === null ? null : fmtBytes(x.sd_written_bytes), 'since boot'),
     row('Pi-hole service', x.pihole_active === null ? null : x.pihole_active ? 'running' : 'NOT running'),

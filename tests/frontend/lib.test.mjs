@@ -115,3 +115,27 @@ test('a network check nobody could measure stays grey, not green', async () => {
   assert.equal(HEALTH_DOT.problem, 'critical');
   assert.equal(HEALTH_TEXT.na, 'Not measurable');
 });
+
+test('the incident list hides minor incidents but never one that could not be rated', async () => {
+  const { visibleIncidents } = await import('../../frontend/js/pages/incidents.js');
+  const all = [{ id: 1, impact: 'severe' }, { id: 2, impact: 'noticeable' }, { id: 3, impact: 'minor' }, { id: 4, impact: null }];
+  assert.deepEqual(visibleIncidents(all, 'felt').map(i => i.id), [1, 2, 4]);
+  assert.deepEqual(visibleIncidents(all, 'severe').map(i => i.id), [1, 4]);
+  assert.equal(visibleIncidents(all, 'all').length, 4);
+});
+
+test('a link to a devices tab opens it, anything else the device list', async () => {
+  const { tabOf } = await import('../../frontend/js/pages/devices.js');
+  assert.equal(tabOf(['health']), 'health');
+  assert.equal(tabOf(['presence']), 'presence');
+  assert.equal(tabOf(['nonsense']), 'list');
+  assert.equal(tabOf(undefined), 'list');
+});
+
+test('a memory limit only on paper is not shown as a limit', async () => {
+  const { memoryLimitText } = await import('../../frontend/js/pages/pi.js');
+  assert.deepEqual(memoryLimitText(null), [null, null]);
+  assert.equal(memoryLimitText({ controller: false, limit_mb: null, used_mb: null })[0], 'Not in effect');
+  assert.equal(memoryLimitText({ controller: true, limit_mb: null, used_mb: null })[0], 'None set');
+  assert.deepEqual(memoryLimitText({ controller: true, limit_mb: 350, used_mb: 210 }), ['350 MB', '210 MB in use']);
+});

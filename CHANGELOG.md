@@ -5,6 +5,20 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Impact of an incident**: severe, noticeable or minor, rated from packet loss, the rise of the
+  ping and gaps in the game's packets. The incident list shows the noticeable and severe ones by
+  default and says how many minor ones it hides; an incident whose numbers were not measured is
+  "not rated" and always shown.
+- **Memory limit** on the Raspberry Pi page: the limit the kernel really applies to the service.
+  Raspberry Pi OS runs without the memory controller unless `cgroup_enable=memory` is set, and
+  then the limit of the service only exists on paper - the page now says so.
+
+### Changed
+- The **Devices** page has tabs: Devices, Presence, Network health. The device table is the
+  first thing on the page again; a finding of the network checks shows as one line above it.
+  Links to a new device open the Presence tab.
+
 ## [1.7.0] - 2026-11-05
 
 ### Added

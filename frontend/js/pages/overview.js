@@ -32,7 +32,7 @@ function eventLanes(data) {
       text: `${i.source === 'user' ? 'Lag reported' : (i.title || 'Incident')}${i.cause ? ' - ' + i.cause : ''}` })) },
     { label: 'FRITZ!Box', many: '#/line', items: (data.line_events || []).map(e => ({ ts: e.ts, href: '#/line', cls: 'line', sym: '◆',
       text: `FRITZ!Box - ${e.label}` })) },
-    { label: 'New devices', many: '#/devices', items: (data.new_devices || []).map(d => ({ ts: d.ts, href: '#/devices', cls: 'newdev',
+    { label: 'New devices', many: '#/devices/presence', items: (data.new_devices || []).map(d => ({ ts: d.ts, href: '#/devices/presence', cls: 'newdev',
       sym: '+', text: `new device ${d.name}` })) },
     { label: 'Restarts', many: null, items: data.restarts.map(r => ({ ts: r.ts, href: null, cls: 'restart',
       sym: r.kind === 'boot' ? '⏻' : '↻', text: r.label })) },
@@ -104,7 +104,7 @@ function happenings(data) {
     ...data.incidents.map(i => ({ ts: i.ts_start, el: h('a', { href: `#/incident/${i.id}` },
       i.source === 'user' ? 'Lag reported' : (i.title || `Incident #${i.id}`)), sub: i.cause })),
     ...data.restarts.map(r => ({ ts: r.ts, el: h('span', null, r.label), sub: null })),
-    ...(data.new_devices || []).map(d => ({ ts: d.ts, el: h('a', { href: '#/devices' }, `New device: ${d.name}`), sub: d.mac })),
+    ...(data.new_devices || []).map(d => ({ ts: d.ts, el: h('a', { href: '#/devices/presence' }, `New device: ${d.name}`), sub: d.mac })),
   ].sort((a, b) => b.ts - a.ts).slice(0, 5);
   if (!items.length) return h('div', { class: 'empty' }, 'No incidents and no restarts in this time span.');
   return h('ul', { class: 'list' }, ...items.map(it => h('li', null,

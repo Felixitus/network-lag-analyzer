@@ -171,9 +171,23 @@ Top of the **Incidents** page: choose a date and time to see the worst values wi
 of it, plus the events, incidents and devices of that time. It reads the finest resolution still
 stored, so older moments are less exact. What was not measured shows as "Not available".
 
+## Impact of an incident
+
+Every incident in the list is rated by how much it could be felt, from the numbers stored with it:
+
+| Impact | When |
+|---|---|
+| Severe | at least 5 % packet loss, or the ping 100 ms above the ping before, lasting 5 s or more |
+| Noticeable | at least 1 % packet loss, the ping 40 ms above before, a gap of 500 ms in the game's packets, or you reported it |
+| Minor | everything else, typically TCP retransmissions at a normal ping |
+| not rated | the numbers were not measured (e.g. interrupted by a restart) - never hidden |
+
+The list shows noticeable and severe incidents and says how many minor ones it hides; "All" shows
+them. The rating is made when the list is read, nothing is stored or deleted.
+
 ## Network health
 
-Top of the **Devices** page: five checks of the home network, each with "No problem found",
+On the **Network health** tab of the Devices page: five checks of the home network, each with "No problem found",
 "Worth a look", "Problem found" or "Not measurable" and the evidence behind it. A finding names the
 device with everything that helps to find it at home (name, IP address, maker, MAC) and says
 what to do about it.

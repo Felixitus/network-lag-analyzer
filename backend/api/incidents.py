@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel
 
+from ..analysis import impact
 from ..analysis.events import EVENT_LABELS
 from ..analysis.root_cause import CATEGORY_LABELS
 from ..database import repository as repo
@@ -111,6 +112,7 @@ async def incidents(request: Request, limit: int = Query(50, ge=1, le=500), befo
         r["metrics"] = a.get("metrics")
         r["device"] = a.get("device")
         r["category_label"] = CATEGORY_LABELS.get(r["category"] or "", r["category"])
+        r["impact"] = impact.rate(r["source"], r["metrics"])
     return {"incidents": rows}
 
 
@@ -142,6 +144,7 @@ async def incident(request: Request, incident_id: int):
     if d is None:
         raise HTTPException(404, "Incident not found")
     d["category_label"] = CATEGORY_LABELS.get(d.get("category") or "", d.get("category"))
+    d["impact"] = impact.rate(d.get("source"), (d.get("analysis") or {}).get("metrics"))
     # Flows running at that time (from the 5 s snapshots), if still in memory
     t0, t1 = d["ts_start"] - 10, (d["ts_end"] or d["ts_start"]) + 5
     snaps = [f for ts, fl in core.active_flows if t0 <= ts <= t1 for f in fl]
