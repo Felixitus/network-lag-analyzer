@@ -26,7 +26,11 @@ UMask=0027
 Nice=10
 CPUWeight=50
 IOWeight=50
-MemoryMax=350M
+# Measured 2026-11-11 once the kernel enforced it: ~120 MB of the service's own memory plus file
+# cache (database, logs) that fills whatever is left. At 350M the cgroup sat at the limit within
+# five minutes and reclaimed cache hundreds of times; 512M leaves room and is still under a
+# seventh of a 4 GB Pi.
+MemoryMax=512M
 
 # Hardening
 ProtectSystem=strict

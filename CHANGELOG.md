@@ -5,6 +5,10 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The service may use **512 MB** instead of 350 MB. Once the kernel enforced the limit, file
+  cache filled it within minutes; the service's own memory is about 120 MB.
+
 ## [1.8.0] - 2026-11-11
 
 ### Added

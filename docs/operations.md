@@ -119,7 +119,7 @@ That is why there are three knobs, and only the first is a guarantee:
 to the card. That covers the last few minutes - enough for "I just had lag" (5 minutes back)
 on a normal evening; of a long incident the last part is kept. On the SD card (`disk`) the
 ring writes around the clock: ~10 GB a day on the Pi 4, for files that are overwritten unseen
-almost every time. The RAM counts against the service's 350 MB; the Pi page shows how full
+almost every time. The RAM counts against the service's 512 MB; the Pi page shows how full
 it is.
 
 The space used is shown under **Setup → Database** with its own bar - it does **not**
