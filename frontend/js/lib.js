@@ -56,9 +56,18 @@ export function fmtDate(ts) {
 export function fmtDateTime(ts) { return `${fmtDate(ts)} ${fmtTime(ts)}`; }
 export function fmtDuration(s) {
   if (s === null || s === undefined) return '–';
-  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)} s`;
-  if (s < 3600) return `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
-  return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
+  if (s < 59.5) return `${s < 10 ? s.toFixed(1) : Math.round(s)} s`;
+  // round first, then split: 179.6 s was "2 min 60 s"
+  const sec = Math.round(s);
+  if (sec < 3600) return `${Math.floor(sec / 60)} min ${sec % 60} s`;
+  const min = Math.round(s / 60);
+  return `${Math.floor(min / 60)} h ${min % 60} min`;
+}
+/** "Today", "Yesterday" or the date - the heading of a day in a list. */
+export function fmtDay(ts, now = Date.now() / 1000) {
+  const day = t => { const d = new Date(t * 1000); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  const diff = Math.round((day(now) - day(ts)) / 86400000);
+  return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : fmtDate(ts);
 }
 export function ago(ts) {
   const s = Date.now() / 1000 - ts;

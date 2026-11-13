@@ -290,7 +290,7 @@ class DeepCaptureCfg(BaseModel):
     # "memory": the running ring stays in RAM and only incident captures reach the SD card
     # (on disk it wrote ~10 GB a day). The RAM counts against the service's MemoryMax.
     buffer: Literal["memory", "disk"] = "memory"
-    memory_mb: int = Field(64, ge=8, le=96)      # the service may use 512 MB, ~120 of them its own
+    memory_mb: int = Field(64, ge=8, le=96)      # the service may use 512 MB, ~280 of them its own
 
 
 class LoadGuardCfg(BaseModel):

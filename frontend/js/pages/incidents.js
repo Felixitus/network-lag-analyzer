@@ -1,5 +1,5 @@
 // Incident list and detail view.
-import { api, clear, copyText, NA, toast, CONF_LABEL, confBadge, deviceColor, EVENT_LABEL, fmtBytes, fmtDateTime, fmtDuration, fmtMbit, fmtMs, fmtRate, fmtTime, h, SERIES, ago } from '../lib.js';
+import { api, clear, copyText, NA, toast, CONF_LABEL, confBadge, deviceColor, EVENT_LABEL, fmtBytes, fmtDate, fmtDateTime, fmtDay, fmtDuration, fmtMbit, fmtMs, fmtRate, fmtTime, h, SERIES, ago } from '../lib.js';
 import { chartCard, fmt, timeChart } from '../charts.js';
 import { buildMarkers, latencyUnderLoad, moreSection, pathView, segmented, upstreamTable } from './common.js';
 
@@ -19,6 +19,33 @@ export function visibleIncidents(incidents, mode) {
   return incidents.filter(i => !i.impact || keep.includes(i.impact));
 }
 
+const IMPACT_ORDER = ['minor', 'noticeable', 'severe'];
+export const EPISODE_GAP = 300;   // s; on a bad evening one problem came back as a new incident every few minutes
+
+/** Detected incidents less than five minutes apart belong together. Newest first, as the list is.
+ *  A report of the user always stands alone - it is the line they are looking for. */
+export function episodes(incidents, gap = EPISODE_GAP) {
+  const out = [];
+  for (const i of incidents) {
+    const ep = out[out.length - 1];
+    const next = ep && ep[ep.length - 1];          // the incident that started after this one
+    if (next && i.source !== 'user' && next.source !== 'user' && next.ts_start - (i.ts_end ?? i.ts_start) <= gap) ep.push(i);
+    else out.push([i]);
+  }
+  return out;
+}
+
+/** One line for an episode: its span, the worst that was measured, the causes named. Nothing measured stays null. */
+export function episodeSummary(ep) {
+  const max = k => { const v = ep.map(i => (i.metrics || {})[k]).filter(x => x != null); return v.length ? Math.max(...v) : null; };
+  const dur = ep.map(i => (i.metrics || {}).duration).filter(x => x != null);
+  const rated = ep.map(i => IMPACT_ORDER.indexOf(i.impact)).filter(x => x >= 0);
+  const last = ep[0], first = ep[ep.length - 1];
+  return { start: first.ts_start, end: last.ts_end ?? last.ts_start, impact: rated.length ? IMPACT_ORDER[Math.max(...rated)] : null,
+    causes: [...new Set(ep.map(i => i.cause).filter(Boolean))], ping_peak: max('ping_peak'), loss_pct: max('loss_pct'),
+    duration: dur.length ? dur.reduce((x, y) => x + y, 0) : null };
+}
+
 async function list(main) {
   let source = null, mode = 'felt', all = [];
   const body = h('div', { class: 'card' });
@@ -33,6 +60,48 @@ async function list(main) {
       + `while the line was fine, and blips under 5 s without a cause${nDis ? ` - ${nDis} since the last start` : ''}.`)),
     h('div', { class: 'row' }, modeSeg,
       segmented([[null, 'All sources'], ['auto', 'Automatic'], ['user', 'Reported']], null, v => { source = v; load(); }))), momentCard(), body);
+  function row(i, child) {
+    const m = i.metrics || {};
+    const recent = Date.now() / 1000 - i.ts_start < 86400;
+    const tr = h('tr', { class: `click${child ? ' child' : ''}`, tabindex: '0' },
+      h('td', { class: 'num' }, `#${i.id}`),
+      h('td', { class: 'nowrap' }, h('div', null, fmtTime(i.ts_start)), recent ? h('div', { class: 'small muted' }, ago(i.ts_start)) : null),
+      h('td', null, impactBadge(i.impact), i.source === 'user' ? h('div', { class: 'small secondary' }, 'reported by you') : null),
+      h('td', null, h('div', null, i.title || '–'), h('div', { class: 'small secondary' }, i.cause || (i.ts_end ? 'not analyzed' : 'running…'))),
+      h('td', null, confBadge(i.confidence)),
+      h('td', { class: 'num nowrap' }, m.ping_peak != null ? `${fmtMs(m.ping_before)} → ${fmtMs(m.ping_peak)} ms` : '–'),
+      h('td', { class: 'num nowrap' }, m.loss_pct != null ? `${m.loss_pct} %` : '–'),
+      h('td', { class: 'num nowrap' }, m.duration != null ? fmtDuration(m.duration) : '–'));
+    const go = () => { location.hash = `#/incident/${i.id}`; };
+    tr.addEventListener('click', go);
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    return tr;
+  }
+  /** Several incidents in a row: one line that opens into them. */
+  function episodeRows(ep) {
+    const s = episodeSummary(ep);
+    const kids = ep.map(i => row(i, true));
+    kids.forEach(k => { k.hidden = true; });
+    const arrow = h('span', { class: 'ep-arrow' }, '▸');
+    const tr = h('tr', { class: 'click episode', tabindex: '0', 'aria-expanded': 'false' },
+      h('td', { class: 'num nowrap' }, arrow, ` ${ep.length}`),
+      h('td', { class: 'nowrap' }, `${fmtDay(s.start) === fmtDay(s.end) ? '' : `${fmtDate(s.start).slice(5)} `}${fmtTime(s.start, false)} – ${fmtTime(s.end, false)}`),
+      h('td', null, impactBadge(s.impact)),
+      h('td', null, h('div', null, h('b', null, `${ep.length} incidents in a row`)), h('div', { class: 'small secondary' }, s.causes.join(' · ') || 'not analyzed')),
+      h('td', null, ''),
+      h('td', { class: 'num nowrap' }, s.ping_peak != null ? `up to ${fmtMs(s.ping_peak)} ms` : '–'),
+      h('td', { class: 'num nowrap' }, s.loss_pct != null ? `up to ${s.loss_pct} %` : '–'),
+      h('td', { class: 'num nowrap' }, s.duration != null ? fmtDuration(s.duration) : '–'));
+    const toggle = () => {
+      const open = tr.getAttribute('aria-expanded') !== 'true';
+      tr.setAttribute('aria-expanded', String(open));
+      arrow.textContent = open ? '▾' : '▸';
+      kids.forEach(k => { k.hidden = !open; });
+    };
+    tr.addEventListener('click', toggle);
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter') toggle(); });
+    return [tr, ...kids];
+  }
   function show() {
     clear(body);
     if (!all.length) { body.append(h('div', { class: 'empty' }, 'No incidents yet.')); return; }
@@ -42,21 +111,15 @@ async function list(main) {
     body.append(h('div', { class: 'card-head' }, h('h2', null, `${rows.length} of the last ${all.length} incidents`),
       h('span', { class: 'sub' }, `${count('severe')} severe · ${count('noticeable')} noticeable · ${count('minor')} minor`)));
     const tbody = h('tbody');
-    for (const i of rows) {
-      const m = i.metrics || {};
-      const tr = h('tr', { class: 'click', tabindex: '0' },
-        h('td', { class: 'num' }, `#${i.id}`),
-        h('td', null, h('div', null, fmtDateTime(i.ts_start)), h('div', { class: 'small muted' }, ago(i.ts_start))),
-        h('td', null, impactBadge(i.impact), i.source === 'user' ? h('div', { class: 'small secondary' }, 'reported by you') : null),
-        h('td', null, h('div', null, i.title || '–'), h('div', { class: 'small secondary' }, i.cause || (i.ts_end ? 'not analyzed' : 'running…'))),
-        h('td', null, confBadge(i.confidence)),
-        h('td', { class: 'num' }, m.ping_peak != null ? `${fmtMs(m.ping_before)} → ${fmtMs(m.ping_peak)} ms` : '–'),
-        h('td', { class: 'num' }, m.loss_pct != null ? `${m.loss_pct} %` : '–'),
-        h('td', { class: 'num' }, m.duration != null ? fmtDuration(m.duration) : '–'));
-      const go = () => { location.hash = `#/incident/${i.id}`; };
-      tr.addEventListener('click', go);
-      tr.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
-      tbody.append(tr);
+    let day = null;
+    for (const ep of episodes(rows)) {
+      const d = fmtDay(ep[0].ts_start);
+      if (d !== day) {
+        day = d;
+        const n = rows.filter(i => fmtDay(i.ts_start) === d).length;
+        tbody.append(h('tr', { class: 'day' }, h('td', { colspan: '8' }, h('b', null, d), h('span', { class: 'muted' }, ` · ${n} incident${n === 1 ? '' : 's'}`))));
+      }
+      if (ep.length === 1) tbody.append(row(ep[0], false)); else tbody.append(...episodeRows(ep));
     }
     if (rows.length) {
       body.append(h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },

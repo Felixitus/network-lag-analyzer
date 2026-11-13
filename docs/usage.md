@@ -183,7 +183,8 @@ Every incident in the list is rated by how much it could be felt, from the numbe
 | not rated | the numbers were not measured (e.g. interrupted by a restart) - never hidden |
 
 The list shows noticeable and severe incidents and says how many minor ones it hides; "All" shows
-them. The rating is made when the list is read, nothing is stored or deleted.
+them. It is grouped by day, and detected incidents less than five minutes apart show as one line
+that opens into them - one bad evening is one line, not twenty. Your own reports always stand alone. The rating is made when the list is read, nothing is stored or deleted.
 
 ## Network health
 
