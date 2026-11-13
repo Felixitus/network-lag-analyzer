@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-11-13
+
 ### Changed
 - The **incident list** is grouped by day, and detected incidents less than five minutes apart
   show as one line ("4 incidents in a row") that opens into them. Your own reports always stand
