@@ -5,11 +5,23 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The **incident list** is grouped by day, and detected incidents less than five minutes apart
+  show as one line ("4 incidents in a row") that opens into them. Your own reports always stand
+  alone.
+
+### Fixed
+- The key figures of an incident and of a gaming session were squeezed into narrow columns and
+  wrapped in the middle of a value.
+- A duration could read "2 min 60 s" or "1 h 60 min".
+- The live page showed a packet loss over 5 minutes of "0.0 %" while it was not measured yet.
+- The incident list showed the date twice for incidents older than a day.
+
 ## [1.8.1] - 2026-11-12
 
 ### Changed
 - The service may use **512 MB** instead of 350 MB. Once the kernel enforced the limit, file
-  cache filled it within minutes; the service's own memory is about 120 MB.
+  cache filled it within minutes; the service's own memory is about 280 MB.
 
 ## [1.8.0] - 2026-11-11
 

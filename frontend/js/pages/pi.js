@@ -26,7 +26,7 @@ function healthCard(d) {
     x.ts ? h('span', { class: 'sub' }, `As of ${fmtDateTime(x.ts)}`) : null));
   if (!x.ts) { card.append(h('div', { class: 'empty' }, 'Waiting for the first values (once a minute)…')); return card; }
   const lvl = x.level === 'critical' ? 'critical' : x.level === 'warning' ? 'warning' : 'good';
-  card.append(h('div', { class: `badge ${lvl}` }, x.level === 'good' ? 'Everything OK' : `${x.notes.length} finding(s)`));
+  card.append(h('div', { class: `badge ${lvl}` }, x.level === 'good' ? 'Everything OK' : `${x.notes.length} finding${x.notes.length === 1 ? '' : 's'}`));
   for (const n of x.notes || []) card.append(h('div', { class: 'small' }, `• ${n}`));
   card.append(h('ul', { class: 'list' },
     row('Temperature', x.temp_c === null ? null : `${x.temp_c.toFixed(1)} °C`),

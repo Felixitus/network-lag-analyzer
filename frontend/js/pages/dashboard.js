@@ -154,7 +154,7 @@ export async function mount(main, { store }) {
     const l = f ? f.loss : {};
     const l10 = l['10s'];
     set('loss', l10 === null || l10 === undefined ? null : l10.toFixed(l10 === 0 ? 0 : 1), '%',
-      l['60s'] !== null && l['60s'] !== undefined ? `60 s: ${l['60s'].toFixed(1)} % · 5 min: ${(l['300s'] || 0).toFixed(1)} %` : '',
+      l['60s'] !== null && l['60s'] !== undefined ? `60 s: ${l['60s'].toFixed(1)} %${l['300s'] === null || l['300s'] === undefined ? '' : ` · 5 min: ${l['300s'].toFixed(1)} %`}` : '',
       levelFor(l10, th.packet_loss_warning, 5));
     set('gw', fmtMs(m.gw_rtt), 'ms', 'Router latency', levelFor(m.gw_rtt, th.gateway_warning));
     const sticky = stickyTraffic(f);

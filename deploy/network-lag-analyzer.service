@@ -26,10 +26,10 @@ UMask=0027
 Nice=10
 CPUWeight=50
 IOWeight=50
-# Measured 2026-11-11 once the kernel enforced it: ~120 MB of the service's own memory plus file
-# cache (database, logs) that fills whatever is left. At 350M the cgroup sat at the limit within
-# five minutes and reclaimed cache hundreds of times; 512M leaves room and is still under a
-# seventh of a 4 GB Pi.
+# Measured on the Pi 4 once the kernel enforced it (2026-11-13, after 28 h): ~280 MB of the
+# service's own memory (main process and capture with its 64 MB ring) plus file cache (database)
+# that fills whatever is left. 350M left the cache 70 MB and the cgroup sat at the limit within
+# minutes; 512M leaves room and is still under a seventh of a 4 GB Pi.
 MemoryMax=512M
 
 # Hardening

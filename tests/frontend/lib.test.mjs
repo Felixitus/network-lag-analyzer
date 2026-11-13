@@ -139,3 +139,39 @@ test('a memory limit only on paper is not shown as a limit', async () => {
   assert.equal(memoryLimitText({ controller: true, limit_mb: null, used_mb: null })[0], 'None set');
   assert.deepEqual(memoryLimitText({ controller: true, limit_mb: 350, used_mb: 210 }), ['350 MB', '210 MB in use']);
 });
+
+test('a duration never shows 60 seconds or 60 minutes', () => {
+  assert.equal(lib.fmtDuration(59.6), '1 min 0 s');
+  assert.equal(lib.fmtDuration(179.6), '3 min 0 s');
+  assert.equal(lib.fmtDuration(3599.7), '1 h 0 min');
+  assert.equal(lib.fmtDuration(7170), '2 h 0 min');
+  assert.equal(lib.fmtDuration(1801), '30 min 1 s');
+});
+
+test('a day in a list is named today, yesterday or by its date', () => {
+  const now = new Date(2026, 10, 13, 15, 0, 0).getTime() / 1000;
+  assert.equal(lib.fmtDay(new Date(2026, 10, 13, 0, 0, 1).getTime() / 1000, now), 'Today');
+  assert.equal(lib.fmtDay(new Date(2026, 10, 12, 23, 59, 59).getTime() / 1000, now), 'Yesterday');
+  assert.equal(lib.fmtDay(new Date(2026, 10, 6, 12, 0, 0).getTime() / 1000, now), '2026-11-06');
+});
+
+test('incidents a few minutes apart form one episode, a report of the user stands alone', async () => {
+  const { episodes, episodeSummary } = await import('../../frontend/js/pages/incidents.js');
+  const inc = (id, start, end, extra = {}) => ({ id, source: 'auto', ts_start: start, ts_end: end, ...extra });
+  const list = [                                   // newest first, as the API returns them
+    inc(5, 5000, 5100),
+    inc(4, 3000, 3600, { impact: 'noticeable', cause: 'B', metrics: { ping_peak: 90, loss_pct: 1, duration: 600 } }),
+    inc(3, 2000, 2900, { impact: 'severe', cause: 'A', metrics: { ping_peak: 300, loss_pct: 6, duration: 900 } }),
+    { ...inc(2, 1900, 1950), source: 'user' },
+    inc(1, 1000, 1800, { impact: 'minor', cause: 'A', metrics: { duration: 800 } }),
+  ];
+  const eps = episodes(list);
+  assert.deepEqual(eps.map(e => e.map(i => i.id)), [[5], [4, 3], [2], [1]]);
+  assert.deepEqual(episodeSummary(eps[1]), { start: 2000, end: 3600, impact: 'severe', causes: ['B', 'A'],
+    ping_peak: 300, loss_pct: 6, duration: 1500 });
+  const bare = episodeSummary([inc(9, 10, null), inc(8, 1, 5)]);
+  assert.equal(bare.impact, null);
+  assert.equal(bare.ping_peak, null);
+  assert.equal(bare.duration, null);
+  assert.equal(bare.end, 10);
+});
