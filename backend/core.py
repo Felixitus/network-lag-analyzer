@@ -13,7 +13,7 @@ from collections import deque
 from typing import Any
 
 from . import __version__
-from .analysis import backfill, bufferbloat, daily, line, overview, path, pi_health, presence, weekly
+from .analysis import backfill, bufferbloat, daily, impact, line, overview, path, pi_health, presence, weekly
 from .analysis.alerts import Alerts, Message
 from .analysis.categories import Classifier
 from .analysis.correlation import Correlator, Incident, analyze_user_report, dismiss_reason
@@ -1185,10 +1185,10 @@ class Core:
         dc = self.cfg.deep_capture
         if not dc.enabled or self.capture_proc is None or dc.protect_auto == "none":
             return False
-        if dc.protect_auto == "critical":
-            critical = any(e.severity == "critical" for e in events) or inc.confidence == "high"
-            if not critical:
-                return False
+        # "critical" (any critical event) matched nearly every incident on a troubled line: the
+        # 1 GB budget then held 17 hours and the captures that mattered were pushed out early
+        if dc.protect_auto == "severe" and impact.rate(inc.source, (inc.analysis or {}).get("metrics")) != "severe":
+            return False
         self.capture_command("protect", inc.ts_start - 30, (inc.ts_end or inc.ts_start) + 5, inc.id)
         return True
 
@@ -1363,9 +1363,14 @@ class Core:
         return out
 
     # ================================================================== maintenance
+    # Every commit rewrites the pages it touched in the WAL. Once a second that was ~4 GB a day
+    # on the SD card for a 170 MB database (measured 2026-11-14); within 5 s the same pages
+    # are written once. Readers call db.flush() first, so nothing they show is older.
+    FLUSH_INTERVAL = 5.0
+
     async def _flush_loop(self) -> None:
         while True:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(self.FLUSH_INTERVAL)
             try:
                 await self.db.flush()
             except Exception:

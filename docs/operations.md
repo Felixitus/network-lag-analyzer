@@ -112,7 +112,7 @@ That is why there are three knobs, and only the first is a guarantee:
 |---|---|---|
 | `max_total_mb` | 1024 | **hard upper limit for the whole directory**. When it is reached, the oldest incident capture is dropped |
 | `protected_days` | 7 | incident captures are kept at most this long |
-| `protect_auto` | `critical` | for what a capture is kept at all: `none` (only reported lag), `critical`, `all` |
+| `protect_auto` | `severe` | for what a capture is kept at all: `none` (only reported lag), `severe` (impact "Severe", see the usage guide), `all` |
 
 **In RAM or on the SD card** (`buffer`, default `memory`): in RAM, the running ring is
 `memory_mb` (64 MB) of the newest packet headers, and only an incident's capture is written
