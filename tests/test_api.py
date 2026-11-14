@@ -231,7 +231,7 @@ def test_pcap_usage_is_visible_and_cleanable(client):
     assert info["pcap"]["files"] == 6
     assert info["pcap"]["bytes"] > 1_000_000
     assert info["pcap"]["limit_bytes"] == core.cfg.deep_capture.max_total_mb * 1_000_000
-    assert info["deep_capture"]["protect_auto"] == "critical"
+    assert info["deep_capture"]["protect_auto"] == "severe"
 
     r = client.post("/api/database/pcap-cleanup", headers=csrf(client)).json()
     assert r["freed_bytes"] > 1_000_000

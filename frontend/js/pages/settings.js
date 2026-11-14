@@ -571,7 +571,7 @@ export async function mount(main, { refreshStatus, store }) {
         help: 'Hard limit for ALL captures together, including those belonging to incidents' },
       { path: 'deep_capture.protected_days', label: 'Keep incident captures (days)', type: 'number' },
       { path: 'deep_capture.protect_auto', label: 'Keep capture for', type: 'select',
-        options: [['critical', 'critical incidents'], ['all', 'all incidents'], ['none', 'reported lag only']],
+        options: [['severe', 'severe incidents'], ['all', 'all incidents'], ['none', 'reported lag only']],
         help: 'Reported lags are always kept' },
     ]),
   ]);

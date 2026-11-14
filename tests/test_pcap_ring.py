@@ -166,14 +166,11 @@ def test_protect_policy_decides_whether_a_capture_is_frozen(protect_auto, expect
     assert bool(core.commands) is expected
 
 
-def test_critical_policy_keeps_only_the_relevant_incidents():
-    from backend.analysis.correlation import Incident
-    from backend.analysis.events import Event
+def _severe_core(policy="severe"):
     from backend.config import Config
-    from backend.core import Core
 
     class FakeCore:
-        cfg = Config(deep_capture={"enabled": True, "protect_auto": "critical"})
+        cfg = Config(deep_capture={"enabled": True, "protect_auto": policy})
         capture_proc = object()
 
         def __init__(self):
@@ -181,18 +178,42 @@ def test_critical_policy_keeps_only_the_relevant_incidents():
 
         def capture_command(self, *a):
             self.commands.append(a)
+    return FakeCore()
 
+
+def _incident(**metrics):
+    from backend.analysis.correlation import Incident
     inc = Incident(id=1, ts_start=100.0, ts_end=110.0, source="auto")
-    inc.confidence = "low"
-    harmlos = FakeCore()
-    assert Core._protect_pcap_for(harmlos, inc, [Event(id=1, type="HIGH_JITTER", severity="warning",
-                                                       ts_start=100.0)]) is False
-    schlimm = FakeCore()
-    assert Core._protect_pcap_for(schlimm, inc, [Event(id=2, type="PACKET_LOSS", severity="critical",
-                                                       ts_start=100.0)]) is True
-    sicher = FakeCore()
     inc.confidence = "high"
-    assert Core._protect_pcap_for(sicher, inc, []) is True
+    inc.analysis = {"metrics": {"ping_before": 20.0, "ping_peak": 25.0, "loss_pct": 0.0, "duration": 30, **metrics}}
+    return inc
+
+
+def test_only_a_severe_incident_freezes_its_capture():
+    from backend.analysis.events import Event
+    from backend.core import Core
+    critical = [Event(id=2, type="PACKET_LOSS", severity="critical", ts_start=100.0)]
+    # a critical event at a high confidence used to be enough; on a troubled line that was nearly
+    # every incident, and the 1 GB budget held only 17 hours
+    core = _severe_core()
+    assert Core._protect_pcap_for(core, _incident(loss_pct=2.0), critical) is False and not core.commands
+    core = _severe_core()
+    assert Core._protect_pcap_for(core, _incident(loss_pct=8.0), critical) is True and core.commands
+    core = _severe_core()
+    assert Core._protect_pcap_for(core, _incident(ping_peak=140.0), []) is True
+
+
+def test_an_incident_without_numbers_keeps_no_capture():
+    from backend.analysis.correlation import Incident
+    from backend.core import Core
+    inc = Incident(id=1, ts_start=100.0, ts_end=110.0, source="auto")
+    assert Core._protect_pcap_for(_severe_core(), inc, []) is False
+
+
+def test_the_old_critical_setting_means_severe():
+    from backend.config import Config
+    assert Config(deep_capture={"protect_auto": "critical"}).deep_capture.protect_auto == "severe"
+    assert Config().deep_capture.protect_auto == "severe"
 
 
 # ------------------------------------------------------------------ disabling

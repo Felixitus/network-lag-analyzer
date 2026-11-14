@@ -149,8 +149,8 @@ deep_capture:
   snaplen: 128         # bytes per packet written to the files: headers only
   # For what a capture is kept at all:
   #   none     only for reported lag ("I JUST HAD LAG")
-  #   critical additionally for critical incidents   (default)
+  #   severe   additionally for incidents rated "Severe"   (default)
   #   all      for every incident - can cost a lot of space depending on frequency
-  protect_auto: critical
+  protect_auto: severe
 
 dev_mode: false        # true = simulated demo data (never in production)

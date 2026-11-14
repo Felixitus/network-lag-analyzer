@@ -5,6 +5,15 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Fewer writes to the SD card.** The database is committed every 5 seconds instead of every
+  second; the app wrote ~4 GB a day to the card for a 170 MB database. What a page shows is not
+  older for it - every read commits first.
+- **Incident captures are kept for severe incidents only** (`deep_capture.protect_auto: severe`,
+  the new default). "critical" matched nearly every incident on a troubled line, so the 1 GB
+  budget held about 17 hours and pushed out the captures that mattered. A stored "critical" is
+  read as "severe". Your own lag reports are always kept.
+
 ## [1.8.2] - 2026-11-13
 
 ### Changed

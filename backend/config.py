@@ -281,9 +281,17 @@ class DeepCaptureCfg(BaseModel):
     # applied (90 days) - far too long for 50 MB files.
     protected_days: float = Field(7, ge=0.5, le=365)
     # For which automatically detected incidents a capture is kept at all.
-    # "critical" saves most of it: otherwise a short jitter blip freezes
+    # "severe" (analysis/impact.py) saves most of it: otherwise a short jitter blip freezes
     # 50 MB. Reported lags ("I JUST HAD LAG") are always kept.
-    protect_auto: Literal["none", "critical", "all"] = "critical"
+    protect_auto: Literal["none", "severe", "all"] = "severe"
+
+    @field_validator("protect_auto", mode="before")
+    @classmethod
+    def _protect_auto(cls, v):
+        # "critical" was the default until 1.8.2, and the settings form stores every field of a
+        # section - so it sits in most databases without anyone having chosen it. It meant
+        # "the incidents that matter"; that is "severe" now.
+        return "severe" if v == "critical" else v
     # Bytes of each packet written to the files - headers only. The FRITZ!Box may send more
     # (fritzbox.snaplen, for the server names); that part is only read, never stored.
     snaplen: int = Field(128, ge=64, le=1024)
