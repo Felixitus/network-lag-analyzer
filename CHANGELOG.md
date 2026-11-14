@@ -5,6 +5,8 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-11-14
+
 ### Changed
 - **Fewer writes to the SD card.** The database is committed every 5 seconds instead of every
   second; the app wrote ~4 GB a day to the card for a 170 MB database. What a page shows is not
