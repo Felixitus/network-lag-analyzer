@@ -118,8 +118,6 @@ def test_a_release_link_that_is_not_on_github_is_dropped(client, monkeypatch):
 
 
 def test_clicking_check_now_again_right_away_does_not_ask_github_again(client, monkeypatch):
-    import time
-
     import httpx
     core = client.app.state.core
     core.update_info = {"checked": time.time(), "latest": "1.0.0", "newer": False}

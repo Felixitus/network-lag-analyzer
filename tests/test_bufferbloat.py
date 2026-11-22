@@ -2,7 +2,7 @@
 import pytest
 
 from backend.analysis import bufferbloat as bb
-from backend.analysis.root_cause import RECOMMENDATIONS, Finding, Window, analyze, recommend
+from backend.analysis.root_cause import RECOMMENDATIONS, Finding, Window, recommend
 
 CAP_DOWN, CAP_UP = 100e6, 20e6
 

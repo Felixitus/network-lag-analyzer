@@ -5,6 +5,11 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Links, link buttons and filled buttons reach a contrast of at least 4.5:1 in light and dark
+  mode (WCAG AA); the blue was just under it, the filled button in dark mode at 3.6:1. Charts
+  keep their colors.
+
 ## [1.8.3] - 2026-11-14
 
 ### Changed
