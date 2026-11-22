@@ -26,7 +26,7 @@ from .analysis.root_cause import CATEGORY_LABELS, Window
 from .collectors.devices import DeviceRegistry
 from .collectors.dhcp_log import DhcpLog
 from .collectors.dns import DnsProber
-from .collectors.fritzbox import FritzClient, FritzError
+from .collectors.fritzbox import FritzClient
 from .collectors.ftl_queries import FtlQueryLog
 from .collectors.pihole import PiholeReader, read_dhcp_leases
 from .collectors.ping import IcmpProber, ProbeScheduler, ProbeTarget

@@ -125,7 +125,7 @@ def test_daily_stats_summarize_a_day():
     from backend.analysis import daily
     db = Database(":memory:")
     db.init_sync()
-    today = _seed_days(db, days=2)
+    _seed_days(db, days=2)
     written = db.write_sync(lambda c: daily.write_missing(c, time.time()))
     assert len(written) == 2
     rows = db.read_sync(lambda c: daily.read(c, days=10))
